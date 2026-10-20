@@ -135,12 +135,15 @@ if [ -n "$pwid" ]; then
 else
   echo "::warning::the panel didn't open (no 'panel window=' in the log)"
 fi
-# the panel logs where its swatches are; click Latte, then Graphite, the way a person would. Each pick also
-# refills the menu-bar menu, so the app has to survive both (the swatches stay put while the panel restyles).
+# the panel logs where its swatches are once it has slid in, and again whenever the window moves, resizes or
+# restyles, so the last line is where they are now. Click Latte, then Graphite, the way a person would. Each pick
+# also refills the menu-bar menu, so the app has to survive both (the swatches stay put while the panel restyles).
 swiftc -O "$ROOT/tools/mac-click.swift" -o "$WORK/click"
+swatch() { tail -n +"$from" "$LOG" | grep -o "$1=-*[0-9]*,-*[0-9]*" | tail -1 | cut -d= -f2 || true; }
 for theme in Latte Graphite; do
-  at=$(grep -o "$theme=-*[0-9]*,-*[0-9]*" "$LOG" | tail -1 | cut -d= -f2 || true)
+  for _ in 1 2 3 4 5 6 7 8 9 10; do at=$(swatch "$theme"); [ -n "$at" ] && break; sleep 1; done
   [ -n "$at" ] || { echo "the panel logged no swatch positions"; grep "panel" "$LOG" | tail -5; exit 1; }
+  tail -n +"$from" "$LOG" | grep "panel at" | tail -1 || true
   limit 20 "$WORK/click" "${at%,*}" "${at#*,}"
   sleep 1.5
   shot "2c-panel-$(echo "$theme" | tr 'A-Z' 'a-z')"
