@@ -10,7 +10,8 @@ public static class ImageSets
     static MagickImage LoadSmall(string path, uint max)
     {
         MagickImage img;
-        if (Kinds.Ext(path) is "jpg" or "jpeg" or "jfif")
+        // libjpeg can decode big photos at 1/2…1/8 size, much faster; but it would also scale small ones up
+        if (Kinds.Ext(path) is "jpg" or "jpeg" or "jfif" && new MagickImageInfo(path) is var info && Math.Max(info.Width, info.Height) > max * 2)
         {
             var rs = new MagickReadSettings();
             rs.SetDefine(MagickFormat.Jpeg, "size", $"{max}x{max}");
@@ -39,14 +40,20 @@ public static class ImageSets
 
     static List<string> Sorted(Job job) => job.Inputs.OrderBy(f => f, ImageTools.NaturalOrder.Instance).ToList();
 
+    // beyond these a sheet or an animation gets unwieldy (and memory-hungry); the card says when files were left out
+    const int MaxSheet = 400, MaxFrames = 200;
+
+    static string Capped(int used, int total) => used < total ? $" · first {used} of {total}" : "";
+
     // ---------- contact sheet ----------
 
     public static async Task ContactSheet(Job job)
     {
-        var files = Sorted(job);
+        var all = Sorted(job);
+        var files = all.Take(MaxSheet).ToList();
         var dst = await Task.Run(() => Sheet(job, files), job.Token);
         job.Outputs.Add(dst);
-        job.Summary = $"{files.Count} images · {Paths.HumanSize(Paths.SizeOf(dst))}";
+        job.Summary = $"{files.Count} images · {Paths.HumanSize(Paths.SizeOf(dst))}" + Capped(files.Count, all.Count);
     }
 
     static string Sheet(Job job, List<string> files)
@@ -55,12 +62,12 @@ public static class ImageSets
         bool labels = ImageTools.Text.Font != null;
         int labelH = labels ? 30 : 0, headerH = labels ? 52 : 0;
         int n = files.Count;
-        int cols = n <= 3 ? n : Math.Min(8, (int)Math.Ceiling(Math.Sqrt(n)));
+        int cols = n <= 3 ? n : Math.Min(12, (int)Math.Ceiling(Math.Sqrt(n)));
         int rows = (n + cols - 1) / cols;
         int width = margin * 2 + cols * cellW + (cols - 1) * gap;
         int height = margin * 2 + headerH + rows * (thumbH + labelH) + (rows - 1) * gap;
 
-        var thumbs = LoadAll(job, files, cellW * 2, 0.85);
+        var thumbs = LoadAll(job, files, cellW, 0.85);
         try
         {
             using var sheet = new MagickImage(MagickColors.White, (uint)width, (uint)height);
@@ -113,11 +120,13 @@ public static class ImageSets
 
     public static async Task Slideshow(Job job)
     {
-        var files = Sorted(job);
+        var all = Sorted(job);
+        var files = all.Take(MaxFrames).ToList();
         var (gif, webp, frames, size) = await Task.Run(() => MakeSlideshow(job, files), job.Token);
         job.Outputs.Add(gif);
         job.Outputs.Add(webp);
-        job.Summary = $"{frames} frames · 1 s each · {size} · GIF {Paths.HumanSize(Paths.SizeOf(gif))}, WEBP {Paths.HumanSize(Paths.SizeOf(webp))}";
+        job.Summary = $"{frames} frames · 1 s each · {size} · GIF {Paths.HumanSize(Paths.SizeOf(gif))}, WEBP {Paths.HumanSize(Paths.SizeOf(webp))}"
+            + Capped(files.Count, all.Count);
     }
 
     static (string gif, string webp, int frames, string size) MakeSlideshow(Job job, List<string> files)
@@ -135,46 +144,45 @@ public static class ImageSets
             w += w % 2; h += h % 2;
 
             var dir = Path.GetDirectoryName(files[0])!;
-            var webp = Paths.Unique(dir, "Slideshow", "webp");
-            using (var col = Frames(ok, w, h))
+            // frames are made in place, one copy per picture: the collection takes the images themselves
+            using var col = new MagickImageCollection();
+            foreach (var f in ok)
             {
-                foreach (var f in col) f.Quality = 80;
-                col.Write(webp, MagickFormat.WebP);
+                Frame(f, w, h);
+                col.Add(f);
             }
+            var webp = Paths.Unique(dir, "Slideshow", "webp");
+            foreach (var f in col) f.Quality = 80;
+            col.Write(webp, MagickFormat.WebP);
             job.Report(0.7);
 
             // GIF: 256 colours a frame, so a smaller canvas keeps it shareable
-            uint gw = w, gh = h;
-            if (Math.Max(w, h) > 720) { double s = 720.0 / Math.Max(w, h); gw = (uint)Math.Round(w * s); gh = (uint)Math.Round(h * s); }
-            var gif = Paths.Unique(dir, "Slideshow", "gif");
-            using (var col = Frames(ok, gw, gh))
+            if (Math.Max(w, h) > 720)
             {
-                foreach (var f in col) f.Quantize(new QuantizeSettings { Colors = 256, DitherMethod = DitherMethod.FloydSteinberg });
-                col.Write(gif, MagickFormat.Gif);
+                double s = 720.0 / Math.Max(w, h);
+                uint gw = (uint)Math.Round(w * s), gh = (uint)Math.Round(h * s);
+                foreach (var f in col) { f.Resize(new MagickGeometry(gw, gh) { IgnoreAspectRatio = true }); f.ResetPage(); }
             }
+            foreach (var f in col) f.Quantize(new QuantizeSettings { Colors = 256, DitherMethod = DitherMethod.FloydSteinberg });
+            var gif = Paths.Unique(dir, "Slideshow", "gif");
+            col.Write(gif, MagickFormat.Gif);
             return (gif, webp, ok.Count, $"{w}×{h}");
         }
         finally { foreach (var t in thumbs) t?.Dispose(); }
     }
 
-    static MagickImageCollection Frames(List<MagickImage> images, uint w, uint h)
+    /// <summary>Letterbox one picture into a w×h animation frame, 1 s, looping forever.</summary>
+    static void Frame(MagickImage f, uint w, uint h)
     {
-        var col = new MagickImageCollection();
-        foreach (var src in images)
-        {
-            var f = (MagickImage)src.Clone();
-            f.Resize(new MagickGeometry(w, h));
-            f.BackgroundColor = MagickColors.Black;
-            f.Alpha(AlphaAction.Remove);
-            f.Extent(w, h, Gravity.Center);
-            f.ResetPage();
-            f.AnimationDelay = 100;
-            f.AnimationTicksPerSecond = 100;
-            f.AnimationIterations = 0;
-            f.GifDisposeMethod = GifDisposeMethod.None;
-            col.Add(f);
-        }
-        return col;
+        f.Resize(new MagickGeometry(w, h));
+        f.BackgroundColor = MagickColors.Black;
+        f.Alpha(AlphaAction.Remove);
+        f.Extent(w, h, Gravity.Center);
+        f.ResetPage();
+        f.AnimationDelay = 100;
+        f.AnimationTicksPerSecond = 100;
+        f.AnimationIterations = 0;
+        f.GifDisposeMethod = GifDisposeMethod.None;
     }
 
     // ---------- compare ----------
