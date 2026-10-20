@@ -32,7 +32,7 @@ Converting a file usually means opening an app, finding *Export…*, picking a f
 
 | | |
 |---|---|
-| ✿ **Rings** | **Convert** (formats), **Tools** (editors & actions) and, for images, **More** (rarer formats, one-tap resize and B&W). Tap the key again, press <kbd>Tab</kbd> or turn the mouse wheel mid-drag to flip between them. |
+| ✿ **Rings** | **Convert** (formats), **Tools** (editors & actions) and, for images, **More tools** (one tap: Half, Full HD, B&W) and **More formats** (TIFF, ICO, BMP, JPEG XL, QOI…). Tap the key again, press <kbd>Tab</kbd> or turn the mouse wheel mid-drag to flip between them. |
 | 🖼 **Images** | PNG · JPG · WEBP · AVIF · GIF · PDF · TIFF · ICO · BMP · JPEG XL · QOI, from anything ImageMagick reads (HEIC, PSD, RAW, SVG…); **Half**, **Full HD** (fit in 1920 × 1080) and **B&W** in one tap |
 | 📄 **Documents** | PDF ⇄ DOCX, DOCX/XLSX/PPTX → PDF, slides → PNG, Markdown → HTML/PDF/DOCX (Microsoft Office or LibreOffice) |
 | 🎞 **Video & audio** | MP4 · WEBM · GIF · MOV · MKV · MP3 · WAV · FLAC · OGG · OPUS · M4A, plus compress, 720p, mute, grab frame, loudness, trim silence |
@@ -128,7 +128,7 @@ convertino model install
 | Gesture | What happens |
 |---|---|
 | Drag file(s) · tap <kbd>Shift</kbd> | The flower opens under the cursor on the **Convert** ring |
-| <kbd>Shift</kbd> again, <kbd>Tab</kbd> or the mouse wheel | Next ring: **Convert** → **Tools** → **More** (images) → Convert. <kbd>Shift</kbd>+<kbd>Tab</kbd> or wheel up goes back |
+| <kbd>Shift</kbd> again, <kbd>Tab</kbd> or the mouse wheel | Next ring: **Convert** → **Tools** → **More tools** → **More formats** (images) → Convert; the centre names the ring for a moment. <kbd>Shift</kbd>+<kbd>Tab</kbd> or wheel up goes back, so the rarer formats are one step back from Convert |
 | Drop on a petal | Runs it; the result appears beside the source and a card shows the outcome |
 | Drop on the centre · drag away · <kbd>Esc</kbd> | Cancel — nothing happens, the flower fades |
 | Double-tap <kbd>Shift</kbd> in Explorer / on the desktop *(Windows)* | Same flower for the selected files — click a petal |
@@ -166,7 +166,7 @@ While dragging over a petal, the caption under the Explorer drag image says what
 | **ZIP** | Extract · Path · SHA-256 | |
 | **Folder / anything else** | Zip · Path · Copy / SHA-256 · Base64 | |
 
-Images also get a third ring, **More**: Half · Full HD · B&W · HEIC *(where the codec allows)* · TIFF · ICO · BMP · JXL · QOI. Half, Full HD and B&W keep the source's format and write beside it: `photo (2016x1512).jpg`, `photo (1920x1080).jpg`, `photo (grayscale).jpg`. Full HD only ever shrinks (portrait images fit in 1080 × 1920), and animated GIF / WebP stay animated.
+Images (one or several) also get **More tools**: Half · Full HD · B&W, and **More formats**: HEIC *(where the codec allows)* · TIFF · ICO · BMP · JXL · QOI. Half, Full HD and B&W keep the source's format and write beside it: `photo (2016x1512).jpg`, `photo (1920x1080).jpg`, `photo (grayscale).jpg`. Full HD only ever shrinks (portrait images fit in 1080 × 1920), and animated GIF / WebP stay animated. No ring shows more than 10 petals; a longer list carries on in a second ring of the same name.
 
 Petals only appear when the engine behind them is available (e.g. office formats need Microsoft Office or LibreOffice).
 

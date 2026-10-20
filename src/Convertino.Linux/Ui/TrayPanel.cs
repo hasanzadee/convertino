@@ -270,7 +270,7 @@ public sealed class TrayPanel : Window
             Children =
             {
                 HowRow("file", $"Drag any file, {key.Tap()}", "the flower opens under your cursor"),
-                HowRow("flip", $"{key.KeyName()} again, Tab or wheel", "next ring: Convert → Tools → More"),
+                HowRow("flip", $"{key.KeyName()} again, Tab or wheel", "next ring; Shift+Tab goes back"),
                 OperatingSystem.IsMacOS()
                     ? HowRow("folder", "Right-click → Quick Actions", "Convertino: same menu in Finder")
                     : HowRow("folder", "Right-click → Convertino", "same menu in your file manager"),

@@ -8,7 +8,7 @@ namespace Convertino;
 /// <item>the mouse wheel: down = next, up = previous, one flip per burst of wheel events (a touchpad swipe or a
 /// spun wheel sends dozens of them; the next flip needs a short pause in between).</item>
 /// </list>
-/// The rings wrap around: Convert → Tools → More → Convert.
+/// The rings wrap around: Convert → Tools → More tools → More formats → Convert.
 /// </summary>
 public sealed class RingPager
 {
@@ -17,13 +17,14 @@ public sealed class RingPager
     /// <summary>The same Tab press can arrive twice (a global watcher and the window itself); also swallows key repeat.</summary>
     public const int TabGapMs = 140;
 
-    IReadOnlyList<IReadOnlyList<PetalAction>> _rings = [];
+    IReadOnlyList<Ring> _rings = [];
     bool _triggerPending;
     long _wheelAt = -WheelGapMs, _tabAt = -TabGapMs;
 
     public int Page { get; private set; }
     public int Count => _rings.Count;
-    public IReadOnlyList<PetalAction> Current => _rings.Count == 0 ? [] : _rings[Page];
+    public IReadOnlyList<PetalAction> Current => _rings.Count == 0 ? [] : _rings[Page].Petals;
+    public string Name => _rings.Count == 0 ? "" : _rings[Page].Name;
 
     public void Reset(Pages pages) { _rings = pages.Rings; Page = 0; _triggerPending = false; }
 

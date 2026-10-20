@@ -69,6 +69,11 @@ public sealed class FlowerView : FrameworkElement
 
     int _hover = -1;
     int _pageCount = 1, _page;
+    string _ringName = "";
+    double _ringUntil;
+
+    /// <summary>How long the hub shows a ring's name after a flip, in seconds.</summary>
+    const double RingNameTime = 1.1;
 
     public BitmapSource? Backdrop { get; set; }
     public HubMode Mode { get; private set; } = HubMode.Seed;
@@ -104,7 +109,7 @@ public sealed class FlowerView : FrameworkElement
         HubTitle = HubSub = HubBadge = "";
         Progress = double.NaN;
         Mode = HubMode.Seed;
-        _pageCount = 1; _page = 0;
+        _pageCount = 1; _page = 0; _ringName = ""; _ringUntil = 0;
         InvalidateVisual();
     }
 
@@ -122,7 +127,13 @@ public sealed class FlowerView : FrameworkElement
         Kick();
     }
 
-    public void SetPages(int count, int page) { _pageCount = count; _page = page; Kick(); }
+    /// <summary>Page dots; with a <paramref name="name"/> the hub also shows the ring's name for a moment (after a flip).</summary>
+    public void SetPages(int count, int page, string? name = null)
+    {
+        _pageCount = count; _page = page;
+        if (!string.IsNullOrEmpty(name)) { _ringName = name; _ringUntil = _time + RingNameTime; }
+        Kick();
+    }
 
     /// <summary>Swap the ring. dir = +1 rotates in clockwise, -1 counter-clockwise.</summary>
     public void SetPetals(IReadOnlyList<PetalAction> actions, double dir)
@@ -258,6 +269,7 @@ public sealed class FlowerView : FrameworkElement
         }
         _petals.RemoveAll(p => p.Leaving && p.Bloom.X <= 0.002 && p.Bloom.Target == 0);
         if (Mode is HubMode.Seed or HubMode.Busy) busy = true; // continuous pulse / spinner
+        if (_time < _ringUntil) busy = true; // repaint once the ring's name gives way
 
         InvalidateVisual();
         if (!busy)
@@ -487,6 +499,8 @@ public sealed class FlowerView : FrameworkElement
                     var a = acts[_hover];
                     sub = a.Icon != null ? a.Verb : (string.IsNullOrEmpty(HubBadge) ? a.Hint : $"{HubBadge} → {a.Label}");
                 }
+                bool named = _time < _ringUntil; // just flipped: say which ring this is
+                if (named) { title = _ringName; sub = ""; hot = true; }
                 DrawTextFit(dc, title, LabelFace, hot ? 13 : 12, c.X, c.Y + 17, r * 1.7, hot);
                 DrawTextFit(dc, sub, HintFace, 9.5, c.X, c.Y + 31, r * 1.6, false, sub: true);
                 if (_pageCount > 1)

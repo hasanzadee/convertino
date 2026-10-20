@@ -37,7 +37,7 @@ public sealed class RadialWindow : Window
 
 /// <summary>
 /// Drag a file, tap the trigger key (Shift by default, see <see cref="TriggerKey"/>) → the flower blooms under the cursor,
-/// drop on a petal → the action runs. The key again, Tab / Shift+Tab or the wheel flip the rings (Convert → Tools → More). "convertino menu files…" opens the same flower in click mode.
+/// drop on a petal → the action runs. The key again, Tab / Shift+Tab or the wheel flip the rings (Convert → Tools → More tools → More formats). "convertino menu files…" opens the same flower in click mode.
 /// </summary>
 public sealed class OverlayController
 {
@@ -222,8 +222,8 @@ public sealed class OverlayController
     {
         if (dir == 0 || _pages == null || _state is not (State.Drag or State.Click)) return;
         if (!_pager.Step(dir)) { _win.View.Nudge(); return; }
-        if (Diag) Log.Info($"ring {_pager.Page + 1}/{_pager.Count} ({why})");
-        _win.View.SetPages(_pager.Count, _pager.Page);
+        if (Diag) Log.Info($"ring {_pager.Page + 1}/{_pager.Count} {_pager.Name} ({why})");
+        _win.View.SetPages(_pager.Count, _pager.Page, _pager.Name);
         _win.View.SetPetals(_pager.Current, dir);
     }
 

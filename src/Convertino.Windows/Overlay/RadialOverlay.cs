@@ -56,7 +56,7 @@ public sealed class RadialWindow : Window
 /// <summary>
 /// The whole interaction: drag a file anywhere, tap the trigger key (Shift by default, see <see cref="TriggerKey"/>)
 /// → the flower blooms under the cursor, drop on a petal → the action runs. The key again, Tab / Shift+Tab or the mouse
-/// wheel flip between its rings (Convert → Tools → More, see <see cref="RingPager"/>).
+/// wheel flip between its rings (Convert → Tools → More tools → More formats, see <see cref="RingPager"/>).
 /// Double-tap Shift in Explorer opens the same flower for the selected files (click mode).
 /// </summary>
 public sealed class OverlayController
@@ -145,6 +145,22 @@ public sealed class OverlayController
         Bloom(files);
     }
 
+    // ---------- dev (Convertino.exe --paging-selftest) ----------
+
+    /// <summary>Open the flower for files as if mid-drag over <paramref name="at"/>, without showing its window.</summary>
+    internal void DevBloom(IReadOnlyList<string> files, RECT at)
+    {
+        _session++;
+        _win.View.Reset();
+        _placed = at;
+        _state = State.Seed;
+        _win.View.Appear();
+        Bloom(files);
+    }
+
+    internal FlowerView DevView => _win.View;
+    internal string DevRing => _pages == null ? "closed" : $"{_pager.Page + 1}/{_pager.Count} {_pager.Name}";
+
     // ---------- show / hide ----------
 
     void ShowAt(POINT pt, State state)
@@ -205,8 +221,8 @@ public sealed class OverlayController
     {
         if (dir == 0 || _pages == null || _state is not (State.Drag or State.Click)) return;
         if (!_pager.Step(dir)) { _win.View.Nudge(); return; }
-        Log.Info($"ring {_pager.Page + 1}/{_pager.Count} ({why})");
-        _win.View.SetPages(_pager.Count, _pager.Page);
+        Log.Info($"ring {_pager.Page + 1}/{_pager.Count} {_pager.Name} ({why})");
+        _win.View.SetPages(_pager.Count, _pager.Page, _pager.Name);
         _win.View.SetPetals(_pager.Current, dir);
         UpdateHover(Mouse.GetPosition(_win));
     }

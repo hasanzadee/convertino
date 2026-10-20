@@ -3,13 +3,30 @@ using Convertino.Services;
 
 namespace Convertino;
 
+/// <summary>One page of the flower: its petals and the name the hub shows when you flip to it.</summary>
+public sealed record Ring(string Name, IReadOnlyList<PetalAction> Petals);
+
 public sealed record Pages(List<PetalAction> Convert, List<PetalAction> Tools, string Title, string Badge)
 {
-    /// <summary>Third ring, after Tools: rarer formats and one-tap extras (for images: Half, Full HD, B&amp;W, HEIC, TIFF …).</summary>
+    /// <summary>Most petals one ring shows; a longer list is spread evenly over consecutive rings ("Tools", "Tools 2").</summary>
+    public const int MaxPetals = 10;
+
+    /// <summary>One-tap extras after Tools: no window, a new file beside the source or the clipboard (images: Half, Full HD, B&amp;W …).</summary>
     public List<PetalAction> More { get; init; } = [];
 
-    /// <summary>The rings in flip order (Convert → Tools → More), empty ones left out.</summary>
-    public IReadOnlyList<IReadOnlyList<PetalAction>> Rings => new[] { Convert, Tools, More }.Where(r => r.Count > 0).ToList();
+    /// <summary>Rarer output formats. Last in the cycle, so they sit one step back from Convert (images: HEIC, TIFF, ICO, BMP, JPEG XL, QOI).</summary>
+    public List<PetalAction> MoreFormats { get; init; } = [];
+
+    /// <summary>The rings in flip order, Convert → Tools → More tools → More formats, empty ones left out.</summary>
+    public IReadOnlyList<Ring> Rings => [.. Split("Convert", Convert), .. Split("Tools", Tools), .. Split("More tools", More), .. Split("More formats", MoreFormats)];
+
+    static IEnumerable<Ring> Split(string name, List<PetalAction> petals)
+    {
+        if (petals.Count == 0) yield break;
+        int rings = (petals.Count + MaxPetals - 1) / MaxPetals, size = (petals.Count + rings - 1) / rings;
+        for (int i = 0; i < rings; i++)
+            yield return new(i == 0 ? name : $"{name} {i + 1}", petals.Skip(i * size).Take(size).ToList());
+    }
 }
 
 /// <summary>Which petals a given set of dropped files gets.</summary>
@@ -43,7 +60,7 @@ public static class Catalog
     public static IEnumerable<PetalAction> All(IReadOnlyList<string> files)
     {
         var p = For(files);
-        return p.Convert.Concat(p.Tools).Concat(p.More);
+        return p.Convert.Concat(p.Tools).Concat(p.More).Concat(p.MoreFormats);
     }
 
     public static Pages For(IReadOnlyList<string> files)
@@ -71,7 +88,7 @@ public static class Catalog
     {
         bool single = files.Count == 1;
         string ext = Kinds.Ext(files[0]);
-        List<PetalAction> conv = [], tools = [], more = [];
+        List<PetalAction> conv = [], tools = [], more = [], formats = [];
         var office = Platform.Current.Office;
         bool hasOffice(Kind k) => office?.Supports(k) == true;
 
@@ -89,18 +106,20 @@ public static class Catalog
                 F(conv, "avif", "smallest", MagickFormat.Avif);
                 conv.Add(Fmt("pdf", single ? "document" : "one file", j => Pdfs.ImagesToPdf(j, merge: true)));
                 F(conv, "gif", "classic", MagickFormat.Gif);
-                // the third ring: one-tap resizes and B&W, then the rarer formats
+                // rarer formats get the last ring, one step back from Convert
+                F(formats, "heic", "Apple", MagickFormat.Heic);
+                F(formats, "tiff", "print", MagickFormat.Tiff);
+                F(formats, "ico", "icon", MagickFormat.Ico);
+                F(formats, "bmp", "plain", MagickFormat.Bmp);
+                F(formats, "jxl", "JPEG XL", MagickFormat.Jxl);
+                F(formats, "qoi", "fast", MagickFormat.Qoi);
+                conv.RemoveAll(a => a.Id == "to-" + Norm(ext));
+                formats.RemoveAll(a => a.Id == "to-" + Norm(ext));
+                // More tools: one tap, no window, a new file beside each source (the same for one image or many).
+                // New one-tap image tools go here; editors and AI stay on Tools. Rings over 10 petals split by themselves.
                 more.Add(Tool("half", "Half", "half", "Half the size", Images.Half));
                 more.Add(Tool("fithd", "Full HD", "fithd", "Fit in 1920×1080", Images.FitFullHd));
                 more.Add(Tool("gray", "B&W", "gray", "Black & white", Images.Grayscale));
-                F(more, "heic", "Apple", MagickFormat.Heic);
-                F(more, "tiff", "print", MagickFormat.Tiff);
-                F(more, "ico", "icon", MagickFormat.Ico);
-                F(more, "bmp", "plain", MagickFormat.Bmp);
-                F(more, "jxl", "JPEG XL", MagickFormat.Jxl);
-                F(more, "qoi", "fast", MagickFormat.Qoi);
-                conv.RemoveAll(a => a.Id == "to-" + Norm(ext));
-                more.RemoveAll(a => a.Id == "to-" + Norm(ext));
 
                 // AI background removal only when its model is installed (convertino model install)
                 var cutout = Cutout.Available ? Tool("cutout", "Cut out", "cutout", "Remove background", Cutout.Run) : null;
@@ -228,7 +247,7 @@ public static class Catalog
             }
 
         if (conv.Count == 0) conv.AddRange([ZipA, PathA, HashA]);
-        return new(conv, tools, title, badge) { More = more };
+        return new(conv, tools, title, badge) { More = more, MoreFormats = formats };
     }
 
     static string Norm(string ext) => ext switch { "jpeg" or "jfif" => "jpg", "tif" => "tiff", "heif" => "heic", _ => ext };
