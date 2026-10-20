@@ -78,3 +78,37 @@ jobs:
           path: |
             mac-smoke/
             convertino-macos-${{ matrix.arch }}-ci.zip
+
+  # TEMPORARY (removed before merge): where Core ML spends its time on the runner VM
+  coreml-probe:
+    strategy:
+      fail-fast: false
+      matrix:
+        units: [CPUOnly, CPUAndGPU, CPUAndNeuralEngine]
+    runs-on: macos-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+      - name: Build Convertino.app
+        run: |
+          chmod +x packaging/macos/*.sh
+          packaging/macos/build-app.sh arm64 dist
+      - uses: actions/cache@v6
+        with:
+          path: ~/Library/Application Support/Convertino/models
+          key: birefnet-lite-5600024376f5
+      - name: Probe
+        env:
+          CONVERTINO_COREML_UNITS: ${{ matrix.units }}
+        run: |
+          sysctl kern.hv_vmm_present hw.model machdep.cpu.brand_string hw.ncpu hw.memsize || true
+          system_profiler SPHardwareDataType SPDisplaysDataType 2>/dev/null | grep -vE "Serial|UUID|UDID" | head -40 || true
+          D=dist/Convertino.app/Contents/MacOS/convertino
+          "$D" model install | tail -1
+          cp packaging/linux/icons/convertino-256.png cut.png
+          for pass in cold cached; do "$D" run cutout cut.png || true; rm -f "cut (cutout).png"; done
+          if [ "${{ matrix.units }}" = CPUOnly ]; then CONVERTINO_CUTOUT_CPU=1 "$D" run cutout cut.png; fi
+          grep "cutout:" "$HOME/Library/Application Support/Convertino/convertino.log" | cut -c1-400

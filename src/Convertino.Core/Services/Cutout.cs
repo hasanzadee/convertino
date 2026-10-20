@@ -282,7 +282,7 @@ public static class Cutout
         o.AppendExecutionProvider("CoreML", new Dictionary<string, string>
         {
             ["ModelFormat"] = "MLProgram",
-            ["MLComputeUnits"] = "ALL",
+            ["MLComputeUnits"] = Environment.GetEnvironmentVariable("CONVERTINO_COREML_UNITS") is { Length: > 0 } units ? units : "ALL",
             ["ModelCacheDirectory"] = cache,
         });
         try { return new InferenceSession(model, o); }
