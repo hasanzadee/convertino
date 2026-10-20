@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- Cut out on Apple silicon runs on Core ML (ONNX Runtime's Core ML provider, ML Program on the GPU / Neural Engine) instead of the CPU only, with the CPU as the fallback if Core ML fails. The first cut-out compiles the model for your Mac and caches it next to the model, so later loads are quick; `convertino model remove` deletes the cache too. The log says which provider ran and how ONNX Runtime split the model.
+- Cut out on Apple silicon runs on Core ML (ONNX Runtime's Core ML provider, ML Program, GPU / Neural Engine) instead of only the CPU. The first cut-out compiles the model for your Mac (cached next to the model, about 1 GB) and times the CPU once on the same picture; the faster one is kept, and the CPU also takes over whenever Core ML fails. `convertino model remove` deletes the compiled copy too. The log says which provider ran, both timings, and how ONNX Runtime split the model.
 
 ## 1.1.1 — 2026-10-20
 

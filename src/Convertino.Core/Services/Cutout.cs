@@ -167,7 +167,12 @@ public static class Cutout
     {
         var s = Open();
         report(0.3);
-        try { return InferOn(s, img, ct); }
+        try
+        {
+            var result = InferOn(s, _device, img, ct, out long ms);
+            if (_device == "CoreML" && !ForceCoreML && CoreMLChoice() == null) PickFaster(img, ms, ct);
+            return result;
+        }
         catch (OnnxRuntimeException) when (ct.IsCancellationRequested) { throw new OperationCanceledException(ct); }
         catch (Exception ex) when (_device != "CPU" && ex is not OperationCanceledException)
         {
@@ -175,11 +180,11 @@ public static class Cutout
             _session?.Dispose();
             _session = null;
             _cpuOnly = true;
-            return InferOn(Open(), img, ct);
+            return InferOn(Open(), _device, img, ct, out _);
         }
     }
 
-    static (float[] mask, int w, int h) InferOn(InferenceSession s, MagickImage img, CancellationToken ct)
+    static (float[] mask, int w, int h) InferOn(InferenceSession s, string device, MagickImage img, CancellationToken ct, out long ms)
     {
         var (inName, meta) = s.InputMetadata.First();
         int size = meta.Dimensions.Length == 4 && meta.Dimensions[3] > 0 ? meta.Dimensions[3] : 1024;
@@ -209,14 +214,15 @@ public static class Cutout
         var shape = outs[0].GetTensorTypeAndShape().Shape;
         int oh = (int)shape[^2], ow = (int)shape[^1];
         var mask = outs[0].GetTensorDataAsSpan<float>()[..(ow * oh)].ToArray();
-        Log.Info($"cutout: {size}² inference on {_device} in {sw.ElapsedMilliseconds} ms");
+        ms = sw.ElapsedMilliseconds;
+        Log.Info($"cutout: {size}² inference on {device} in {ms} ms");
 
         // BiRefNet returns logits; models that already end in a sigmoid stay in [0, 1]
         float mn = float.MaxValue, mx = float.MinValue;
         foreach (var v in mask)
         {
             // half-precision overflow on a GPU / Neural Engine shows up as NaN or ∞: let the caller retry on the CPU
-            if (!float.IsFinite(v)) throw new InvalidDataException($"{_device} returned a non-finite mask");
+            if (!float.IsFinite(v)) throw new InvalidDataException($"{device} returned a non-finite mask");
             if (v < mn) mn = v;
             if (v > mx) mx = v;
         }
@@ -245,20 +251,25 @@ public static class Cutout
                     _session = new InferenceSession(ModelPath, o);
                     _device = "GPU";
                 }
+                else if (!ForceCoreML && CoreMLChoice() is { } choice && choice.StartsWith("CPU "))
+                    note = $" (Core ML was slower on this Mac: {choice[4..]})";
                 else
                 {
                     _session = OpenCoreML(out note);
                     _device = "CoreML";
                 }
             }
-            catch (Exception ex) { Log.Error($"cutout: {(OperatingSystem.IsWindows() ? "DirectML" : "Core ML")} unavailable, using CPU", ex); }
+            catch (Exception ex)
+            {
+                Log.Error($"cutout: {(OperatingSystem.IsWindows() ? "DirectML" : "Core ML")} unavailable, using CPU", ex);
+                note = "";
+            }
         }
         if (_session == null)
         {
             using var o = new SessionOptions { GraphOptimizationLevel = GraphOptimizationLevel.ORT_ENABLE_ALL };
             _session = new InferenceSession(ModelPath, o);
             _device = "CPU";
-            note = "";
         }
         Log.Info($"cutout: model loaded on {_device} in {sw.ElapsedMilliseconds} ms{note}");
         return _session;
@@ -274,7 +285,7 @@ public static class Cutout
         if (!OrtEnv.Instance().GetAvailableProviders().Contains("CoreMLExecutionProvider"))
             throw new PlatformNotSupportedException("this ONNX Runtime build has no Core ML provider");
         var cache = CoreMLCache();
-        note = Directory.EnumerateFileSystemEntries(cache).Any() ? " (compiled Core ML program from the cache)" : " (first load: compiling the Core ML program)";
+        note = Directory.EnumerateDirectories(cache).Any() ? " (compiled Core ML program from the cache)" : " (first load: compiling the Core ML program)";
         var model = ExplicitConvPads(File.ReadAllBytes(ModelPath), out int padded);
         note += $", {padded} Convs given explicit pads";
         // INFO on this session only, so Core ML's partition summary reaches OrtLogging (it's a warning only when split)
@@ -292,6 +303,56 @@ public static class Cutout
             DeleteCoreMLCaches();
             throw;
         }
+    }
+
+    /// <summary>
+    /// The first Core ML cut-out with this model and runtime also times the CPU once on the same picture, and the faster
+    /// one stays. Core ML should win on the GPU / Neural Engine, but it splits BiRefNet into 58 programs with ONNX Runtime's
+    /// CPU kernels in between, moving large tensors back and forth: in a 7 GB Apple-silicon VM it ran ~5× slower than the
+    /// CPU. When the CPU wins, the compiled programs (about 1 GB) go as well.
+    /// </summary>
+    static void PickFaster(MagickImage img, long coreMLMs, CancellationToken ct)
+    {
+        // free Core ML's memory first, so the CPU isn't timed while both sessions sit in RAM
+        _session?.Dispose();
+        _session = null;
+        InferenceSession? cpu = null;
+        try
+        {
+            using (var o = new SessionOptions { GraphOptimizationLevel = GraphOptimizationLevel.ORT_ENABLE_ALL })
+                cpu = new InferenceSession(ModelPath, o);
+            InferOn(cpu, "CPU", img, ct, out long cpuMs);
+            // Core ML's first run carries some warm-up, so the CPU has to win clearly
+            bool cpuWins = cpuMs < coreMLMs * 0.8;
+            File.WriteAllText(Path.Combine(CoreMLCache(), ChoiceFile), $"{(cpuWins ? "CPU" : "CoreML")} Core ML {coreMLMs} ms, CPU {cpuMs} ms");
+            Log.Info($"cutout: Core ML took {coreMLMs} ms, the CPU {cpuMs} ms → {(cpuWins ? "CPU" : "Core ML")} from now on");
+            if (cpuWins)
+            {
+                (_session, cpu, _device) = (cpu, null, "CPU");
+                foreach (var d in Directory.EnumerateDirectories(CoreMLCache()))
+                    try { Directory.Delete(d, true); } catch (Exception ex) { Log.Error("cutout: couldn't clear " + d, ex); }
+            }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException && !ct.IsCancellationRequested)
+        {
+            Log.Error("cutout: couldn't time the CPU, staying on Core ML", ex);
+        }
+        finally { cpu?.Dispose(); }
+    }
+
+    // CONVERTINO_CUTOUT_COREML=1: always Core ML, never timed against the CPU (CI, comparisons)
+    static readonly bool ForceCoreML = Environment.GetEnvironmentVariable("CONVERTINO_CUTOUT_COREML") == "1";
+    const string ChoiceFile = "provider.txt";
+
+    /// <summary>"CoreML …" or "CPU …" once <see cref="PickFaster"/> has run for this model and runtime, else null.</summary>
+    static string? CoreMLChoice()
+    {
+        try
+        {
+            var f = Path.Combine(CoreMLCache(), ChoiceFile);
+            return File.Exists(f) ? File.ReadAllText(f).Trim() : null;
+        }
+        catch { return null; }
     }
 
     // ONNX Runtime trusts whatever sits in the Core ML cache, so the folder is keyed on the model, the runtime version and

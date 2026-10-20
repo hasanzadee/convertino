@@ -123,6 +123,8 @@ The **Cut out** petal appears once its model is installed (224 MB, one-time, che
 convertino model install
 ```
 
+On Apple silicon it runs through Core ML, on the GPU and Neural Engine. The first cut-out compiles the model for your Mac (about 1 GB, kept next to the model) and also times the CPU once on the same picture; whichever was faster is used from then on, and if that's the CPU the compiled copy is deleted again. `convertino model remove` deletes the model and everything made from it.
+
 ## Using it
 
 | Gesture | What happens |

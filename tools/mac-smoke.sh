@@ -50,7 +50,7 @@ fi
 cp smoke.jpg "$OUT/pdf-render.jpg"
 
 if [ -n "${CUTOUT:-}" ]; then
-  step "Cut out: Core ML (first load compiles, second uses the cache) vs the CPU"
+  step "Cut out: Core ML (compile, then from the cache + timed against the CPU once) vs the CPU"
   "$D" model install | tail -1
   # the test picture: the app icon (a known subject) over a full-size desktop picture, or over nothing
   swiftc -O "$ROOT/tools/mac-cutout-diff.swift" -o "$WORK/cutdiff"
@@ -62,21 +62,21 @@ if [ -n "${CUTOUT:-}" ]; then
   MODELS="$HOME/Library/Application Support/Convertino/models"
   rm -rf "$MODELS"/coreml-*
   n0=0; [ -f "$LOG" ] && n0=$(wc -l < "$LOG")
-  for pass in cold cached; do
-    "$D" run cutout cut.png
-    mv "cut (cutout).png" "$OUT/cutout-coreml-$pass.png"
-  done
-  # ONNX Runtime keeps each partition's ML package next to its compiled model
-  du -sh "$MODELS"/coreml-* || true
+  cutout() { "$D" run cutout cut.png; mv "cut (cutout).png" "$OUT/cutout-$1.png"; }
+  CONVERTINO_CUTOUT_COREML=1 cutout coreml-cold        # first load: compiles the Core ML programs
+  du -sh "$MODELS"/coreml-* || true                    # ORT keeps each partition's ML package and compiled model
   echo "partitions: $(ls -d "$MODELS"/coreml-*/*/*/ 2>/dev/null | wc -l)"
   du -sch "$MODELS"/coreml-*/*/*/model/compiled_model.mlmodelc 2>/dev/null | tail -1 | sed 's/total/of that compiled models/' || true
-  CONVERTINO_CUTOUT_CPU=1 "$D" run cutout cut.png
-  mv "cut (cutout).png" "$OUT/cutout-cpu.png"
-  tail -n +"$((n0 + 1))" "$LOG" | grep "cutout:" | tee "$OUT/cutout-log.txt"
-  grep -q "inference on CoreML" "$OUT/cutout-log.txt" || { echo "Cut out didn't run on Core ML"; exit 1; }
+  cutout coreml                                        # from the cache, then timed against the CPU once
+  CONVERTINO_CUTOUT_CPU=1 cutout cpu
+  cutout auto                                          # whichever won on this Mac
+  echo "choice: $(cat "$MODELS"/coreml-*/provider.txt 2>/dev/null || echo none)"
+  tail -n +"$((n0 + 1))" "$LOG" | grep "cutout:" | grep -v "onnxruntime: Some nodes\|onnxruntime: Rerunning" | tee "$OUT/cutout-log.txt"
+  [ "$(grep -c "inference on CoreML" "$OUT/cutout-log.txt")" -ge 2 ] || { echo "Cut out didn't run on Core ML"; exit 1; }
   if grep -qE "Core ML unavailable|retrying on CPU" "$OUT/cutout-log.txt"; then echo "Core ML failed and the CPU took over"; exit 1; fi
   grep -q "program from the cache" "$OUT/cutout-log.txt" || echo "::warning::the second Core ML load didn't use the compiled-model cache"
-  "$WORK/cutdiff" "$OUT/cutout-coreml-cached.png" "$OUT/cutout-cpu.png" "$OUT/cutout-compare.png" "Core ML" "CPU"
+  grep -q "from now on" "$OUT/cutout-log.txt" || { echo "Core ML wasn't timed against the CPU"; exit 1; }
+  "$WORK/cutdiff" "$OUT/cutout-coreml.png" "$OUT/cutout-cpu.png" "$OUT/cutout-compare.png" "Core ML" "CPU"
 fi
 
 [ "$GUI" = "--gui" ] || exit 0

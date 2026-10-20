@@ -78,29 +78,3 @@ jobs:
           path: |
             mac-smoke/
             convertino-macos-${{ matrix.arch }}-ci.zip
-
-  # TEMPORARY (removed before merge): where ONNX Runtime + Core ML spend their time on the runner VM
-  coreml-probe:
-    strategy:
-      fail-fast: false
-      matrix:
-        variant: ["", "RequireStaticInputShapes=1", "SpecializationStrategy=FastPrediction", "ModelFormat=NeuralNetwork"]
-    runs-on: macos-latest
-    timeout-minutes: 50
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-dotnet@v6
-        with:
-          dotnet-version: 10.0.x
-      - uses: actions/cache@v6
-        with:
-          path: ~/Library/Application Support/Convertino/models
-          key: birefnet-lite-5600024376f5
-      - name: Probe
-        run: |
-          M="$HOME/Library/Application Support/Convertino/models/birefnet-lite.onnx"
-          test -s "$M" || curl -sfL -o "$M" --create-dirs https://huggingface.co/onnx-community/BiRefNet_lite-ONNX/resolve/main/onnx/model.onnx
-          dotnet build tools/coreml-probe -c Release -v q -nologo
-          P=tools/coreml-probe/bin/Release/net10.0/osx-arm64/coreml-probe
-          "$P" "$M" "$RUNNER_TEMP/cml" ${{ matrix.variant }}
-          if [ -z "${{ matrix.variant }}" ]; then "$P" "$M" "$RUNNER_TEMP/cml" CPU; fi
