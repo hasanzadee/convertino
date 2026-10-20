@@ -173,13 +173,24 @@ public static class Pdfs
             }
             else (data, w, h) = Encode(src, ext is "png" or "gif" or "bmp" or "ico" or "svg" ? "png" : "jpg");
 
-            var page = doc.AddPage();
-            page.Width = XUnit.FromPoint(w * 0.75);
-            page.Height = XUnit.FromPoint(h * 0.75);
-            using var gfx = XGraphics.FromPdfPage(page);
-            using var ms = new MemoryStream(data);
-            using var xi = XImage.FromStream(ms);
-            gfx.DrawImage(xi, 0, 0, page.Width.Point, page.Height.Point);
+            XImage xi;
+            try { xi = XImage.FromStream(new MemoryStream(data)); }
+            catch (Exception ex)
+            {
+                // PDFsharp's own JPEG reader refuses some perfectly normal files (e.g. no JFIF/Exif segment first):
+                // hand it a freshly encoded baseline JPEG instead
+                Log.Info($"pdf: re-encoding {Path.GetFileName(src)} ({ex.Message})");
+                (data, w, h) = Encode(src, "jpg");
+                xi = XImage.FromStream(new MemoryStream(data));
+            }
+            using (xi)
+            {
+                var page = doc.AddPage();
+                page.Width = XUnit.FromPoint(w * 0.75);
+                page.Height = XUnit.FromPoint(h * 0.75);
+                using var gfx = XGraphics.FromPdfPage(page);
+                gfx.DrawImage(xi, 0, 0, page.Width.Point, page.Height.Point);
+            }
         }
         doc.Info.Creator = "Convertino";
         doc.Save(dst);
@@ -262,6 +273,261 @@ public static class Pdfs
             job.Outputs.Add(dst);
         }
         job.Summary = "Rotated 90° clockwise";
+    }
+
+    // ---------- compress (Ghostscript, when installed) ----------
+
+    static string? _gs;
+    static bool _gsSearched;
+
+    /// <summary>Ghostscript's console binary: optional, like ffmpeg (AGPL, never bundled).</summary>
+    public static string? Ghostscript
+    {
+        get
+        {
+            if (_gsSearched) return _gs;
+            _gsSearched = true;
+            var candidates = new List<string>();
+            if (OperatingSystem.IsWindows())
+            {
+                foreach (var name in new[] { "gswin64c", "gswin32c", "gs" })
+                    if (Paths.Which(name) is { } p) candidates.Add(p);
+                foreach (var pf in new[] { Environment.SpecialFolder.ProgramFiles, Environment.SpecialFolder.ProgramFilesX86 })
+                {
+                    try
+                    {
+                        var root = Path.Combine(Environment.GetFolderPath(pf), "gs");
+                        if (Directory.Exists(root))
+                            candidates.AddRange(Directory.GetDirectories(root).OrderByDescending(d => d, StringComparer.OrdinalIgnoreCase)
+                                .SelectMany(d => new[] { Path.Combine(d, "bin", "gswin64c.exe"), Path.Combine(d, "bin", "gswin32c.exe") }));
+                    }
+                    catch { }
+                }
+            }
+            else
+            {
+                if (Paths.Which("gs") is { } p) candidates.Add(p);
+                candidates.AddRange(["/usr/bin/gs", "/usr/local/bin/gs", "/opt/homebrew/bin/gs"]);
+            }
+            _gs = candidates.FirstOrDefault(File.Exists);
+            Log.Info($"ghostscript: {_gs ?? "not found"}");
+            return _gs;
+        }
+    }
+
+    public static bool CanCompress => Ghostscript != null;
+
+    /// <summary>Re-distill with Ghostscript's /ebook preset; keeps the result only when it's really smaller.</summary>
+    public static async Task Compress(Job job)
+    {
+        var gs = Ghostscript ?? throw new InvalidOperationException(OperatingSystem.IsWindows()
+            ? "Ghostscript not found — install it with: winget install ArtifexSoftware.GhostScript"
+            : OperatingSystem.IsMacOS() ? "Ghostscript not found — install it with: brew install ghostscript"
+            : "Ghostscript not found — install it with your package manager (e.g. sudo apt install ghostscript)");
+        long before = 0, after = 0;
+        int n = job.Inputs.Count, smaller = 0;
+        for (int i = 0; i < n; i++)
+        {
+            var src = job.Inputs[i];
+            int pages = 1;
+            try { using var d = UglyToad.PdfPig.PdfDocument.Open(src); pages = Math.Max(1, d.NumberOfPages); } catch { }
+            var dst = Paths.Beside(src, "pdf", "(compressed)");
+            var tmp = Path.Combine(Path.GetDirectoryName(dst)!, $".{Guid.NewGuid():N}.pdf");
+            int idx = i;
+            try
+            {
+                await RunTool(gs, ["-sDEVICE=pdfwrite", "-dCompatibilityLevel=1.6", "-dPDFSETTINGS=/ebook", "-dNOPAUSE", "-dBATCH", "-dSAFER",
+                    "-dDetectDuplicateImages=true", "-dCompressFonts=true", $"-sOutputFile={tmp}", src],
+                    line => { if (line.StartsWith("Page ") && int.TryParse(line[5..].Trim(), out var p)) job.Report(idx, n, (double)p / pages); },
+                    job.Token);
+                long a = Paths.SizeOf(src), b = Paths.SizeOf(tmp);
+                before += a;
+                if (b > 0 && b < a * 0.97)
+                {
+                    File.Move(tmp, dst);
+                    job.Outputs.Add(dst);
+                    after += b;
+                    smaller++;
+                }
+                else after += a;
+            }
+            finally { try { if (File.Exists(tmp)) File.Delete(tmp); } catch { } }
+        }
+        if (smaller == 0)
+        {
+            job.Title = n == 1 ? "Already as small as it gets" : "Already as small as they get";
+            job.Summary = $"{Paths.HumanSize(before)} · Ghostscript couldn't shrink it";
+            return;
+        }
+        int pct = before > 0 ? (int)Math.Round(100.0 * (before - after) / before) : 0;
+        job.Summary = $"{Paths.HumanSize(before)} → {Paths.HumanSize(after)} (−{pct}%)";
+    }
+
+    static async Task RunTool(string exe, IEnumerable<string> args, Action<string>? onLine, CancellationToken ct)
+    {
+        var psi = new System.Diagnostics.ProcessStartInfo(exe)
+        {
+            RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false, CreateNoWindow = true,
+            StandardOutputEncoding = Encoding.UTF8, StandardErrorEncoding = Encoding.UTF8,
+        };
+        foreach (var a in args) psi.ArgumentList.Add(a);
+        using var p = new System.Diagnostics.Process { StartInfo = psi };
+        var err = new StringBuilder();
+        p.OutputDataReceived += (_, e) => { if (e.Data != null) onLine?.Invoke(e.Data); };
+        p.ErrorDataReceived += (_, e) => { if (e.Data != null) lock (err) err.AppendLine(e.Data); };
+        p.Start();
+        try { p.PriorityClass = System.Diagnostics.ProcessPriorityClass.BelowNormal; } catch { }
+        p.BeginOutputReadLine();
+        p.BeginErrorReadLine();
+        using (ct.Register(() => { try { p.Kill(true); } catch { } }))
+            await p.WaitForExitAsync(CancellationToken.None);
+        ct.ThrowIfCancellationRequested();
+        if (p.ExitCode != 0)
+        {
+            var msg = err.ToString().Trim();
+            throw new InvalidOperationException($"{Path.GetFileNameWithoutExtension(exe)} failed ({p.ExitCode}){(msg.Length > 0 ? ": " + msg.Split('\n')[^1].Trim() : "")}");
+        }
+    }
+
+    // ---------- images out of a PDF ----------
+
+    /// <summary>Every embedded image at its original quality: JPEG / JPEG 2000 streams as they are, the rest as PNG.</summary>
+    public static async Task ExtractImages(Job job)
+    {
+        int total = 0, skipped = 0;
+        for (int f = 0; f < job.Inputs.Count; f++)
+        {
+            var src = job.Inputs[f];
+            var stem = Path.GetFileNameWithoutExtension(src);
+            var outDir = Paths.UniqueDir(Path.GetDirectoryName(src)!, $"{stem} (images)");
+            int count = 0;
+            int fi = f;
+            await Task.Run(() =>
+            {
+                using var doc = UglyToad.PdfPig.PdfDocument.Open(src);
+                var seen = new HashSet<string>();
+                int pageCount = doc.NumberOfPages;
+                for (int p = 1; p <= pageCount; p++)
+                {
+                    job.Token.ThrowIfCancellationRequested();
+                    job.Report(fi, job.Inputs.Count, (double)(p - 1) / pageCount);
+                    int k = 0;
+                    foreach (var img in doc.GetPage(p).GetImages())
+                    {
+                        if (img.IsImageMask) continue; // 1-bit stencils, not pictures
+                        var raw = img.RawMemory.ToArray();
+                        byte[]? data = null;
+                        string ext = "png";
+                        if (raw.Length > 3 && raw[0] == 0xFF && raw[1] == 0xD8) { data = raw; ext = "jpg"; }
+                        else if (raw.Length > 12 && ((raw[4] == 'j' && raw[5] == 'P') || (raw[0] == 0xFF && raw[1] == 0x4F))) { data = raw; ext = "jp2"; }
+                        else if (img.TryGetPng(out var png)) data = png;
+                        if (data == null) { skipped++; continue; }
+                        if (!seen.Add(System.Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(data)))) continue;
+                        if (count == 0) Directory.CreateDirectory(outDir);
+                        k++;
+                        File.WriteAllBytes(Path.Combine(outDir, $"{stem} - p{p:D2}-{k}.{ext}"), data);
+                        count++;
+                    }
+                }
+            }, job.Token);
+            total += count;
+            if (count > 0) job.Outputs.Add(outDir);
+        }
+        if (total == 0)
+        {
+            job.Title = "No images in this PDF";
+            job.Summary = skipped > 0 ? $"{skipped} image(s) use an encoding that can't be saved" : "Only text and vector graphics";
+            return;
+        }
+        job.Summary = $"{total} image{(total == 1 ? "" : "s")}" + (skipped > 0 ? $" · {skipped} skipped (unsupported encoding)" : "");
+    }
+
+    // ---------- cover ----------
+
+    public static async Task Cover(Job job)
+    {
+        int n = job.Inputs.Count;
+        for (int i = 0; i < n; i++)
+        {
+            var src = job.Inputs[i];
+            int idx = i;
+            var pages = await RenderPages(src, 150, job.Token, p => job.Report(idx, n, p), maxPages: 1);
+            if (pages.Count == 0) throw new InvalidOperationException("Couldn't render the first page");
+            var dst = Paths.Beside(src, "png", "(cover)");
+            await File.WriteAllBytesAsync(dst, pages[0], job.Token);
+            job.Outputs.Add(dst);
+        }
+        job.Summary = n == 1 ? "First page · " + Paths.HumanSize(Paths.SizeOf(job.Outputs[0])) : $"{n} covers";
+    }
+
+    // ---------- page numbers ----------
+
+    /// <summary>
+    /// "3 / 12" centred at the bottom of every page, in the viewer's built-in Helvetica: no font file to embed, so it works
+    /// the same on every OS. Rotated pages get the number at the edge that is at the bottom when viewed.
+    /// </summary>
+    public static async Task PageNumbers(Job job)
+    {
+        foreach (var src in job.Inputs)
+        {
+            var dst = Paths.Beside(src, "pdf", "(numbered)");
+            int pages = 0;
+            await Task.Run(() =>
+            {
+                using var doc = PdfReader.Open(src, PdfDocumentOpenMode.Modify);
+                pages = doc.PageCount;
+                var font = new PdfDictionary(doc);
+                font.Elements.SetName("/Type", "/Font");
+                font.Elements.SetName("/Subtype", "/Type1");
+                font.Elements.SetName("/BaseFont", "/Helvetica");
+                font.Elements.SetName("/Encoding", "/WinAnsiEncoding");
+                doc.Internals.AddObject(font);
+                for (int i = 0; i < pages; i++)
+                {
+                    job.Token.ThrowIfCancellationRequested();
+                    job.Report(i, pages);
+                    StampNumber(doc.Pages[i], font, $"{i + 1} / {pages}");
+                }
+                doc.Save(dst);
+            }, job.Token);
+            job.Outputs.Add(dst);
+            job.Summary = $"{pages} page{(pages == 1 ? "" : "s")} numbered";
+        }
+    }
+
+    static void StampNumber(PdfPage page, PdfDictionary font, string text)
+    {
+        const string name = "/CvtPageNo";
+        var resources = page.Resources;
+        var fonts = resources.Elements.GetDictionary("/Font");
+        if (fonts == null)
+        {
+            fonts = new PdfDictionary(page.Owner);
+            resources.Elements["/Font"] = fonts;
+        }
+        fonts.Elements[name] = font.Reference;
+
+        var box = page.Elements.ContainsKey("/CropBox") ? page.CropBox : page.MediaBox;
+        double x1 = Math.Min(box.X1, box.X2), y1 = Math.Min(box.Y1, box.Y2), x2 = Math.Max(box.X1, box.X2), y2 = Math.Max(box.Y1, box.Y2);
+        double w = x2 - x1, h = y2 - y1;
+        int rot = ((page.Rotate % 360) + 360) % 360;
+        double viewW = rot is 90 or 270 ? h : w;
+        double size = Math.Clamp(viewW / 60, 8, 48), margin = size * 2.2;
+        // Helvetica advance widths (per 1000 em): digits 556, space and slash 278
+        double tw = text.Sum(c => char.IsDigit(c) ? 556 : 278) * size / 1000;
+        // text matrix per rotation: the run reads left-to-right at the bottom of the page as displayed
+        var (a, b, c, d, e, f) = rot switch
+        {
+            90 => (0.0, 1.0, -1.0, 0.0, x2 - margin, y1 + h / 2 - tw / 2),
+            180 => (-1.0, 0.0, 0.0, -1.0, x1 + w / 2 + tw / 2, y2 - margin),
+            270 => (0.0, -1.0, 1.0, 0.0, x1 + margin, y1 + h / 2 + tw / 2),
+            _ => (1.0, 0.0, 0.0, 1.0, x1 + w / 2 - tw / 2, y1 + margin),
+        };
+        string F(double v) => v.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture);
+        // wrap the page's own content in q/Q so a graphics state it leaves behind can't move or recolour the number
+        page.Contents.PrependContent().CreateStream(Encoding.ASCII.GetBytes("q\n"));
+        page.Contents.AppendContent().CreateStream(Encoding.ASCII.GetBytes(
+            $"Q\nq BT {name} {F(size)} Tf 0.35 g {F(a)} {F(b)} {F(c)} {F(d)} {F(e)} {F(f)} Tm ({text}) Tj ET Q\n"));
     }
 
     public static async Task Clean(Job job)

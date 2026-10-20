@@ -82,6 +82,7 @@ public sealed class App : Application
             BuildTray();
             platform.SetAutostart(Settings.Current.LaunchAtStartup);
             StartIpc();
+            Watches.StartAll();
         }
         Log.Info($"Convertino {Cli.Version} (Linux) started; session={Environment.GetEnvironmentVariable("XDG_SESSION_TYPE")} x11={x11}");
 

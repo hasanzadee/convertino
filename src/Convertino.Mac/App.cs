@@ -89,6 +89,7 @@ public sealed class App : Application
             };
             platform.SetAutostart(Settings.Current.LaunchAtStartup);
             StartIpc();
+            Watches.StartAll();
         }
         bool listen = ListenAccess();
         Log.Info($"Convertino {Cli.Version} (macOS {Environment.OSVersion.Version}, {System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture}) started; input-monitoring={listen}");

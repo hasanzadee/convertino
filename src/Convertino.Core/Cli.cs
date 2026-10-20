@@ -13,7 +13,7 @@ public static class Cli
     public static readonly string Version = typeof(Cli).Assembly.GetName().Version?.ToString(3) ?? "1.0.0";
 
     public static bool IsCommand(string[] args) =>
-        args.Length > 0 && args[0] is "convert" or "run" or "actions" or "model" or "--help" or "-h" or "help" or "--version" or "-v";
+        args.Length > 0 && args[0] is "convert" or "run" or "actions" or "model" or "watch" or "--help" or "-h" or "help" or "--version" or "-v";
 
     public static async Task<int> Run(string[] args, TextWriter? output = null)
     {
@@ -74,6 +74,8 @@ public static class Cli
                 case "run":
                     if (args.Length < 3) { o.WriteLine("usage: convertino run <action-id> <files…>"); return 2; }
                     return await RunAction(args[1], args.Skip(2), o);
+                case "watch":
+                    return await Watch(args.Skip(1).ToArray(), o);
             }
         }
         catch (Exception ex)
@@ -101,6 +103,77 @@ public static class Cli
         if (!string.IsNullOrEmpty(job.Title)) o.WriteLine(job.Title);
         if (!string.IsNullOrEmpty(job.Summary)) o.WriteLine(job.Summary);
         return 0;
+    }
+
+    const string WatchUsage = """
+        usage: convertino watch <folder> --to <format> | --run <action> [--out <subfolder>]   watch in the foreground (Ctrl+C stops)
+               convertino watch add <folder> --to <format> | --run <action> [--out <subfolder>] watched by the desktop app
+               convertino watch list
+               convertino watch remove <folder>
+        """;
+
+    static async Task<int> Watch(string[] a, TextWriter o)
+    {
+        if (a.Length == 0) { o.WriteLine(WatchUsage); return 2; }
+        switch (a[0])
+        {
+            case "list":
+            {
+                var list = Watches.Load();
+                if (list.Count == 0) o.WriteLine("no watched folders - add one with: convertino watch add <folder> --to pdf");
+                foreach (var w in list) o.WriteLine($"{w.Path}  →  {Watches.LabelOf(w.Action)} ({w.Action}), results in {w.Out}{(Directory.Exists(w.Path) ? "" : "   [missing]")}");
+                return 0;
+            }
+            case "remove":
+            {
+                if (a.Length < 2) { o.WriteLine(WatchUsage); return 2; }
+                bool removed = Watches.Remove(a[1]);
+                o.WriteLine(removed ? $"stopped watching {Path.GetFullPath(a[1])}" : $"not watched: {a[1]}");
+                return removed ? 0 : 2;
+            }
+            case "add":
+            {
+                var wf = ParseWatch(a.Skip(1).ToArray(), o);
+                if (wf == null) return 2;
+                Watches.Add(wf);
+                o.WriteLine($"watching {wf.Path} → {Watches.LabelOf(wf.Action)}; results go to {Path.Combine(wf.Path, wf.Out)}");
+                o.WriteLine("the desktop app picks this up right away (start it if it isn't running)");
+                return 0;
+            }
+            default:
+            {
+                var wf = ParseWatch(a, o);
+                if (wf == null) return 2;
+                o.WriteLine($"watching {wf.Path} → {Watches.LabelOf(wf.Action)}; results go to {Path.Combine(wf.Path, wf.Out)}. Ctrl+C stops.");
+                var stop = new TaskCompletionSource();
+                ConsoleCancelEventHandler h = (_, e) => { e.Cancel = true; stop.TrySetResult(); };
+                Console.CancelKeyPress += h;
+                using (new Watcher(wf, job =>
+                       {
+                           lock (o) foreach (var f in job.Outputs) o.WriteLine($"{DateTime.Now:HH:mm:ss}  {f}" + (job.Summary is { Length: > 0 } s ? $"   {s}" : ""));
+                       }))
+                    await stop.Task;
+                Console.CancelKeyPress -= h;
+                return 0;
+            }
+        }
+    }
+
+    static WatchFolder? ParseWatch(string[] a, TextWriter o)
+    {
+        if (a.Length < 3) { o.WriteLine(WatchUsage); return null; }
+        var dir = Path.GetFullPath(a[0]);
+        if (!Directory.Exists(dir)) { o.WriteLine($"not a folder: {a[0]}"); return null; }
+        string? action = null, outDir = "Converted";
+        for (int i = 1; i < a.Length - 1; i++)
+        {
+            if (a[i] == "--to") action = "to-" + a[++i].TrimStart('.').ToLowerInvariant();
+            else if (a[i] == "--run") action = a[++i];
+            else if (a[i] == "--out") outDir = a[++i];
+        }
+        if (action == null) { o.WriteLine(WatchUsage); return null; }
+        if (outDir.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0 || outDir is "." or "..") { o.WriteLine("--out takes a subfolder name"); return null; }
+        return new WatchFolder { Path = dir, Action = action, Out = outDir };
     }
 
     static List<string>? Files(IEnumerable<string> paths, TextWriter o)
@@ -131,6 +204,7 @@ public static class Cli
               convertino convert <files…> --to <format>    e.g. convertino convert IMG_1234.HEIC --to jpg
               convertino run <action> <files…>             e.g. convertino run compress *.png
               convertino actions <files…>                  list what's possible for these files
+              convertino watch <folder> --to <format>      convert every new file in a folder (also: watch add|list|remove)
               convertino model install                     download the offline AI model for Cut out (224 MB)
               convertino --version
             """);

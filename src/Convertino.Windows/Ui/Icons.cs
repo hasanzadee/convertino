@@ -11,6 +11,7 @@ public static class Icons
         ["mute"] = "", ["camera"] = "", ["resize"] = "", ["volume"] = "", ["folder"] = "",
         ["copy"] = "", ["update"] = "\uE896", ["cutout"] = "",
         ["half"] = "", ["fithd"] = "", ["gray"] = "",
+        ["picture"] = "",
     };
 
     public static string? Glyph(string? key) => key != null && Map.TryGetValue(key, out var g) ? g : null;
