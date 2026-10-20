@@ -142,6 +142,14 @@ public sealed class Settings
     public string Theme { get; set; } = "Mocha";
     public bool Notifications { get; set; } = true;
     public bool DoubleShift { get; set; } = true;
+    /// <summary>Stored by name, so an unknown value (from a newer version) falls back to Shift instead of failing the whole file.</summary>
+    public string Trigger { get; set; } = nameof(TriggerKey.Shift);
+    [JsonIgnore]
+    public TriggerKey TriggerKey
+    {
+        get => Enum.TryParse<TriggerKey>(Trigger, true, out var k) && Enum.IsDefined(k) ? k : TriggerKey.Shift;
+        set => Trigger = value.ToString();
+    }
     public bool LaunchAtStartup { get; set; } = true;
     public bool FirstRunDone { get; set; }
     public int JpegQuality { get; set; } = 90;

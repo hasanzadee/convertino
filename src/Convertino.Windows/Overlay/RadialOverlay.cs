@@ -54,8 +54,8 @@ public sealed class RadialWindow : Window
 }
 
 /// <summary>
-/// The whole interaction: drag a file anywhere, tap Shift → the flower blooms under the cursor,
-/// drop on a petal → the action runs. Shift again flips between Convert and Tools.
+/// The whole interaction: drag a file anywhere, tap the trigger key (Shift by default, see <see cref="TriggerKey"/>)
+/// → the flower blooms under the cursor, drop on a petal → the action runs. The key again flips between Convert and Tools.
 /// Double-tap Shift in Explorer opens the same flower for the selected files (click mode).
 /// </summary>
 public sealed class OverlayController
@@ -92,7 +92,7 @@ public sealed class OverlayController
         _releaseTimer.Tick += (_, _) => { _releaseTimer.Stop(); if (_state is State.Seed or State.Drag) Hide(); };
         _leaveTimer.Tick += (_, _) => { _leaveTimer.Stop(); if (_state == State.Drag) Hide(); };
 
-        input.ShiftDown += OnShiftDown;
+        input.TriggerDown += OnTriggerDown;
         input.ShiftDoubleTap += OnDoubleShift;
         input.MouseUp += _ => { if (_state is State.Seed or State.Drag) _releaseTimer.Start(); };
         input.MouseDown += p => { if (_state == State.Click && !_win.ContainsScreenPoint(p)) Hide(); };
@@ -103,7 +103,9 @@ public sealed class OverlayController
 
     // ---------- triggers ----------
 
-    void OnShiftDown(bool dragging, POINT pt)
+    readonly TriggerGate _gate = new();
+
+    void OnTriggerDown(bool dragging, POINT pt)
     {
         if (!Settings.Current.Enabled) return;
         if (Visible)
@@ -111,7 +113,7 @@ public sealed class OverlayController
             if (_state != State.Seed) FlipPage();
             return;
         }
-        if (_state == State.Hidden && dragging) ShowAt(pt, State.Seed);
+        if (_state == State.Hidden && dragging && _gate.Opens(Settings.Current.TriggerKey)) ShowAt(pt, State.Seed);
     }
 
     void OnDoubleShift(POINT pt)
@@ -333,6 +335,8 @@ public sealed class OverlayController
     int _described = int.MinValue;
 
     /// <summary>Drag feedback under Explorer's drag image: "Convert to PNG", "Crop", or "Drop on a petal".</summary>
+    static string ToolsKey() => Settings.Current.TriggerKey.Modifier() == ModifierKey.Shift ? "⇧" : Settings.Current.TriggerKey.KeyName();
+
     DragDropEffects Feedback(DragEventArgs e)
     {
         var pos = e.GetPosition(_win);
@@ -350,7 +354,7 @@ public sealed class OverlayController
                 if (a.Icon == null) Shell.SetDropDescription(e.Data, 1, "Convert to %1", a.Label);
                 else Shell.SetDropDescription(e.Data, 1, "%1", a.Verb);
             }
-            else Shell.SetDropDescription(e.Data, 0, _pages?.Tools.Count > 0 ? "Drop on a petal · ⇧ for tools" : "Drop on a petal");
+            else Shell.SetDropDescription(e.Data, 0, _pages?.Tools.Count > 0 ? $"Drop on a petal · {ToolsKey()} for tools" : "Drop on a petal");
         }
         return effect;
     }

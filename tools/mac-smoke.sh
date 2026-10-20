@@ -103,6 +103,13 @@ CONVERTINO_DEBUG=1 CONVERTINO_PIN=420,360 CONVERTINO_PIN_FILE="$WORK/smoke.png" 
 sleep 8
 running || { echo "app exited:"; cat "$OUT/app-stdout.txt"; cat "$LOG"; exit 1; }
 shot 1-pinned
+
+# the name Activity Monitor and the Force Quit list show (LaunchServices display name), not "Avalonia"
+asn=$(lsappinfo find pid="$(pgrep -f "Convertino.app/Contents/MacOS/convertino" | head -1)" 2>/dev/null || true)
+lsname=$([ -n "$asn" ] && lsappinfo info -only name "$asn" 2>/dev/null || true)
+echo "LaunchServices name: ${lsname:-?}"
+if [ -z "$lsname" ]; then echo "::warning::lsappinfo couldn't read the app name"
+elif ! printf '%s' "$lsname" | grep -q '"Convertino"'; then echo "the process shows up as $lsname, expected Convertino"; exit 1; fi
 wid=$(grep -o "overlay window=[0-9]*" "$LOG" | tail -1 | grep -o "[0-9]*$" || true)
 [ -n "$wid" ] && screencapture -x -o -l "$wid" "$OUT/1-pinned-window.png" 2>/dev/null || true
 grep "overlay window=" "$LOG" | tail -1 || true

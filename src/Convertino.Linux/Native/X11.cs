@@ -70,6 +70,7 @@ public static unsafe class X11
     public const uint Button1Mask = 1 << 8, Button3Mask = 1 << 10, ShiftMask = 1;
 
     public const int XK_Shift_L = 0xffe1, XK_Shift_R = 0xffe2, XK_Escape = 0xff1b;
+    public const int XK_Control_L = 0xffe3, XK_Control_R = 0xffe4, XK_Alt_L = 0xffe9, XK_Alt_R = 0xffea;
 
     [StructLayout(LayoutKind.Sequential)]
     public struct XRectangle { public short x, y; public ushort width, height; }
@@ -150,9 +151,10 @@ public sealed unsafe class X11Input : IDisposable
     Thread? _thread;
     volatile bool _run = true;
     public IntPtr Display { get; private set; }
-    byte _shiftL, _shiftR, _esc;
+    byte _shiftL, _shiftR, _ctrlL, _ctrlR, _altL, _altR, _esc;
 
-    public event Action<bool, ScreenPoint>? ShiftDown;   // dragging?, where
+    /// <summary>The trigger key (Shift, Ctrl or Alt, from the settings) went down. Args: dragging?, where.</summary>
+    public event Action<bool, ScreenPoint>? TriggerDown;
     public event Action<ScreenPoint>? ButtonDown;
     public event Action<ScreenPoint>? ButtonUp;
     public event Action? Escape;
@@ -169,6 +171,10 @@ public sealed unsafe class X11Input : IDisposable
         if (Display == IntPtr.Zero) return false;
         _shiftL = X11.XKeysymToKeycode(Display, X11.XK_Shift_L);
         _shiftR = X11.XKeysymToKeycode(Display, X11.XK_Shift_R);
+        _ctrlL = X11.XKeysymToKeycode(Display, X11.XK_Control_L);
+        _ctrlR = X11.XKeysymToKeycode(Display, X11.XK_Control_R);
+        _altL = X11.XKeysymToKeycode(Display, X11.XK_Alt_L);
+        _altR = X11.XKeysymToKeycode(Display, X11.XK_Alt_R);
         _esc = X11.XKeysymToKeycode(Display, X11.XK_Escape);
         _thread = new Thread(Loop) { IsBackground = true, Name = "Convertino X11 input" };
         _thread.Start();
@@ -190,7 +196,7 @@ public sealed unsafe class X11Input : IDisposable
     void Loop()
     {
         var keys = stackalloc byte[32];
-        bool lDown = false, rDown = false, dragging = false, shift = false, esc = false;
+        bool lDown = false, rDown = false, dragging = false, trigger = false, esc = false;
         int downX = 0, downY = 0;
         while (_run)
         {
@@ -202,7 +208,13 @@ public sealed unsafe class X11Input : IDisposable
             }
             bool l = (mask & X11.Button1Mask) != 0;
             bool r = (mask & X11.Button3Mask) != 0;
-            bool s = Key(keys, _shiftL) || Key(keys, _shiftR);
+            var (k1, k2) = Settings.Current.TriggerKey.Modifier() switch
+            {
+                ModifierKey.Ctrl => (_ctrlL, _ctrlR),
+                ModifierKey.Alt => (_altL, _altR),
+                _ => (_shiftL, _shiftR),
+            };
+            bool t = Key(keys, k1) || Key(keys, k2);
             bool e = Key(keys, _esc);
             var pt = new ScreenPoint(x, y);
 
@@ -213,8 +225,8 @@ public sealed unsafe class X11Input : IDisposable
             if (l && !dragging && (Math.Abs(x - downX) > 6 || Math.Abs(y - downY) > 6)) { dragging = true; if (Overlay.OverlayController.Diag) Log.Info("x11 dragging"); }
             lDown = l;
 
-            if (s && !shift) { bool d = dragging && l; _post(() => ShiftDown?.Invoke(d, pt)); if (Overlay.OverlayController.Diag) Log.Info($"x11 shift d={d}"); }
-            shift = s;
+            if (t && !trigger) { bool d = dragging && l; _post(() => TriggerDown?.Invoke(d, pt)); if (Overlay.OverlayController.Diag) Log.Info($"x11 trigger d={d}"); }
+            trigger = t;
             if (e && !esc) _post(() => Escape?.Invoke());
             esc = e;
 
