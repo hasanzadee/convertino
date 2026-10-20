@@ -44,6 +44,8 @@ public sealed class TrayPanel : Window
     ScrollViewer? _scroll;
     bool _animate; // only the build that opens the panel plays the intro
     bool _hiding, _top;
+    bool _settled; // the slide-in has played: the swatches are where a click finds them
+    string? _logged;
     double _shownAt = -1e9, _hiddenAt = -1e9;
     ScreenPoint? _anchor;
 
@@ -69,7 +71,10 @@ public sealed class TrayPanel : Window
             if (!IsVisible || _hiding) return;
             Rebuild();
             if (OverlayController.Diag) Log.Info($"panel theme {Skin.Current.Name}");
+            LogSwatches();
         };
+        PositionChanged += (_, _) => LogSwatches();
+        SizeChanged += (_, _) => LogSwatches();
     }
 
     void Rebuild()
@@ -108,17 +113,31 @@ public sealed class TrayPanel : Window
         Place(); // SizeToContent has settled now
         Activate();
         _shownAt = Now;
+        _settled = false;
+        _logged = null;
         _slide.Y = _top ? -24 : 24;
-        Animate(0, 300, CubicOut, v => _slide.Y = (_top ? -24 : 24) * (1 - v));
+        Animate(0, 300, CubicOut, v => _slide.Y = (_top ? -24 : 24) * (1 - v), () => { _settled = true; LogSwatches(); });
         Animate(0, 200, t => t, v => Opacity = v);
-        // X11 reports the new position only once the server confirms the move; the swatch centres let tests click them
-        if (OverlayController.Diag)
-            DispatcherTimer.RunOnce(() =>
-            {
-                string Centre(Control c) { var p = c.PointToScreen(new Point(c.Bounds.Width / 2, 23)); return $"{p.X},{p.Y}"; }
-                Log.Info($"panel at {Position} {Bounds.Width}x{Bounds.Height} top={_top} empty={_stats?.IsEmpty} swatches "
-                    + string.Join(" ", _chips.Select(c => $"{c.Key}={Centre(c.Value)}")));
-            }, TimeSpan.FromMilliseconds(400));
+    }
+
+    /// <summary>
+    /// Diag: where the swatches are on screen, so tests can click them. Logged once the slide-in has played, then
+    /// again whenever the window moves, resizes or restyles: the window settles after Show on its own time (X11
+    /// confirms a move later, macOS lets SizeToContent grow it once shown), so the last line is where they are.
+    /// </summary>
+    void LogSwatches()
+    {
+        if (!OverlayController.Diag || !_settled) return;
+        Dispatcher.UIThread.Post(() =>
+        {
+            if (!IsVisible || _hiding || !_settled) return;
+            string Centre(Control c) { var p = c.PointToScreen(new Point(c.Bounds.Width / 2, 23)); return $"{p.X},{p.Y}"; }
+            var line = $"panel at {Position} {Bounds.Width}x{Bounds.Height} top={_top} empty={_stats?.IsEmpty} swatches "
+                + string.Join(" ", _chips.Select(c => $"{c.Key}={Centre(c.Value)}"));
+            if (line == _logged) return;
+            _logged = line;
+            Log.Info(line);
+        }, DispatcherPriority.Background);
     }
 
     public void HideAnimated()
