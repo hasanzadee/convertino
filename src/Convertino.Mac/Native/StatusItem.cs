@@ -44,6 +44,24 @@ public static unsafe class StatusItem
         catch (Exception ex) { Log.Error("status item click", ex); return false; }
     }
 
+    /// <summary>
+    /// Whether a point (points, top-left origin, like CGEventGetLocation) is on the item. The global input poller
+    /// sees the same press as a click outside the panel, sometimes only after the panel has opened.
+    /// </summary>
+    public static bool Contains(ScreenPoint p)
+    {
+        if (_button == IntPtr.Zero) return false;
+        try
+        {
+            var f = ObjC.SendRect(ObjC.Send(_button, "window"), "frame");
+            var screens = ObjC.Send(ObjC.Class("NSScreen"), "screens");
+            if (ObjC.Count(screens) == 0) return false;
+            double top = ObjC.SendRect(ObjC.At(screens, 0), "frame").Height - (f.Y + f.Height); // Cocoa counts from the bottom
+            return p.X >= f.X && p.X < f.X + f.Width && p.Y >= top && p.Y < top + f.Height;
+        }
+        catch (Exception ex) { Log.Error("status item frame", ex); return false; }
+    }
+
     /// <summary>Shows the item pressed while the panel is open, like the system's own menu-bar panels.</summary>
     public static void Highlight(bool on)
     {

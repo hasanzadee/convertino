@@ -71,7 +71,8 @@ public sealed class App : Application
                 MacWindow.Float(_panel, MacWindow.StatusLevel);
                 if (OverlayController.Diag) Log.Info("panel " + MacWindow.Describe(_panel));
             };
-            input.ButtonDown += p => _panel.ClickAt(p);
+            // a press on the menu-bar item toggles the panel itself (below), or opens the menu, which closes it
+            input.ButtonDown += p => { if (!StatusItem.Contains(p)) _panel.ClickAt(p); };
             input.Escape += () => _panel.HideAnimated();
             BuildTray();
             // a click on the menu-bar item opens the panel (right-click / Ctrl-click: the menu), like on Windows
@@ -233,7 +234,12 @@ public sealed class App : Application
             // Avalonia.Native hands the tooltip to the status item as it attaches: a null one crashes
             _tray = new TrayIcon { Icon = new WindowIcon(ms), ToolTipText = tip, Menu = menu, IsVisible = true };
             TrayIcon.SetIcons(this, [_tray]);
-            if (OverlayController.Diag) menu.Opening += (_, _) => Log.Info("tray menu opening");
+            // the menu (right-click, Ctrl-click) takes the panel's place
+            menu.Opening += (_, _) =>
+            {
+                if (OverlayController.Diag) Log.Info("tray menu opening");
+                _panel?.HideAnimated();
+            };
             return;
         }
         // later calls refresh the same status item (a new one could land somewhere else in the menu bar)

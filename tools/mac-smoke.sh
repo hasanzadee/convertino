@@ -197,19 +197,24 @@ centre=$(awk -v x="$ix" -v y="$iy" -v w="$iw" -v h="$ih" 'BEGIN { if (w > 0 && h
 [ -n "$centre" ] || { echo "System Events gave no position for the menu-bar item"; exit 1; }
 read -r cx cy <<< "$centre"
 count() { grep -c "$1" "$LOG" || true; }
+visible() { grep -o "panel visible=[A-Za-z]*" "$LOG" | tail -1 | cut -d= -f2; }
+fail() { echo "$1"; grep -E "panel|status item|tray menu|button" "$LOG" | tail -12; exit 1; }
 before=$(count "panel window=")
 limit 20 "$WORK/click" "$cx" "$cy"
 sleep 2
 shot 2e-panel-from-click
-grep -E "status item|panel visible" "$LOG" | tail -2 || true
-if [ "$(count "panel window=")" -gt "$before" ]; then echo "a click on the menu-bar item opened the panel"
-else echo "a click on the menu-bar item didn't open the panel"; grep -E "panel|status|tray|button" "$LOG" | tail -10; exit 1; fi
+[ "$(count "panel window=")" -gt "$before" ] || fail "a click on the menu-bar item didn't open the panel"
+[ "$(visible)" = True ] || fail "the panel opened from the menu-bar item closed again by itself"
+echo "a click on the menu-bar item opened the panel (still open 2 s later)"
 # a second click closes it again
 limit 20 "$WORK/click" "$cx" "$cy"
 sleep 1.5
-case "$(grep "panel visible=" "$LOG" | tail -1)" in *False) echo "a second click closed it" ;;
-  *) echo "::warning::a second click on the menu-bar item didn't close the panel" ;; esac
+[ "$(visible)" = False ] || fail "a second click on the menu-bar item didn't close the panel"
+echo "a second click closed it"
 for how in right ctrl; do
+  # the menu takes the panel's place
+  limit 20 "$WORK/click" "$cx" "$cy"
+  sleep 1.5
   opened=$(count "tray menu opening")
   limit 20 "$WORK/click" "$cx" "$cy" "$how"
   sleep 1.5
@@ -218,8 +223,9 @@ for how in right ctrl; do
   sleep 1
   if [ "$(count "tray menu opening")" -gt "$opened" ]; then echo "$how-click opened the menu"
   else echo "::warning::$how-click on the menu-bar item didn't open the menu"; fi
+  [ "$(visible)" = False ] && echo "and closed the panel" || echo "::warning::the panel stayed open under the $how-click menu"
 done
-grep -E "status item|tray menu|panel visible" "$LOG" | tail -6 || true
+grep -E "status item|tray menu|panel visible" "$LOG" | tail -12 || true
 pkill -f "Convertino.app/Contents/MacOS/convertino" || true
 sleep 1
 
