@@ -291,7 +291,7 @@ public static class Catalog
                     ring.Add(Tool("minify", "Minify", "compress", "Minify", Data.Minify));
                 }
                 ring.Add(Tool("copytext", "Copy", "copy", "Copy contents", CopyText, quick: true));
-                tools.AddRange([ZipA, PathA, HashA]);
+                tools.AddRange([ZipA, PathA, HashA, B64A]);
                 break;
             }
             case Kind.Archive:

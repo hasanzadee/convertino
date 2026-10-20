@@ -78,6 +78,7 @@ public static class Misc
             ".png" => "image/png", ".jpg" or ".jpeg" => "image/jpeg", ".gif" => "image/gif", ".webp" => "image/webp",
             ".svg" => "image/svg+xml", ".pdf" => "application/pdf", ".json" => "application/json", ".txt" => "text/plain",
             ".woff2" => "font/woff2", ".ico" => "image/x-icon",
+            ".css" => "text/css", ".xml" => "application/xml", ".yaml" or ".yml" => "application/yaml", ".toml" => "application/toml",
             _ => "application/octet-stream",
         };
         Platform.Current.SetClipboardText($"data:{mime};base64,{Convert.ToBase64String(bytes)}");
