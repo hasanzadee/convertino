@@ -275,6 +275,8 @@ public static class Cutout
             throw new PlatformNotSupportedException("this ONNX Runtime build has no Core ML provider");
         var cache = CoreMLCache();
         note = Directory.EnumerateFileSystemEntries(cache).Any() ? " (compiled Core ML program from the cache)" : " (first load: compiling the Core ML program)";
+        var model = ExplicitConvPads(File.ReadAllBytes(ModelPath), out int padded);
+        note += $", {padded} Convs given explicit pads";
         // INFO on this session only, so Core ML's partition summary reaches OrtLogging (it's a warning only when split)
         using var o = new SessionOptions { GraphOptimizationLevel = GraphOptimizationLevel.ORT_ENABLE_ALL, LogSeverityLevel = OrtLoggingLevel.ORT_LOGGING_LEVEL_INFO };
         o.AppendExecutionProvider("CoreML", new Dictionary<string, string>
@@ -283,15 +285,22 @@ public static class Cutout
             ["MLComputeUnits"] = "ALL",
             ["ModelCacheDirectory"] = cache,
         });
-        return new InferenceSession(ModelPath, o);
+        try { return new InferenceSession(model, o); }
+        catch
+        {
+            // a partition that failed to compile leaves a package behind that later loads would take as cached
+            DeleteCoreMLCaches();
+            throw;
+        }
     }
 
-    // ONNX Runtime trusts whatever sits in the Core ML cache, so the folder is keyed on the model and the runtime version;
-    // a new key clears the old folders
+    // ONNX Runtime trusts whatever sits in the Core ML cache, so the folder is keyed on the model, the runtime version and
+    // the way this file prepares the model (bump CoreMLPrep when that changes); a new key clears the old folders
     const string CoreMLCachePrefix = "coreml-";
+    const int CoreMLPrep = 1;
     static string CoreMLCache()
     {
-        var dir = Path.Combine(Path.GetDirectoryName(ModelPath)!, $"{CoreMLCachePrefix}{ModelSha256[..12].ToLowerInvariant()}-ort{OrtEnv.Instance().GetVersionString()}");
+        var dir = Path.Combine(Path.GetDirectoryName(ModelPath)!, $"{CoreMLCachePrefix}{ModelSha256[..12].ToLowerInvariant()}-ort{OrtEnv.Instance().GetVersionString()}-p{CoreMLPrep}");
         if (!Directory.Exists(dir))
         {
             DeleteCoreMLCaches();
@@ -331,6 +340,128 @@ public static class Cutout
             OrtEnv.CreateInstanceWithOptions(ref env);
         }
         catch (Exception ex) { Log.Error("cutout: ONNX Runtime keeps logging to stderr", ex); }
+    }
+
+    /// <summary>
+    /// For Core ML: ONNX Runtime's ML Program builder turns a Conv that leaves <c>pads</c> at its all-zero default into
+    /// <c>pad_type = valid</c> with no <c>pad</c> tensor, which Core ML rejects ("Required param 'pad' is missing") —
+    /// BiRefNet's deformable convs are such Convs. Spelling the default out (pads = 0) is the same op and takes the
+    /// builder's explicit-pads path. A minimal protobuf edit: ModelProto.graph (7) → GraphProto.node (1) → NodeProto.attribute (5).
+    /// </summary>
+    static byte[] ExplicitConvPads(byte[] model, out int patched)
+    {
+        patched = 0;
+        int graphAt = -1, gs = 0, ge = 0;
+        for (int i = 0; i < model.Length;)
+        {
+            int at = i;
+            var (f, w, s, e) = NextField(model, ref i);
+            if (f == 7 && w == 2) { graphAt = at; gs = s; ge = e; break; }
+        }
+        if (graphAt < 0) return model;
+
+        var edits = new List<(int at, int end, byte[] node)>();
+        for (int i = gs; i < ge;)
+        {
+            int at = i;
+            var (f, w, s, e) = NextField(model, ref i);
+            int dims = f == 1 && w == 2 ? DefaultPaddedConvDims(model, s, e) : 0;
+            if (dims == 0) continue;
+            // AttributeProto { name (1) = "pads", ints (8) = 0 × 2·dims, type (20) = INTS }, as NodeProto.attribute (5)
+            var attr = new List<byte> { 0x0A, 4, (byte)'p', (byte)'a', (byte)'d', (byte)'s' };
+            for (int k = 0; k < dims * 2; k++) attr.AddRange([0x40, 0]);
+            attr.AddRange([0xA0, 0x01, 7]);
+            attr.InsertRange(0, [0x2A, (byte)attr.Count]);
+            var node = new List<byte> { 0x0A };
+            AppendVarint(node, (ulong)(e - s + attr.Count));
+            node.AddRange(model.AsSpan(s, e - s));
+            node.AddRange(attr);
+            edits.Add((at, i, node.ToArray()));
+        }
+        if (edits.Count == 0) return model;
+
+        long graphLen = ge - gs + edits.Sum(x => (long)x.node.Length - (x.end - x.at));
+        var head = new List<byte> { 0x3A };
+        AppendVarint(head, (ulong)graphLen);
+        var result = new byte[checked(graphAt + head.Count + graphLen + model.Length - ge)];
+        int o = 0, from = gs;
+        void Put(ReadOnlySpan<byte> span) { span.CopyTo(result.AsSpan(o)); o += span.Length; }
+        Put(model.AsSpan(0, graphAt));
+        Put(head.ToArray());
+        foreach (var (at, end, node) in edits)
+        {
+            Put(model.AsSpan(from, at - from));
+            Put(node);
+            from = end;
+        }
+        Put(model.AsSpan(from, model.Length - from));
+        patched = edits.Count;
+        return result;
+    }
+
+    /// <summary>Spatial dimensions of a NodeProto that is a Conv with neither <c>pads</c> nor <c>auto_pad</c>, else 0.</summary>
+    static int DefaultPaddedConvDims(byte[] b, int start, int end)
+    {
+        bool conv = false, other = false;
+        int dims = 0;
+        for (int i = start; i < end;)
+        {
+            var (f, w, s, e) = NextField(b, ref i);
+            var v = b.AsSpan(s, e - s);
+            if (f == 4) conv = v.SequenceEqual("Conv"u8);
+            else if (f == 7) other = !(v.IsEmpty || v.SequenceEqual("ai.onnx"u8));
+            else if (f == 5)
+            {
+                for (int j = s; j < e;)
+                {
+                    var (af, aw, x, y) = NextField(b, ref j);
+                    var name = b.AsSpan(x, y - x);
+                    if (af == 1 && (name.SequenceEqual("pads"u8) || name.SequenceEqual("auto_pad"u8))) return 0;
+                    if (af == 1 && name.SequenceEqual("kernel_shape"u8))
+                        for (int k = s; k < e;)
+                        {
+                            var (kf, kw, p, q) = NextField(b, ref k);
+                            if (kf != 8) continue;
+                            if (kw == 0) dims++;
+                            else for (int r = p; r < q;) { Varint(b, ref r); dims++; }
+                        }
+                }
+            }
+        }
+        return conv && !other && dims is > 0 and <= 8 ? dims : 0;
+    }
+
+    /// <summary>One protobuf field at <paramref name="i"/>: its number, wire type and payload range; moves past it.</summary>
+    static (int field, int wire, int start, int end) NextField(byte[] b, ref int i)
+    {
+        ulong key = Varint(b, ref i);
+        int field = (int)(key >> 3), wire = (int)(key & 7), s = i;
+        switch (wire)
+        {
+            case 0: Varint(b, ref i); break;
+            case 1: i += 8; break;
+            case 2: { int n = checked((int)Varint(b, ref i)); s = i; i += n; break; }
+            case 5: i += 4; break;
+            default: throw new InvalidDataException($"protobuf wire type {wire}");
+        }
+        return (field, wire, s, i);
+    }
+
+    static ulong Varint(byte[] b, ref int i)
+    {
+        ulong v = 0;
+        for (int shift = 0; ; shift += 7)
+        {
+            byte c = b[i++];
+            v |= (ulong)(c & 0x7F) << shift;
+            if (c < 0x80) return v;
+        }
+    }
+
+    static void AppendVarint(List<byte> to, ulong v)
+    {
+        for (; v >= 0x80; v >>= 7) to.Add((byte)(v | 0x80));
+        to.Add((byte)v);
     }
 
     static void Unload()

@@ -52,19 +52,27 @@ cp smoke.jpg "$OUT/pdf-render.jpg"
 if [ -n "${CUTOUT:-}" ]; then
   step "Cut out: Core ML (first load compiles, second uses the cache) vs the CPU"
   "$D" model install | tail -1
-  # a photo with a clear subject: one of macOS's account pictures (animals first), else the app icon
-  pics="$(find "/Library/User Pictures" -type f \( -iname '*.heic' -o -iname '*.jpg' -o -iname '*.png' -o -iname '*.tif' \) 2>/dev/null | sort || true)"
-  pic="$({ grep -i '/animals/' <<<"$pics"; echo "$pics"; } | grep -m1 . || true)"
-  if [ -n "$pic" ] && sips -s format png "$pic" --out cut.png >/dev/null 2>&1 && [ -s cut.png ]; then echo "picture: $pic"
-  else echo "picture: the app icon (no account pictures on this Mac)"; cp smoke.png cut.png; fi
+  # a photo with a clear subject: the National Geographic screen-saver set or the account pictures, else a desktop picture
+  pics="$(find "/System/Library/Screen Savers/Default Collections" "/Library/User Pictures" "/System/Library/Desktop Pictures" \
+    -type f \( -iname '*.heic' -o -iname '*.jpg' -o -iname '*.png' \) 2>/dev/null | sort || true)"
+  sed 's|/[^/]*$||' <<<"$pics" | uniq -c || true
+  pic="$({ grep -i 'national geographic' <<<"$pics"; grep -i '/animals/' <<<"$pics"; grep -i 'user pictures' <<<"$pics" | grep -vi veertu
+           grep -i 'desktop pictures' <<<"$pics"; } | grep -m1 . || true)"
+  if [ -n "$pic" ] && sips -Z 1600 -s format png "$pic" --out cut.png >/dev/null 2>&1 && [ -s cut.png ]; then echo "picture: $pic"
+  else echo "picture: the app icon (no photos found)"; cp smoke.png cut.png; fi
   cp cut.png "$OUT/cutout-input.png"
-  rm -rf "$HOME/Library/Application Support/Convertino/models"/coreml-*
-  n0=$(wc -l < "$LOG" 2>/dev/null || echo 0)
+  MODELS="$HOME/Library/Application Support/Convertino/models"
+  rm -rf "$MODELS"/coreml-*
+  n0=0; [ -f "$LOG" ] && n0=$(wc -l < "$LOG")
   for pass in cold cached; do
     "$D" run cutout cut.png
     mv "cut (cutout).png" "$OUT/cutout-coreml-$pass.png"
   done
-  du -sh "$HOME/Library/Application Support/Convertino/models"/coreml-* || true
+  # ONNX Runtime keeps each partition's ML package next to its compiled model
+  du -sh "$MODELS"/coreml-* || true
+  echo "partitions: $(ls -d "$MODELS"/coreml-*/*/*/ 2>/dev/null | wc -l)"
+  du -sch "$MODELS"/coreml-*/*/*/model 2>/dev/null | tail -1 | sed 's/total/ML packages/' || true
+  du -sch "$MODELS"/coreml-*/*/*/compiled_model.mlmodelc 2>/dev/null | tail -1 | sed 's/total/compiled models/' || true
   CONVERTINO_CUTOUT_CPU=1 "$D" run cutout cut.png
   mv "cut (cutout).png" "$OUT/cutout-cpu.png"
   tail -n +"$((n0 + 1))" "$LOG" | grep "cutout:" | tee "$OUT/cutout-log.txt"
