@@ -27,7 +27,7 @@ public sealed class GlobalInput : IDisposable
     // keyboard state (hook thread only)
     bool _triggerHeld;
     bool _shiftHeld;
-    bool _tabHeld;
+    bool _tabDown, _tabOurs;
     bool _otherKeyDuringShift;
     uint _shiftDownTime;
     uint _lastTapUpTime;
@@ -94,6 +94,9 @@ public sealed class GlobalInput : IDisposable
         get { lock (_pagingLock) return _paging; }
         set { lock (_pagingLock) _paging = value; }
     }
+
+    /// <summary>Whether a key is down right now (the dev self-test swaps in its own).</summary>
+    internal Func<int, bool> IsKeyDown = vk => (GetAsyncKeyState(vk) & 0x8000) != 0;
 
     public bool IsLeftDown => _lDown;
     public bool IsDragging => _dragging;
@@ -166,13 +169,21 @@ public sealed class GlobalInput : IDisposable
 
             if (k.vkCode == VK_TAB)
             {
-                if (down && Paging != null)
+                // a press is the flower's when it starts while the flower is open and isn't a system chord
+                // (Alt+Tab, Win+Tab, Ctrl+Tab), unless that modifier is the trigger key. Its repeats and its key-up
+                // stay with it even if the flower closes meanwhile, so no app ever sees half a Tab press.
+                if (down && !_tabDown)
                 {
-                    if (!_tabHeld) { bool back = _shiftHeld; Post(() => Tab?.Invoke(back)); } // not on key repeat
-                    _tabHeld = true;
-                    return 1;
+                    _tabDown = true;
+                    var mod = Settings.Current.TriggerKey.Modifier();
+                    bool chord = ((k.flags & LLKHF_ALTDOWN) != 0 && mod != ModifierKey.Alt)
+                        || (IsKeyDown(VK_CONTROL) && mod != ModifierKey.Ctrl)
+                        || IsKeyDown(VK_LWIN) || IsKeyDown(VK_RWIN);
+                    _tabOurs = Paging != null && !chord;
+                    if (_tabOurs) { bool back = _shiftHeld; Post(() => Tab?.Invoke(back)); }
                 }
-                if (up && _tabHeld) { _tabHeld = false; return 1; }
+                if (up) { bool ours = _tabOurs; _tabDown = _tabOurs = false; if (ours) return 1; }
+                else if (down && _tabOurs) return 1;
             }
         }
         return CallNextHookEx(IntPtr.Zero, nCode, wParam, lParam);
@@ -237,11 +248,12 @@ public sealed class GlobalInput : IDisposable
     // ---- dev (Convertino.exe --paging-selftest): the same data Windows hands the hooks, without installing them ----
 
     /// <summary>One key event through the keyboard hook callback; returns its result (≠ 0 = kept from other apps).</summary>
-    internal IntPtr DevKey(int vk, bool up)
+    internal IntPtr DevKey(int vk, bool up, bool alt = false)
     {
-        var k = new KBDLLHOOKSTRUCT { vkCode = (uint)vk, time = (uint)Environment.TickCount };
+        var k = new KBDLLHOOKSTRUCT { vkCode = (uint)vk, flags = alt ? LLKHF_ALTDOWN : 0u, time = (uint)Environment.TickCount };
         var p = Marshal.AllocHGlobal(Marshal.SizeOf<KBDLLHOOKSTRUCT>());
-        try { Marshal.StructureToPtr(k, p, false); return KeyboardProc(0, up ? WM_KEYUP : WM_KEYDOWN, p); }
+        int msg = alt ? (up ? WM_SYSKEYUP : WM_SYSKEYDOWN) : (up ? WM_KEYUP : WM_KEYDOWN);
+        try { Marshal.StructureToPtr(k, p, false); return KeyboardProc(0, msg, p); }
         finally { Marshal.FreeHGlobal(p); }
     }
 

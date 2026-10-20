@@ -153,6 +153,7 @@ public sealed class OverlayController
         _session++;
         _win.View.Reset();
         _placed = at;
+        _win.MoveTo(at); // still hidden
         _state = State.Seed;
         _win.View.Appear();
         Bloom(files);
@@ -206,7 +207,8 @@ public sealed class OverlayController
         v.SetPages(_pager.Count, 0);
         v.SetPetals(_pager.Current, +1);
         if (_state == State.Seed) _state = State.Drag;
-        _input.Paging = _placed;
+        // where the window really is: EnsurePlaced may have re-centred it on a monitor with another DPI
+        _input.Paging = Win32.GetWindowRect(_win.Hwnd, out var shown) ? shown : _placed;
 
         int session = _session;
         var first = files[0];
