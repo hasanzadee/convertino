@@ -298,7 +298,7 @@ public static class Pdfs
                     {
                         var root = Path.Combine(Environment.GetFolderPath(pf), "gs");
                         if (Directory.Exists(root))
-                            candidates.AddRange(Directory.GetDirectories(root).OrderByDescending(d => d, StringComparer.OrdinalIgnoreCase)
+                            candidates.AddRange(Directory.GetDirectories(root).OrderByDescending(d => Version.TryParse(Path.GetFileName(d).TrimStart('g', 's', 'G', 'S'), out var v) ? v : new Version(0, 0))
                                 .SelectMany(d => new[] { Path.Combine(d, "bin", "gswin64c.exe"), Path.Combine(d, "bin", "gswin32c.exe") }));
                     }
                     catch { }
@@ -330,15 +330,19 @@ public static class Pdfs
         {
             var src = job.Inputs[i];
             int pages = 1;
-            try { using var d = UglyToad.PdfPig.PdfDocument.Open(src); pages = Math.Max(1, d.NumberOfPages); } catch { }
             var dst = Paths.Beside(src, "pdf", "(compressed)");
             var tmp = Path.Combine(Path.GetDirectoryName(dst)!, $".{Guid.NewGuid():N}.pdf");
             int idx = i;
             try
             {
                 await RunTool(gs, ["-sDEVICE=pdfwrite", "-dCompatibilityLevel=1.6", "-dPDFSETTINGS=/ebook", "-dNOPAUSE", "-dBATCH", "-dSAFER",
-                    "-dDetectDuplicateImages=true", "-dCompressFonts=true", $"-sOutputFile={tmp}", src],
-                    line => { if (line.StartsWith("Page ") && int.TryParse(line[5..].Trim(), out var p)) job.Report(idx, n, (double)p / pages); },
+                    "-dDetectDuplicateImages=true", "-dCompressFonts=true", $"-sOutputFile={tmp.Replace("%", "%%")}", src],
+                    line =>
+                    {
+                        // "Processing pages 1 through 12." then "Page 1", "Page 2" …
+                        if (line.StartsWith("Processing pages ") && line.Split(' ') is [.., var last] && int.TryParse(last.TrimEnd('.'), out var total)) pages = Math.Max(1, total);
+                        else if (line.StartsWith("Page ") && int.TryParse(line[5..].Trim(), out var p)) job.Report(idx, n, (double)p / pages);
+                    },
                     job.Token);
                 long a = Paths.SizeOf(src), b = Paths.SizeOf(tmp);
                 before += a;
@@ -418,8 +422,9 @@ public static class Pdfs
                         var raw = img.RawMemory.ToArray();
                         byte[]? data = null;
                         string ext = "png";
-                        if (raw.Length > 3 && raw[0] == 0xFF && raw[1] == 0xD8) { data = raw; ext = "jpg"; }
-                        else if (raw.Length > 12 && ((raw[4] == 'j' && raw[5] == 'P') || (raw[0] == 0xFF && raw[1] == 0x4F))) { data = raw; ext = "jp2"; }
+                        var filter = Filter(img);
+                        if (filter == "DCTDecode" && raw.Length > 3 && raw[0] == 0xFF && raw[1] == 0xD8) { data = raw; ext = "jpg"; }
+                        else if (filter == "JPXDecode" && raw.Length > 12) { data = raw; ext = raw[0] == 0xFF && raw[1] == 0x4F ? "j2k" : "jp2"; }
                         else if (img.TryGetPng(out var png)) data = png;
                         if (data == null) { skipped++; continue; }
                         if (!seen.Add(System.Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(data)))) continue;
@@ -440,6 +445,18 @@ public static class Pdfs
             return;
         }
         job.Summary = $"{total} image{(total == 1 ? "" : "s")}" + (skipped > 0 ? $" · {skipped} skipped (unsupported encoding)" : "");
+    }
+
+    /// <summary>The image's only filter ("DCTDecode", "JPXDecode" …), or "" when there are none or several.</summary>
+    static string Filter(UglyToad.PdfPig.Content.IPdfImage img)
+    {
+        if (!img.ImageDictionary.TryGet(UglyToad.PdfPig.Tokens.NameToken.Filter, out var t)) return "";
+        return t switch
+        {
+            UglyToad.PdfPig.Tokens.NameToken n => n.Data,
+            UglyToad.PdfPig.Tokens.ArrayToken { Data.Count: 1 } a when a.Data[0] is UglyToad.PdfPig.Tokens.NameToken n1 => n1.Data,
+            _ => "",
+        };
     }
 
     // ---------- cover ----------

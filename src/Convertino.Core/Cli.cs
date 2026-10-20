@@ -172,8 +172,9 @@ public static class Cli
             else if (a[i] == "--out") outDir = a[++i];
         }
         if (action == null) { o.WriteLine(WatchUsage); return null; }
-        if (outDir.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0 || outDir is "." or "..") { o.WriteLine("--out takes a subfolder name"); return null; }
-        return new WatchFolder { Path = dir, Action = action, Out = outDir };
+        // results must land in a real subfolder, or they would be picked up again and converted forever
+        if (Watches.ValidOut(outDir) is not { } outName) { o.WriteLine("--out takes a plain subfolder name, like Converted"); return null; }
+        return new WatchFolder { Path = dir, Action = action, Out = outName };
     }
 
     static List<string>? Files(IEnumerable<string> paths, TextWriter o)

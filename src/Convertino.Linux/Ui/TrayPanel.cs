@@ -680,7 +680,7 @@ public sealed class TrayPanel : Window
             };
             ToolTip.SetTip(main, path);
             main.PointerReleased += (_, _) => { if (Directory.Exists(path)) { Platform.Current.Open(path); HideAnimated(); } };
-            var remove = IconButton("x", () => { Watches.Remove(path); Rebuild(); });
+            var remove = IconButton("x", () => { try { Watches.Remove(path); } catch (Exception ex) { Log.Error("watch remove", ex); } Rebuild(); });
             ToolTip.SetTip(remove, "Stop watching");
             remove.VerticalAlignment = VerticalAlignment.Center;
             var row = new DockPanel { Margin = new Thickness(0, 4, 0, 4) };
@@ -711,7 +711,7 @@ public sealed class TrayPanel : Window
                 pill.PointerExited += (_, _) => { pill.Background = rest; caption.Foreground = B(T.Text); };
                 pill.PointerReleased += (_, _) =>
                 {
-                    Watches.Add(new WatchFolder { Path = dir, Action = id });
+                    try { Watches.Add(new WatchFolder { Path = dir, Action = id }); } catch (Exception ex) { Log.Error("watch add", ex); }
                     _pendingWatch = null;
                     Rebuild();
                 };
