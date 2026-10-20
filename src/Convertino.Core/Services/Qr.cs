@@ -149,6 +149,7 @@ public static class Qr
             int t = b.Length - 32;
             int offSize = b[t + 6];
             long count = BE(b, t + 8, 8), table = BE(b, t + 24, 8);
+            if (offSize is < 1 or > 8 || count < 0 || count > b.Length || table < 8 || table >= t) return list;
             for (long i = 0; i < count && table + (i + 1) * offSize <= t; i++)
             {
                 int o = (int)BE(b, (int)(table + i * offSize), offSize);
@@ -165,7 +166,7 @@ public static class Qr
                 list.Add(type == 5 ? Encoding.ASCII.GetString(b, start, size) : Encoding.BigEndianUnicode.GetString(b, start, size));
             }
         }
-        catch (IndexOutOfRangeException) { }
+        catch (Exception ex) when (ex is IndexOutOfRangeException or ArgumentException or OverflowException) { }   // malformed file: what was read so far
         return list;
     }
 }

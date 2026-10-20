@@ -29,19 +29,29 @@ public static class ImageSets
     {
         var res = new MagickImage?[files.Count];
         int done = 0;
-        Parallel.For(0, files.Count, new ParallelOptions { CancellationToken = job.Token, MaxDegreeOfParallelism = Math.Max(1, Environment.ProcessorCount - 1) }, i =>
+        // four decoders at a time: more barely helps (Magick is multi-threaded inside) and multiplies the memory peak
+        var opts = new ParallelOptions { CancellationToken = job.Token, MaxDegreeOfParallelism = Math.Clamp(Environment.ProcessorCount - 1, 1, 4) };
+        try
         {
-            try { res[i] = LoadSmall(files[i], max); }
-            catch (Exception ex) { Log.Error($"load {files[i]}", ex); }
-            job.Report(Interlocked.Increment(ref done) * share / files.Count);
-        });
+            Parallel.For(0, files.Count, opts, i =>
+            {
+                try { res[i] = LoadSmall(files[i], max); }
+                catch (Exception ex) { Log.Error($"load {files[i]}", ex); }
+                job.Report(Interlocked.Increment(ref done) * share / files.Count);
+            });
+        }
+        catch
+        {
+            foreach (var t in res) t?.Dispose();
+            throw;
+        }
         return res;
     }
 
     static List<string> Sorted(Job job) => job.Inputs.OrderBy(f => f, ImageTools.NaturalOrder.Instance).ToList();
 
     // beyond these a sheet or an animation gets unwieldy (and memory-hungry); the card says when files were left out
-    const int MaxSheet = 400, MaxFrames = 200;
+    const int MaxSheet = 400, MaxFrames = 60;
 
     static string Capped(int used, int total) => used < total ? $" · first {used} of {total}" : "";
 
@@ -202,7 +212,14 @@ public static class ImageSets
         using var a = Images.Load(fa);
         using var b = Images.Load(fb);
         bool scaled = a.Width != b.Width || a.Height != b.Height;
-        if (scaled) b.Resize(new MagickGeometry(a.Width, a.Height) { IgnoreAspectRatio = true });
+        if (scaled)
+        {
+            // a retina and a normal capture of the same thing compare fine at one size; different shapes don't
+            double ra = a.Width / (double)a.Height, rb = b.Width / (double)b.Height;
+            if (Math.Abs(ra / rb - 1) > 0.01)
+                throw new InvalidOperationException($"Different shapes ({a.Width}×{a.Height} and {b.Width}×{b.Height}): Compare needs two images of the same proportions");
+            b.Resize(new MagickGeometry(a.Width, a.Height) { IgnoreAspectRatio = true });
+        }
         var (pa, w, h) = Images.ToBgra(a);
         var (pb, _, _) = Images.ToBgra(b);
 

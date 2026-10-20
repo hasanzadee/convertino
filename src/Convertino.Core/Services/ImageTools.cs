@@ -223,7 +223,8 @@ public static class ImageTools
         if (!img.HasAlpha) return false;
         using var corner = (MagickImage)img.Clone();
         corner.Crop(1, 1);
-        return corner.ToByteArray(MagickFormat.Rgba)[3] == 0;
+        // through ToBgra: 8-bit BGRA whatever the source's depth (1-bit palettes, 16-bit RGBA …)
+        return Images.ToBgra(corner).bgra[3] == 0;
     }
 
     // ---------- palette ----------
@@ -443,20 +444,25 @@ public static class ImageTools
 
     // ---------- copy as picture ----------
 
+    /// <summary>Longest side put on the clipboard: a 48 MP photo would otherwise take ~300 MB there (PNG + bitmap).</summary>
+    const uint MaxClipboardSide = 4096;
+
     public static async Task CopyImage(Job job)
     {
         var src = job.Inputs[0];
-        var (png, dims) = await Task.Run(() =>
+        var (png, dims, scaled) = await Task.Run(() =>
         {
             using var img = Images.Load(src);
+            bool big = Math.Max(img.Width, img.Height) > MaxClipboardSide;
+            if (big) img.Resize(new MagickGeometry(MaxClipboardSide, MaxClipboardSide) { Greater = true });
             // nothing private rides along into a chat
             ToSrgbStripped(img);
             img.Settings.SetDefine(MagickFormat.Png, "compression-level", "1");
-            return (img.ToByteArray(MagickFormat.Png), $"{img.Width}×{img.Height}");
+            return (img.ToByteArray(MagickFormat.Png), $"{img.Width}×{img.Height}", big);
         }, job.Token);
         Platform.Current.SetClipboardImage(png);
         job.Title = "Image copied";
-        job.Summary = $"{dims} · paste it anywhere";
+        job.Summary = (scaled ? $"scaled to {dims}" : dims) + " · paste it anywhere";
     }
 
     // ---------- shared ----------
