@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Activity card on Linux and macOS: a new panel opens from the tray icon (Linux) or **Open panel** in the tray / menu-bar menu, with the same counting-up numbers, a bar per day that shows that day's numbers on hover, and your most used actions; until you've converted something it shows how to start. It closes on Esc, a click outside or ✕. `CONVERTINO_PANEL=1` (or `=demo`) opens it at start, for screenshots.
+- The Linux and macOS panel now has everything the Windows one has: the four theme swatches (switching restyles everything at once and is remembered), the Enabled / Notifications / Tell me about new versions / Start at login (Open at login on macOS) switches, the **Open with** key picker (Shift, Shift ×2, Ctrl/Control, Alt/Option), your recent files with thumbnails, and Log / Updates / Quit. **Open panel** is now the first item of the tray / menu-bar menu, and the menu follows what you change in the panel (it is refreshed in place; the tray icon is no longer re-created on a theme change).
+- macOS: a click on the menu-bar icon opens the panel straight away, like the tray icon on Windows; right-click or Control-click it for the menu. Avalonia's status item can only open its menu, so Convertino takes the plain click itself.
 - Cut out on Apple silicon runs on Core ML (ONNX Runtime's Core ML provider, ML Program, GPU / Neural Engine) instead of only the CPU. The first cut-out compiles the model for your Mac (cached next to the model, about 1 GB) and times the CPU once on the same picture; the faster one is kept, and the CPU also takes over whenever Core ML fails. `convertino model remove` deletes the compiled copy too. The log says which provider ran, both timings, and how ONNX Runtime split the model.
 
 ## 1.1.1 — 2026-10-20
