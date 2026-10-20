@@ -1,11 +1,14 @@
 using System.Diagnostics;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Controls.Documents;
 using Avalonia.Controls.Primitives;
+using Avalonia.Controls.Shapes;
 using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Avalonia.Media.Imaging;
 using Avalonia.Media.Immutable;
 using Avalonia.Threading;
 using Convertino.Overlay;
@@ -13,8 +16,8 @@ using Convertino.Overlay;
 namespace Convertino.Ui;
 
 /// <summary>
-/// Small panel next to the tray icon / menu-bar item: two weeks of activity, or how to start until there is any.
-/// Settings stay in the native tray menu.
+/// Quick-settings panel next to the tray icon / menu-bar item, like the Windows one: two weeks of activity (or how
+/// to start until there is any), theme, options, recent files.
 /// </summary>
 public sealed class TrayPanel : Window
 {
@@ -23,11 +26,21 @@ public sealed class TrayPanel : Window
     /// <summary>Where the pointer is now; the panel opens next to it (the tray icon, the menu-bar item).</summary>
     public Func<ScreenPoint>? Pointer { get; init; }
 
+    /// <summary>Thumbnail for a recent file (path, size in DIPs), called off the UI thread.</summary>
+    public Func<string, int, Bitmap?>? Thumbnail { get; init; }
+
+    /// <summary>A setting changed here (the tray menu redraws its check marks).</summary>
+    public event Action? SettingsChanged;
+
     readonly TranslateTransform _slide = new();
     readonly DispatcherTimer _ticker = new() { Interval = TimeSpan.FromMilliseconds(15) };
     readonly List<Tween> _tweens = [];
     readonly Stopwatch _clock = Stopwatch.StartNew();
+    readonly Dictionary<string, Control> _chips = [];
+    readonly Dictionary<string, Bitmap> _thumbs = []; // for as long as the panel is open, so a restyle doesn't flash
     Stats? _stats;
+    TextBlock? _subtitle;
+    ScrollViewer? _scroll;
     bool _animate; // only the build that opens the panel plays the intro
     bool _hiding, _top;
     double _shownAt = -1e9, _hiddenAt = -1e9;
@@ -49,7 +62,17 @@ public sealed class TrayPanel : Window
         KeyDown += (_, e) => { if (e.Key == Key.Escape) HideAnimated(); };
         // focus moving elsewhere closes it too (a click outside is caught by ClickAt, focus or not)
         Deactivated += (_, _) => { if (Now - _shownAt > 300) HideAnimated(); };
-        Skin.Changed += () => { if (IsVisible && !_hiding) { Build(); UpdateLayout(); Place(); } };
+        // restyle in place (a swatch here or the tray menu), scrolled where it was
+        Skin.Changed += () =>
+        {
+            if (!IsVisible || _hiding) return;
+            var offset = _scroll?.Offset ?? default;
+            Build();
+            UpdateLayout();
+            if (_scroll != null) _scroll.Offset = offset;
+            Place();
+            if (OverlayController.Diag) Log.Info($"panel theme {Skin.Current.Name}");
+        };
     }
 
     double Now => _clock.Elapsed.TotalMilliseconds;
@@ -66,6 +89,7 @@ public sealed class TrayPanel : Window
     {
         _tweens.Clear();
         _hiding = false;
+        _thumbs.Clear();
         _stats = stats ?? Stats.Load();
         _anchor = Pointer?.Invoke();
         _animate = true;
@@ -81,9 +105,14 @@ public sealed class TrayPanel : Window
         _slide.Y = _top ? -24 : 24;
         Animate(0, 300, CubicOut, v => _slide.Y = (_top ? -24 : 24) * (1 - v));
         Animate(0, 200, t => t, v => Opacity = v);
-        // X11 reports the new position only once the server confirms the move
+        // X11 reports the new position only once the server confirms the move; the swatch centres let tests click them
         if (OverlayController.Diag)
-            DispatcherTimer.RunOnce(() => Log.Info($"panel at {Position} {Bounds.Width}x{Bounds.Height} top={_top} empty={_stats?.IsEmpty}"), TimeSpan.FromMilliseconds(400));
+            DispatcherTimer.RunOnce(() =>
+            {
+                string Centre(Control c) { var p = c.PointToScreen(new Point(c.Bounds.Width / 2, 23)); return $"{p.X},{p.Y}"; }
+                Log.Info($"panel at {Position} {Bounds.Width}x{Bounds.Height} top={_top} empty={_stats?.IsEmpty} swatches "
+                    + string.Join(" ", _chips.Select(c => $"{c.Key}={Centre(c.Value)}")));
+            }, TimeSpan.FromMilliseconds(400));
     }
 
     public void HideAnimated()
@@ -194,7 +223,8 @@ public sealed class TrayPanel : Window
         var logo = new Image { Source = AppIcon.Render(68, T), Width = 34, Height = 34 };
         var title = new StackPanel { Margin = new Thickness(12, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
         title.Children.Add(new TextBlock { Text = "Convertino", FontWeight = FontWeight.SemiBold, FontSize = 17, Foreground = B(T.Text) });
-        title.Children.Add(new TextBlock { Text = s.Enabled ? "Drag a file · tap ⇧ Shift" : "Paused", FontSize = 12, Foreground = B(T.SubText) });
+        title.Children.Add(_subtitle = new TextBlock { FontSize = 12, Foreground = B(T.SubText) });
+        Subtitle();
         var header = new DockPanel { LastChildFill = false };
         var close = IconButton("x", HideAnimated);
         ToolTip.SetTip(close, "Close (Esc)");
@@ -219,13 +249,52 @@ public sealed class TrayPanel : Window
                     ? HowRow("folder", "Right-click → Quick Actions", "Convertino: same menu in Finder")
                     : HowRow("folder", "Right-click → Convertino", "same menu in your file manager"),
             },
-        }, new Thickness(0, 14, 0, 2)));
+        }, new Thickness(0, 14, 0, 0)));
 
-        // header stays put; the rest scrolls when the screen is short
-        var body = new DockPanel { Margin = new Thickness(18, 16, 18, 16) };
+        // theme picker
+        stack.Children.Add(Label("Theme"));
+        var themes = new UniformGrid { Columns = 4, Margin = new Thickness(-4, 0, -4, 0) };
+        _chips.Clear();
+        foreach (var th in Skin.All) themes.Children.Add(_chips[th.Name] = ThemeChip(th, th.Name == T.Name));
+        stack.Children.Add(themes);
+
+        // the tray menu's toggles
+        stack.Children.Add(Label("Options"));
+        stack.Children.Add(Card(new StackPanel
+        {
+            Children =
+            {
+                ToggleRow("Enabled", s.Enabled, v => { s.Enabled = v; Subtitle(); }),
+                ToggleRow("Notifications", s.Notifications, v => s.Notifications = v),
+                ToggleRow(OperatingSystem.IsMacOS() ? "Open at login" : "Start at login", s.LaunchAtStartup,
+                    v => { s.LaunchAtStartup = v; Platform.Current.SetAutostart(v); }),
+            },
+        }, new Thickness(0)));
+
+        // recent
+        var recent = s.Recent.Where(r => File.Exists(r.Path) || Directory.Exists(r.Path)).Take(4).ToList();
+        if (recent.Count > 0)
+        {
+            stack.Children.Add(Label("Recent"));
+            var list = new StackPanel();
+            foreach (var r in recent) list.Children.Add(RecentRow(r));
+            stack.Children.Add(Card(list, new Thickness(0)));
+        }
+
+        // footer
+        var footer = new DockPanel { Margin = new Thickness(0, 14, 0, 0) };
+        var quit = FooterButton("power", "Quit", () => (Application.Current?.ApplicationLifetime as IClassicDesktopStyleApplicationLifetime)?.Shutdown());
+        DockPanel.SetDock(quit, Dock.Right);
+        footer.Children.Add(quit);
+        footer.Children.Add(FooterButton("log", "Log", () => Platform.Current.Open(Paths.LogFile)));
+
+        // header and footer stay put; only the middle scrolls when the screen is short
+        var body = new DockPanel { Margin = new Thickness(18, 16, 18, 14) };
         DockPanel.SetDock(header, Dock.Top);
+        DockPanel.SetDock(footer, Dock.Bottom);
         body.Children.Add(header);
-        body.Children.Add(new ScrollViewer
+        body.Children.Add(footer);
+        body.Children.Add(_scroll = new ScrollViewer
         {
             Content = stack,
             VerticalScrollBarVisibility = ScrollBarVisibility.Hidden,
@@ -395,6 +464,127 @@ public sealed class TrayPanel : Window
             Cursor = new Cursor(StandardCursorType.Hand),
             Child = new IconView { Key = icon, Width = 13, Height = 13, Brush = B(T.SubText), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center },
         };
+        b.PointerEntered += (_, _) => b.Background = B(T.IsDark ? A(Colors.White, .07) : A(Colors.White, .6));
+        b.PointerExited += (_, _) => b.Background = Brushes.Transparent;
+        b.PointerReleased += (_, _) => click();
+        return b;
+    }
+
+    // ---------- theme, options, recent ----------
+
+    void Subtitle()
+    {
+        if (_subtitle != null) _subtitle.Text = Settings.Current.Enabled ? "Drag a file · tap ⇧ Shift" : "Paused";
+    }
+
+    static LinearGradientBrush Diagonal(Color a, Color b) => new()
+    {
+        StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
+        EndPoint = new RelativePoint(1, 1, RelativeUnit.Relative),
+        GradientStops = { new GradientStop(a, 0), new GradientStop(b, 1) },
+    };
+
+    Control ThemeChip(Skin th, bool selected)
+    {
+        var ring = new Ellipse { Width = 54, Height = 54, Margin = new Thickness(-4), StrokeThickness = 2 };
+        ring.Stroke = selected ? Diagonal(T.AccentA, T.AccentB) : null;
+        var sw = new Grid { Width = 46, Height = 46 };
+        sw.Children.Add(new Ellipse { Fill = B(th.Window), Stroke = B(A(T.SubText, .25)), StrokeThickness = 1 });
+        sw.Children.Add(new Ellipse { Width = 22, Height = 22, Fill = Diagonal(th.AccentA, th.AccentB) });
+        sw.Children.Add(ring);
+        var col = new StackPanel { Background = Brushes.Transparent, Cursor = new Cursor(StandardCursorType.Hand), HorizontalAlignment = HorizontalAlignment.Center };
+        col.Children.Add(sw);
+        col.Children.Add(new TextBlock { Text = th.Name, FontSize = 11, Foreground = B(selected ? T.Text : T.SubText), HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 6, 0, 0) });
+        if (!selected)
+        {
+            col.PointerEntered += (_, _) => ring.Stroke = B(A(T.SubText, .45));
+            col.PointerExited += (_, _) => ring.Stroke = null;
+        }
+        col.PointerReleased += (_, _) =>
+        {
+            if (th.Name == Skin.Current.Name) return;
+            Skin.Choose(th.Name); // rebuilds this panel through Skin.Changed
+            SettingsChanged?.Invoke();
+        };
+        return col;
+    }
+
+    /// <summary>A whole-row switch; <paramref name="set"/> changes the setting, saving is done here.</summary>
+    Control ToggleRow(string text, bool value, Action<bool> set)
+    {
+        bool state = value;
+        var knobT = new TranslateTransform(state ? 16 : 0, 0);
+        var knob = new Ellipse { Width = 14, Height = 14, Margin = new Thickness(2, 0, 0, 0), HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Center, RenderTransform = knobT };
+        var track = new Border { Width = 36, Height = 20, CornerRadius = new CornerRadius(10), BorderThickness = new Thickness(1), Child = knob, VerticalAlignment = VerticalAlignment.Center };
+        void Paint()
+        {
+            track.Background = state ? Gradient(T.AccentA, T.AccentB, false) : B(A(T.SubText, .12));
+            track.BorderBrush = state ? Brushes.Transparent : B(A(T.SubText, .5));
+            knob.Fill = B(state ? T.AccentText : A(T.SubText, .9));
+        }
+        Paint();
+        var row = new DockPanel { Background = Brushes.Transparent, Cursor = new Cursor(StandardCursorType.Hand), Margin = new Thickness(0, 6, 0, 6) };
+        DockPanel.SetDock(track, Dock.Right);
+        row.Children.Add(track);
+        row.Children.Add(new TextBlock { Text = text, FontSize = 13, Foreground = B(T.Text), VerticalAlignment = VerticalAlignment.Center });
+        row.PointerReleased += (_, _) =>
+        {
+            state = !state;
+            Paint();
+            double from = knobT.X, to = state ? 16 : 0;
+            Animate(0, 180, CubicOut, v => knobT.X = from + (to - from) * v);
+            set(state);
+            Settings.Current.Save();
+            SettingsChanged?.Invoke();
+        };
+        return row;
+    }
+
+    Control RecentRow(RecentItem r)
+    {
+        var thumb = new Border
+        {
+            Width = 30, Height = 30, CornerRadius = new CornerRadius(6), ClipToBounds = true, Margin = new Thickness(0, 0, 10, 0),
+            Background = B(A(T.SubText, .14)),
+            Child = new IconView { Key = Directory.Exists(r.Path) ? "folder" : "file", Width = 14, Height = 14, Brush = B(T.SubText), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center },
+        };
+        void Picture(Bitmap bmp) => thumb.Child = new Image { Source = bmp, Width = 30, Height = 30, Stretch = Stretch.UniformToFill };
+        if (_thumbs.TryGetValue(r.Path, out var known)) Picture(known);
+        else if (Thumbnail is { } render && File.Exists(r.Path))
+            Task.Run(() => render(r.Path, 30)).ContinueWith(t =>
+            {
+                if (t.IsCompletedSuccessfully && t.Result is { } bmp)
+                    Dispatcher.UIThread.Post(() => { _thumbs[r.Path] = bmp; Picture(bmp); });
+            });
+        var text = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+        text.Children.Add(new TextBlock { Text = System.IO.Path.GetFileName(r.Path), FontSize = 12.5, Foreground = B(T.Text), TextTrimming = TextTrimming.CharacterEllipsis, MaxWidth = 230 });
+        text.Children.Add(new TextBlock { Text = $"{r.Label} · {Ago(r.When)}", FontSize = 11, Foreground = B(T.SubText) });
+        var row = new Border
+        {
+            Background = Brushes.Transparent, CornerRadius = new CornerRadius(8), Padding = new Thickness(4), Margin = new Thickness(-4, 1, -4, 1),
+            Cursor = new Cursor(StandardCursorType.Hand), Child = new StackPanel { Orientation = Orientation.Horizontal, Children = { thumb, text } },
+        };
+        row.PointerEntered += (_, _) => row.Background = B(T.IsDark ? A(Colors.White, .06) : A(Colors.White, .6));
+        row.PointerExited += (_, _) => row.Background = Brushes.Transparent;
+        row.PointerReleased += (_, _) => { Platform.Current.Reveal(r.Path); HideAnimated(); };
+        return row;
+    }
+
+    static string Ago(DateTime t)
+    {
+        var d = DateTime.Now - t;
+        if (d.TotalMinutes < 1) return "just now";
+        if (d.TotalHours < 1) return $"{(int)d.TotalMinutes} min ago";
+        if (d.TotalDays < 1) return $"{(int)d.TotalHours} h ago";
+        return t.ToString("d MMM");
+    }
+
+    Control FooterButton(string icon, string text, Action click)
+    {
+        var sp = new StackPanel { Orientation = Orientation.Horizontal };
+        sp.Children.Add(new IconView { Key = icon, Width = 13, Height = 13, Brush = B(T.SubText), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 7, 0) });
+        sp.Children.Add(new TextBlock { Text = text, FontSize = 12.5, Foreground = B(T.SubText), VerticalAlignment = VerticalAlignment.Center });
+        var b = new Border { Child = sp, Padding = new Thickness(10, 6, 10, 6), CornerRadius = new CornerRadius(8), Background = Brushes.Transparent, Cursor = new Cursor(StandardCursorType.Hand) };
         b.PointerEntered += (_, _) => b.Background = B(T.IsDark ? A(Colors.White, .07) : A(Colors.White, .6));
         b.PointerExited += (_, _) => b.Background = Brushes.Transparent;
         b.PointerReleased += (_, _) => click();

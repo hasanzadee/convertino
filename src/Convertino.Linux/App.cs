@@ -42,6 +42,7 @@ public sealed class App : Application
         Settings.Load();
         Skin.Apply(Settings.Current.Theme);
         RequestedThemeVariant = Skin.Current.IsDark ? ThemeVariant.Dark : ThemeVariant.Light;
+        Skin.Changed += () => RequestedThemeVariant = Skin.Current.IsDark ? ThemeVariant.Dark : ThemeVariant.Light;
         var platform = (LinuxPlatform)Platform.Current;
         platform.Ui = new LinuxJobUi();
         LinuxPlatform.Editors = EditorHost.ById;
@@ -65,7 +66,8 @@ public sealed class App : Application
         if (!selftest)
         {
             var input = _input;
-            _panel = new TrayPanel { Pointer = input != null ? () => input.Pointer : null };
+            _panel = new TrayPanel { Pointer = input != null ? () => input.Pointer : null, Thumbnail = LinuxPlatform.Thumbnail };
+            _panel.SettingsChanged += BuildTray;
             unmanaged?.Invoke(_panel);
             if (input != null)
             {
@@ -115,7 +117,6 @@ public sealed class App : Application
 
     void BuildTray()
     {
-        _tray?.Dispose();
         var s = Settings.Current;
         var menu = new NativeMenu();
         NativeMenuItem Check(string header, bool value, Action<bool> set)
@@ -124,17 +125,17 @@ public sealed class App : Application
             it.Click += (_, _) => { it.IsChecked = !it.IsChecked; set(it.IsChecked); s.Save(); };
             return it;
         }
-        menu.Items.Add(new NativeMenuItem("Convertino — drag a file, tap Shift") { IsEnabled = false });
         var open = new NativeMenuItem("Open panel");
         open.Click += (_, _) => _panel?.Open();
         menu.Items.Add(open);
+        menu.Items.Add(new NativeMenuItem("Convertino — drag a file, tap Shift") { IsEnabled = false });
         menu.Items.Add(new NativeMenuItemSeparator());
         menu.Items.Add(Check("Enabled", s.Enabled, v => s.Enabled = v));
         var themes = new NativeMenu();
         foreach (var th in Skin.All)
         {
             var it = new NativeMenuItem(th.Name) { ToggleType = MenuItemToggleType.Radio, IsChecked = th.Name == Skin.Current.Name };
-            it.Click += (_, _) => { s.Theme = th.Name; s.Save(); Skin.Apply(th.Name); BuildTray(); };
+            it.Click += (_, _) => { Skin.Choose(th.Name); BuildTray(); };
             themes.Items.Add(it);
         }
         menu.Items.Add(new NativeMenuItem("Theme") { Menu = themes });
@@ -160,13 +161,19 @@ public sealed class App : Application
         quit.Click += (_, _) => (ApplicationLifetime as IClassicDesktopStyleApplicationLifetime)?.Shutdown();
         menu.Items.Add(quit);
 
-        using var ms = new MemoryStream();
-        AppIcon.Render(64).Save(ms, PngBitmapEncoderOptions.Default);
-        ms.Position = 0;
-        _tray = new TrayIcon { Icon = new WindowIcon(ms), ToolTipText = "Convertino — drag a file, tap Shift", Menu = menu, IsVisible = true };
-        // a left click opens the panel where the desktop reports it (KDE, XFCE, GNOME's AppIndicator extension …)
-        _tray.Clicked += (_, _) => _panel?.Toggle();
-        TrayIcon.SetIcons(this, [_tray]);
+        if (_tray == null)
+        {
+            using var ms = new MemoryStream();
+            AppIcon.Render(64).Save(ms, PngBitmapEncoderOptions.Default);
+            ms.Position = 0;
+            _tray = new TrayIcon { Icon = new WindowIcon(ms), IsVisible = true };
+            // a left click opens the panel where the desktop reports it (KDE, XFCE, GNOME's AppIndicator extension …)
+            _tray.Clicked += (_, _) => _panel?.Toggle();
+            TrayIcon.SetIcons(this, [_tray]);
+        }
+        // later calls refresh the same icon (re-registering it could move it around the tray)
+        _tray.ToolTipText = "Convertino — drag a file, tap Shift";
+        _tray.Menu = menu;
     }
 
     // ---------- single instance ----------

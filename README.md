@@ -77,7 +77,7 @@ Convertino installs per-user to `%LOCALAPPDATA%\Programs\Convertino` (no admin r
    tar xf convertino-linux-x64.tar.gz && cd convertino && ./install.sh
    ```
 
-The installer adds the `convertino` command, a desktop entry, autostart, and a **Convertino** entry in the right-click menu of Nautilus, Nemo, Dolphin and Caja. Click the tray icon (or **Open panel** in its menu) for the activity panel; theme and options are in the tray menu. Optional helpers it will offer to install:
+The installer adds the `convertino` command, a desktop entry, autostart, and a **Convertino** entry in the right-click menu of Nautilus, Nemo, Dolphin and Caja. Click the tray icon (or **Open panel**, the first item of its menu) for the panel: activity, theme, options, recent files. Optional helpers it will offer to install:
 
 ```bash
 sudo apt install ffmpeg poppler-utils tesseract-ocr libreoffice   # Debian / Ubuntu
@@ -100,7 +100,7 @@ sudo pacman -S ffmpeg poppler tesseract tesseract-data-eng libreoffice-fresh   #
    cd ~/Downloads/convertino && ./install.sh
    ```
 
-The installer copies `Convertino.app` to `~/Applications`, adds the `convertino` command (`~/.local/bin`) and a **Quick Actions → Convertino** entry to Finder's right-click menu, and starts Convertino in the menu bar; it opens at login (toggle it in the menu-bar menu, which also has **Open panel** for your activity). `./install.sh --uninstall` removes it again. Optional helpers:
+The installer copies `Convertino.app` to `~/Applications`, adds the `convertino` command (`~/.local/bin`) and a **Quick Actions → Convertino** entry to Finder's right-click menu, and starts Convertino in the menu bar; it opens at login (toggle it in the panel). Click the menu-bar icon and choose **Open panel**, the first item, for the panel: activity, theme, options, recent files. `./install.sh --uninstall` removes it again. Optional helpers:
 
 ```bash
 brew install ffmpeg                  # video & audio petals

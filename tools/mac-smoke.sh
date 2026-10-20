@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Smoke test for the macOS build (used by CI; works on any Mac):
 #   tools/mac-smoke.sh dist/Convertino.app          command line: conversions, CoreGraphics PDF, Vision OCR (CUTOUT=1: Cut out)
-#   tools/mac-smoke.sh dist/Convertino.app --gui    + editors, pinned flower, "convertino menu" over IPC, the menu-bar panel, a synthetic drag + Shift
+#   tools/mac-smoke.sh dist/Convertino.app --gui    + editors, pinned flower, "convertino menu" over IPC, the menu-bar panel (theme click,
+#                                                 Open panel from the menu), a synthetic drag + Shift
 #                                                 + drop; in CI also install.sh and the Finder Quick Action
 # Screenshots and the log land in ./mac-smoke/.
 set -euo pipefail
@@ -113,7 +114,8 @@ grep -q "menu: " "$LOG"
 pkill -f "Convertino.app/Contents/MacOS/convertino" || true
 sleep 1
 
-step "app: menu-bar panel (demo activity)"
+step "app: menu-bar panel (demo activity), pick a theme in it"
+SETTINGS="$HOME/Library/Application Support/Convertino/settings.json"
 CONVERTINO_DEBUG=1 CONVERTINO_PANEL=demo "$D" >> "$OUT/app-stdout.txt" 2>&1 &
 sleep 6
 shot 2b-panel
@@ -124,6 +126,43 @@ if [ -n "$pwid" ]; then
 else
   echo "::warning::the panel didn't open (no 'panel window=' in the log)"
 fi
+# the panel logs where its swatches are; click Latte the way a person would
+swiftc -O "$ROOT/tools/mac-click.swift" -o "$WORK/click"
+latte=$(grep -o "Latte=-*[0-9]*,-*[0-9]*" "$LOG" | tail -1 | cut -d= -f2 || true)
+[ -n "$latte" ] || { echo "the panel logged no swatch positions"; grep "panel" "$LOG" | tail -5; exit 1; }
+limit 20 "$WORK/click" "${latte%,*}" "${latte#*,}"
+sleep 1.5
+shot 2c-panel-latte
+[ -n "$pwid" ] && screencapture -x -o -l "$pwid" "$OUT/2c-panel-latte-window.png" 2>/dev/null || true
+if grep -q "panel theme Latte" "$LOG" && grep -q '"Theme": "Latte"' "$SETTINGS"; then
+  echo "Latte picked in the panel: restyled and saved"
+else
+  echo "clicking the Latte swatch didn't switch the theme"; grep -E "panel|button" "$LOG" | tail -10; exit 1
+fi
+pkill -f "Convertino.app/Contents/MacOS/convertino" || true
+sleep 1
+sed -i '' 's/"Theme": "Latte"/"Theme": "Mocha"/' "$SETTINGS"
+
+step "app: Open panel from the menu-bar menu"
+CONVERTINO_DEBUG=1 "$D" >> "$OUT/app-stdout.txt" 2>&1 &
+sleep 6
+pid=$(pgrep -f "Convertino.app/Contents/MacOS/convertino" | head -1 || true)
+before=$(grep -c "panel window=" "$LOG" || true)
+# the status item lives in the process's last menu bar; System Events can open its menu and click an item
+items=$(limit 40 osascript \
+  -e "tell application \"System Events\" to tell (first process whose unix id is $pid)" \
+  -e "click menu bar item 1 of last menu bar" \
+  -e "delay 1" \
+  -e "set names to name of menu items of menu 1 of menu bar item 1 of last menu bar" \
+  -e "click menu item \"Open panel\" of menu 1 of menu bar item 1 of last menu bar" \
+  -e "return names" -e "end tell" 2>&1) || true
+echo "menu: $items"
+sleep 2
+shot 2d-panel-from-menu
+after=$(grep -c "panel window=" "$LOG" || true)
+case "$items" in "Open panel"*) echo "Open panel is the first item" ;; *) echo "::warning::Open panel isn't the first menu item" ;; esac
+if [ "$after" -gt "$before" ]; then echo "Open panel opened the panel"
+else echo "::warning::Open panel from the menu didn't open the panel (System Events: $items)"; fi
 pkill -f "Convertino.app/Contents/MacOS/convertino" || true
 sleep 1
 

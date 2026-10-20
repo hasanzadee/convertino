@@ -44,6 +44,8 @@ public static class Icons
         ["text"] = "M4 7V4h16v3 M9 20h6 M12 4v16",
         ["step"] = "M12 2a10 10 0 1 0 0 20a10 10 0 1 0 0-20z M10 8l2-1v10",
         ["flip"] = "M12 3v18 M16 7l4 5-4 5 M8 7l-4 5 4 5",
+        ["log"] = "M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z M14 2v6h6 M16 13H8 M16 17H8 M10 9H8",
+        ["power"] = "M18.36 6.64a9 9 0 1 1-12.73 0 M12 2v10",
     };
 
     static readonly Dictionary<string, Geometry> Cache = [];
