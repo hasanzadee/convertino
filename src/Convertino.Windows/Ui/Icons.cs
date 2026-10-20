@@ -9,7 +9,7 @@ public static class Icons
         ["adjust"] = "", ["tag"] = "", ["ocr"] = "", ["zip"] = "", ["link"] = "",
         ["hash"] = "", ["code"] = "", ["rotate"] = "", ["cut"] = "", ["merge"] = "",
         ["mute"] = "", ["camera"] = "", ["resize"] = "", ["volume"] = "", ["folder"] = "",
-        ["copy"] = "", ["update"] = "\uE896", ["cutout"] = "",
+        ["copy"] = "", ["update"] = "\uE896", ["check"] = "\uE73E", ["search"] = "\uE721", ["cutout"] = "",
         ["half"] = "", ["fithd"] = "", ["gray"] = "",
         ["picture"] = "",
         ["subtitles"] = "", ["encoding"] = "", ["eol"] = "",

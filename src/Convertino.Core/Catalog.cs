@@ -55,6 +55,29 @@ public static class Catalog
     static PetalAction HashA => Tool("sha", "SHA-256", "hash", "Copy SHA-256 hash", Misc.Sha256, quick: true);
     static PetalAction B64A => Tool("b64", "Base64", "code", "Copy as data URI", Misc.Base64, quick: true);
     static PetalAction CopyA => Tool("copy", "Copy", "copy", "Copy to clipboard", Misc.CopyFiles, quick: true);
+    static PetalAction VerifyA => Tool("verify", "Verify", "check", "Verify checksum", FileTools.Verify);
+    static PetalAction DupesA => Tool("dupes", "Duplicates", "search", "Find duplicate files", FileTools.Duplicates);
+    static PetalAction SevenZA => Pack("7z", "7Z", "smallest", Archives.SevenZip);
+    static PetalAction TarGzA => Pack("tar.gz", "TAR.GZ", "Linux, Mac", Archives.TarGz);
+
+    static PetalAction Pack(string ext, string label, string hint, Func<Job, Task> run) => new()
+    {
+        Id = "to-" + ext, Label = label, Hint = hint, Verb = $"Compress to .{ext}", Short = $"→ {label}", Run = run,
+    };
+
+    /// <summary>For the Tools ring: split presets that fit one file (none under 10 MB), then MD5 / SHA-1 / SHA-512.</summary>
+    static IEnumerable<PetalAction> FileToolsFor(IReadOnlyList<string> files)
+    {
+        if (files.Count == 1)
+            foreach (var p in FileTools.SplitPresets(Paths.SizeOf(files[0])))
+                yield return new()
+                {
+                    Id = "split-" + p.Id, Label = p.Label, Hint = p.Hint, Verb = $"Split into {p.Label} parts", Short = $"Split {p.Label}",
+                    Run = j => FileTools.Split(j, p.Bytes),
+                };
+        foreach (var (id, label) in new[] { ("md5", "MD5"), ("sha1", "SHA-1"), ("sha512", "SHA-512") })
+            yield return Tool(id, label, "hash", $"Copy {label} hash", j => FileTools.CopyHash(j, label));
+    }
 
     /// <summary>Every action reachable for these files (all rings), for the CLI.</summary>
     public static IEnumerable<PetalAction> All(IReadOnlyList<string> files)
@@ -72,10 +95,13 @@ public static class Catalog
 
         if (kinds.Count == 1) return ForKind(kinds[0], files, title, badge);
 
+        // a .sha256 / SHA256SUMS dropped together with what it covers
+        if (kinds.Contains(Kind.Checksum)) return new([VerifyA, ZipA, PathA], [], title, badge);
+
         // mixed: images + PDFs can still become one PDF
         if (kinds.All(k => k is Kind.Image or Kind.Pdf))
             return new([Tool("merge", "Merge PDF", "merge", "Merge into one PDF", Pdfs.Merge), ZipA, PathA], [], title, badge);
-        return new([ZipA, PathA, CopyA], [], title, badge);
+        return new([ZipA, SevenZA, TarGzA, DupesA, PathA, CopyA], [], title, badge);
     }
 
     static PetalAction? Editor(string id, string label, string icon, string verb)
@@ -232,11 +258,21 @@ public static class Catalog
                 tools.AddRange([ZipA, PathA]);
                 break;
             case Kind.Archive:
-                conv.Add(Tool("extract", "Extract", "folder", "Extract here", Misc.Extract));
+                conv.Add(Tool("extract", "Extract", "folder", "Extract here", Archives.Extract));
+                conv.AddRange([PathA, HashA]);
+                tools.AddRange(FileToolsFor(files));
+                break;
+            case Kind.Part:
+                conv.Add(Tool("join", "Join", "merge", "Join the parts", FileTools.Join));
                 conv.AddRange([PathA, HashA]);
                 break;
+            case Kind.Checksum:
+                conv.Add(VerifyA);
+                conv.Add(Tool("copytext", "Copy", "copy", "Copy contents", CopyText, quick: true));
+                conv.Add(PathA);
+                break;
             case Kind.Folder:
-                conv.AddRange([ZipA, PathA, CopyA]);
+                conv.AddRange([ZipA, SevenZA, TarGzA, DupesA, PathA, CopyA]);
                 break;
             case Kind.Subtitles:
             {
@@ -249,7 +285,16 @@ public static class Catalog
             }
             default:
                 conv.AddRange([ZipA, PathA, HashA, B64A]);
+                tools.AddRange(FileToolsFor(files));
+                if (!single) conv.InsertRange(1, [SevenZA, TarGzA]);
                 break;
+        }
+
+        // several files of one kind: which of them are the same?
+        if (!single && kind is not (Kind.Folder or Kind.Part or Kind.Checksum))
+        {
+            var ring = tools.Count > 0 ? tools : conv;
+            if (ring.Count < 8) ring.Add(DupesA);
         }
 
         foreach (var ext2 in Extensions)

@@ -48,6 +48,8 @@ jobs:
           grep -q 'Привет' 'smoke (UTF-8).txt'
           ./dist/linux-x64/convertino run lf smoke.txt
           test "$(tr -cd '\r' < 'smoke (LF).txt' | wc -c)" -eq 0
+      - name: Archives and file tools
+        run: bash tools/files-smoke.sh dist/linux-x64/convertino
 
   macos:
     strategy:

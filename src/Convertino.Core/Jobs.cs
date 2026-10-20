@@ -56,13 +56,18 @@ public static class Jobs
 
         if (job.Outputs.Count > 0) Settings.Current.AddRecent(job.Outputs[0], action.Verb);
         if (error == null) _ = Task.Run(() => Stats.Record(job));
-        if (!notify && error == null) { view?.Dismiss(); return; }
+        if (!notify && error == null && !job.Failed) { view?.Dismiss(); return; }
 
         EnsureView();
         if (view == null) return;
         if (error != null)
         {
             view.Failed("Couldn't " + Lower(action.Verb), Friendly(error), action.Icon);
+            return;
+        }
+        if (job.Failed)
+        {
+            view.Failed(job.Title ?? "Couldn't " + Lower(action.Verb), job.Summary ?? "", action.Icon);
             return;
         }
         if (job.Summary == null && job.Outputs.Count > 0) job.Summary = Services.Images.SizeSummary(job);

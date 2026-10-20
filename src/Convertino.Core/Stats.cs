@@ -44,7 +44,7 @@ public sealed class Stats
         {
             long inBytes = job.Inputs.Sum(Paths.SizeOf);
             long outBytes = job.Outputs.Sum(Paths.SizeOf);
-            long saved = job.Outputs.Count > 0 && outBytes > 0 && inBytes > outBytes ? inBytes - outBytes : 0;
+            long saved = job.Saved ?? (job.Outputs.Count > 0 && outBytes > 0 && inBytes > outBytes ? inBytes - outBytes : 0);
             string caption = string.IsNullOrEmpty(job.Action.Short) ? job.Action.Label : job.Action.Short;
             lock (Gate)
             {

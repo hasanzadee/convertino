@@ -45,7 +45,9 @@ Converting a file usually means opening an app, finding *Export…*, picking a f
 | 🗜 **Compress** | Smart image compression with the savings shown: `1.2 MB → 340 KB (−72%)` |
 | 📑 **PDF tools** | Merge, split, rotate, page numbers, cover image, extract every image at original quality, compress (with Ghostscript) |
 | 📥 **Watch folders** | New files in a folder convert by themselves into its `Converted` subfolder (panel, or `convertino watch`) |
-| 📦 **Everything else** | Zip/unzip, copy path, SHA-256, data URI |
+| 🗃 **Archives** | Extract ZIP · 7Z · RAR · TAR · TAR.GZ / BZ2 / XZ · GZ · BZ2 · XZ into a new folder, refusing `../`, absolute paths and links that point outside it; pack folders as ZIP · 7Z · TAR.GZ |
+| 🧰 **File tools** | Split big files into 25 / 50 / 100 MB… parts and join the `.001` back; find duplicates (an HTML report, nothing is deleted); verify a `.sha256` / `SHA256SUMS` (*Matches ✓*); copy MD5 · SHA-1 · SHA-256 · SHA-512 |
+| 📦 **Everything else** | Copy path, data URI |
 | 🎨 **Themes** | Catppuccin **Mocha** & **Latte**, **Sunset**, **Graphite** |
 | 📊 **Activity** | The tray / menu-bar panel charts your last two weeks: files handled, space saved, day streak, favourite actions |
 | ⌨️ **CLI** | `convertino convert IMG_0042.HEIC --to jpg` — the same engine without the UI |
@@ -169,8 +171,13 @@ While dragging over a petal, the caption under the Explorer drag image says what
 | **Video** | MP4 · WEBM · GIF · MP3 · MOV · MKV · WAV | Compress · 720p · Mute · Frame · Subtitles |
 | **Audio** | MP3 · M4A · WAV · FLAC · OGG · OPUS | Loudness · Trim silence · Zip · Path |
 | **Subtitles** (SRT / VTT / ASS / SSA / LRC) | SRT · VTT · ASS · TXT | UTF-8 · LF/CRLF · Zip · Path · SHA-256 |
-| **ZIP** | Extract · Path · SHA-256 | |
-| **Folder / anything else** | Zip · Path · Copy / SHA-256 · Base64 | |
+| **Archive** (ZIP, 7Z, RAR, TAR, TAR.GZ…) | Extract · Path · SHA-256 | Split · MD5 · SHA-1 · SHA-512 |
+| **Split part** (`.001`) | Join · Path · SHA-256 | |
+| **Checksum** (`.sha256`, `.md5`, `SHA256SUMS`…) | Verify · Copy · Path | |
+| **File + its checksum** | Verify · Zip · Path | |
+| **Folder** | Zip · 7Z · TAR.GZ · Duplicates · Path · Copy | |
+| **Anything else** | Zip · Path · SHA-256 · Base64 | Split into 25 / 50 / 100 MB… *(files over 10 MB)* · MD5 · SHA-1 · SHA-512 |
+| **Several files** | the ring for their kind, plus Duplicates; mixed kinds: Zip · 7Z · TAR.GZ · Duplicates · Path · Copy | |
 
 Images (one or several) also get **More tools**: Half · Full HD · B&W, and **More formats**: HEIC *(where the codec allows)* · TIFF · ICO · BMP · JXL · QOI. Half, Full HD and B&W keep the source's format and write beside it: `photo (2016x1512).jpg`, `photo (1920x1080).jpg`, `photo (grayscale).jpg`. Full HD only ever shrinks (portrait images fit in 1080 × 1920), and animated GIF / WebP stay animated. No ring shows more than 10 petals; a longer list carries on in a second ring of the same name.
 
@@ -188,6 +195,9 @@ convertino convert movie.srt --to vtt             # also ass, srt, txt
 convertino run utf8 old-cyrillic.txt              # → old-cyrillic (UTF-8).txt (any text file)
 convertino run lf deploy.sh                       # → deploy (LF).sh; crlf the other way
 convertino run subtitles movie.mkv                # first subtitle track → movie.eng.srt
+convertino run extract backup.tar.xz              # → backup/
+convertino run split-100mb video.mkv              # → video.mkv.001, .002 …  (join: convertino run join video.mkv.001)
+convertino run verify ubuntu.iso SHA256SUMS       # Matches ✓ / Doesn't match ✗ (exit code 1)
 convertino actions report.pdf                     # what's possible for these files
 convertino menu photo.png notes.md                # open the flower for them (used by file-manager menus)
 convertino model install | status | remove        # the AI cut-out model
