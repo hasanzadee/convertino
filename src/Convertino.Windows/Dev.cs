@@ -59,9 +59,9 @@ static class Dev
         view.SetPages(rings.Count, page);
         view.SetPetals(rings[page].Petals, 1);
         Preview? pv = null;
+        if (ahead is "quick" or "exact") Settings.Current.LivePreview = true;
         if (ahead is "quick" or "exact" && (pv = Preview.For([sample])) != null)
         {
-            Settings.Current.LivePreview = true;
             Task.Run(() => pv.Settle(rings[page].Petals, ahead == "exact")).GetAwaiter().GetResult(); // not on the dispatcher: Settle awaits
             view.Ahead = pv;
         }
@@ -117,6 +117,7 @@ static class Dev
     public static void PagingSelfTest(string outDir)
     {
         Directory.CreateDirectory(outDir);
+        Settings.Current.LivePreview = false; // paging only: no background runs for the sample picture
         const int VK_LSHIFT = 0xA0, VK_LCONTROL = 0xA2, VK_CONTROL = 0x11, VK_LWIN = 0x5B, VK_TAB = 0x09, VK_ESCAPE = 0x1B;
         var input = new GlobalInput(Application.Current.Dispatcher); // never started: no hooks
         var held = new HashSet<int>();

@@ -255,6 +255,7 @@ public static class Cli
               convertino actions <files…>                  list what's possible for these files
               convertino watch <folder> --to <format>      convert every new file in a folder (also: watch add|list|remove)
               convertino preview <images…> [--full]        what each petal would give: estimated, then exact sizes
+                                  [--take <petal>]             … and "drop" on one: its finished run moved beside the image
               convertino model install                     download the offline AI model for Cut out (224 MB)
               convertino --version
             """);

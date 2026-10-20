@@ -175,6 +175,7 @@ public sealed class FlowerView : FrameworkElement
             });
         }
         _hover = -1;
+        UpdateLens(); // the old ring's picture goes with it
         Kick();
     }
 

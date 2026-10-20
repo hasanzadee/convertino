@@ -152,6 +152,7 @@ public sealed class FlowerView : Control
                 Bloom = new Spring(190, 16) { Target = 1 },
             });
         _hover = -1;
+        UpdateLens(); // the old ring's picture goes with it
         Kick();
     }
 

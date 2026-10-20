@@ -33,7 +33,8 @@ public sealed class Preview : IDisposable
             try
             {
                 var r = await e.Full!.WaitAsync(job.Token);
-                return r != null && Owner.MoveInto(r, job);
+                // off the UI thread: across volumes (temp on C:, the photo on D: or a share) a move is a full copy
+                return r != null && await Task.Run(() => Owner.MoveInto(r, job));
             }
             catch (OperationCanceledException) when (job.Token.IsCancellationRequested)
             {
@@ -56,6 +57,9 @@ public sealed class Preview : IDisposable
         public Look? Look;
         public Task? Proxy;
         public Task<Result?>? Full;
+        // created when a lane picks the entry, so nothing ever sees a run as done before it started
+        public TaskCompletionSource? ProxyRun;
+        public TaskCompletionSource<Result?>? FullRun;
         public volatile Action<double>? Forward;
         /// <summary>Its own, so a run handed to a drop survives the flower closing.</summary>
         public readonly CancellationTokenSource Cts = new();
@@ -63,7 +67,7 @@ public sealed class Preview : IDisposable
         public string Dir = "";
     }
 
-    internal sealed record Result(string Dir, List<string> Copies, List<string> Outputs, string? Summary, string? Title, long? Saved);
+    internal sealed record Result(string Dir, List<string> Copies, List<string> Outputs, string? Summary, string? Title, long? Saved, bool Silent, bool Failed);
 
     /// <summary>Raised on a worker thread whenever a petal's <see cref="Look"/> changes.</summary>
     public event Action? Changed;
@@ -75,6 +79,8 @@ public sealed class Preview : IDisposable
     readonly List<(long Length, DateTime Written)> _stamps;
     readonly long _pixels;
     readonly string _inDims;
+    // animated GIF / WebP: every frame is decoded by a real run, and a one-frame copy says nothing about the size
+    readonly bool _animated;
     readonly string _root;
     readonly CancellationTokenSource _cts = new();
     readonly Dictionary<string, Entry> _entries = [];
@@ -99,17 +105,20 @@ public sealed class Preview : IDisposable
     // full runs start by themselves (format petals) only for ordinary photos; anything bigger waits for a hover
     const long AutoFullPixels = 16_000_000, AutoFullBytes = 40L << 20;
     const long MaxFullBytes = 160L << 20;
-    const long MaxPixels = 120_000_000;
+    // JPEGs decode small for the proxy (DCT scaling); anything else is decoded whole first
+    const long MaxPixels = 120_000_000, MaxPixelsDecoded = 50_000_000;
     const int HoverDwellMs = 180, HeavyDwellMs = 450;
 
-    Preview(IReadOnlyList<string> files, long pixels, string inDims)
+    Preview(IReadOnlyList<string> files, long pixels, string inDims, bool animated)
     {
         _inDims = inDims;
+        _animated = animated;
         _files = files;
         _stamps = files.Select(f => { var fi = new FileInfo(f); return (fi.Length, fi.LastWriteTimeUtc); }).ToList();
         InputBytes = _stamps.Sum(s => s.Length);
         _pixels = pixels;
         _root = Path.Combine(Paths.Temp, "preview", Guid.NewGuid().ToString("N")[..12]);
+        lock (Open) Open.Add(_root);
         _fastLane = Task.Run(() => Lane(fast: true));
         _fullLane = Task.Run(() => Lane(fast: false));
     }
@@ -123,19 +132,30 @@ public sealed class Preview : IDisposable
             if (files.Any(f => Kinds.Of(f) != Kind.Image || !File.Exists(f))) return null;
             // the sandbox mirrors the source folder's name (some actions name results after it), so one folder only
             var dir = Path.GetDirectoryName(Path.GetFullPath(files[0]));
-            if (files.Any(f => !string.Equals(Path.GetDirectoryName(Path.GetFullPath(f)), dir, StringComparison.OrdinalIgnoreCase))) return null;
+            if (files.Any(f => !string.Equals(Path.GetDirectoryName(Path.GetFullPath(f)), dir, PathCmp))) return null;
             long pixels = 0;
             string dims = "";
+            bool animated = false;
             foreach (var f in files)
             {
+                var ext = Kinds.Ext(f);
                 using var probe = new MagickImage();
                 probe.Ping(f);
-                pixels += (long)probe.Width * probe.Height;
+                long px = (long)probe.Width * probe.Height;
+                if (ext == "svg") px *= 4; // Images.Load renders SVG at 192 dpi, Ping measures it at 96
+                if (ext is "gif" or "webp")
+                {
+                    using var frames = new MagickImageCollection();
+                    frames.Ping(f);
+                    if (frames.Count > 1) { animated = true; px *= frames.Count; }
+                }
+                if (ext is not ("jpg" or "jpeg" or "jfif") && px > MaxPixelsDecoded) return null;
+                pixels += px;
                 if (dims == "") dims = files.Count == 1 ? $"{probe.Width}×{probe.Height}" : "-";
             }
             if (pixels <= 0 || pixels > MaxPixels) return null;
             SweepOld();
-            return new Preview(files.Select(Path.GetFullPath).ToList(), pixels, dims);
+            return new Preview(files.Select(Path.GetFullPath).ToList(), pixels, dims, animated);
         }
         catch (Exception ex) { Log.Info($"preview off: {ex.Message}"); return null; }
     }
@@ -232,9 +252,13 @@ public sealed class Preview : IDisposable
     static bool Heavy(PetalAction a) => a.Id == "cutout";
 
     // size estimates only where the size is what you pick the petal for
-    static bool Estimates(PetalAction a) => IsFormat(a) || a.Id == "compress";
+    bool Estimates(PetalAction a) => !_animated && (IsFormat(a) || a.Id == "compress");
 
-    bool AutoFull(Entry e) => IsFormat(e.Action) && _pixels <= AutoFullPixels && InputBytes <= AutoFullBytes;
+    bool AutoFull(Entry e) => !_animated && IsFormat(e.Action) && _pixels <= AutoFullPixels && InputBytes <= AutoFullBytes;
+
+    // Linux file systems tell "Photos" from "photos"; Windows and (by default) macOS don't
+    static readonly StringComparison PathCmp = OperatingSystem.IsLinux() ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
+    static readonly StringComparer PathComparer = OperatingSystem.IsLinux() ? StringComparer.Ordinal : StringComparer.OrdinalIgnoreCase;
 
     #endregion
 
@@ -280,25 +304,36 @@ public sealed class Preview : IDisposable
         if (_hover is { Proxy: null } h && Quick(h.Action)) return Mark(h);
         return _ring.FirstOrDefault(e => e.Proxy == null && Quick(e.Action)) is { } r ? Mark(r) : null;
 
-        static Entry Mark(Entry e) { e.Proxy = Task.CompletedTask; return e; }
+        static Entry Mark(Entry e)
+        {
+            e.ProxyRun = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            e.Proxy = e.ProxyRun.Task;
+            return e;
+        }
     }
 
     Entry? NextFull()
     {
         if (_disposed || InputBytes > MaxFullBytes) return null;
         long dwell = Environment.TickCount64 - _hoverSince;
-        if (_hover is { Full: null } h && dwell >= (Heavy(h.Action) ? HeavyDwellMs : HoverDwellMs)) return h;
-        return _ring.FirstOrDefault(e => e.Full == null && AutoFull(e));
+        if (_hover is { Full: null } h && dwell >= (Heavy(h.Action) ? HeavyDwellMs : HoverDwellMs)) return Mark(h);
+        return _ring.FirstOrDefault(e => e.Full == null && AutoFull(e)) is { } r ? Mark(r) : null;
+
+        static Entry Mark(Entry e)
+        {
+            e.FullRun = new TaskCompletionSource<Result?>(TaskCreationOptions.RunContinuationsAsynchronously);
+            e.Full = e.FullRun.Task;
+            return e;
+        }
     }
 
     async Task RunQuick(Entry e, CancellationToken ct)
     {
-        var tcs = new TaskCompletionSource();
-        lock (_gate) e.Proxy = tcs.Task;
+        var tcs = e.ProxyRun!;
         try
         {
             if (_proxy == null && !MakeProxy()) return;
-            var dir = Path.Combine(_root, "q-" + Safe(e.Action.Id), Path.GetFileName(Path.GetDirectoryName(_files[0])) ?? "src");
+            var dir = Path.Combine(_root, "q-" + Safe(e.Action.Id), FolderName);
             Directory.CreateDirectory(dir);
             var input = Path.Combine(dir, Path.GetFileName(_proxy!));
             File.Copy(_proxy!, input, true);
@@ -308,7 +343,7 @@ public sealed class Preview : IDisposable
             ct.ThrowIfCancellationRequested();
             var outFile = job.Outputs.FirstOrDefault(File.Exists);
             Look look;
-            if (outFile == null) look = new Look(null, 0, 0, false, null, false, null, job.Title);
+            if (outFile == null) return; // nothing made from the small copy: only the full run can tell why
             else
             {
                 var (bgra, w, h, alpha) = Lens(outFile);
@@ -319,7 +354,7 @@ public sealed class Preview : IDisposable
                 {
                     // the same action on a copy half as wide: how the size grows with pixels depends on the picture and
                     // the format (a smooth wallpaper in AVIF barely grows, noise in PNG grows almost linearly) — follow that curve
-                    var tdir = Path.Combine(_root, "t-" + Safe(e.Action.Id), Path.GetFileName(Path.GetDirectoryName(_files[0])) ?? "src");
+                    var tdir = Path.Combine(_root, "t-" + Safe(e.Action.Id), FolderName);
                     Directory.CreateDirectory(tdir);
                     var tin = Path.Combine(tdir, Path.GetFileName(_tiny));
                     File.Copy(_tiny, tin, true);
@@ -339,26 +374,28 @@ public sealed class Preview : IDisposable
 
     async Task RunFull(Entry e, CancellationToken ct)
     {
-        var tcs = new TaskCompletionSource<Result?>();
-        lock (_gate) e.Full = tcs.Task;
+        var tcs = e.FullRun!;
         Result? result = null;
         try
         {
+            var sources = LocalSources();
             e.Dir = Path.Combine(_root, "f-" + Safe(e.Action.Id));
-            var dir = Path.Combine(e.Dir, Path.GetFileName(Path.GetDirectoryName(_files[0])) ?? "src");
+            var dir = Path.Combine(e.Dir, FolderName);
             Directory.CreateDirectory(dir);
             var copies = new List<string>();
-            foreach (var f in _files)
+            foreach (var f in sources)
             {
                 var c = Path.Combine(dir, Path.GetFileName(f));
-                File.Copy(f, c, true);
+                File.Copy(f, c, overwrite: false); // two names that differ only in case would collide on Windows / macOS: fail, don't swap
                 copies.Add(c);
             }
             var job = new Job { Inputs = copies, Action = e.Action, Token = e.Cts.Token, OnProgress = p => e.Forward?.Invoke(p) };
             var sw = Stopwatch.StartNew();
             await e.Action.Run(job);
             e.Cts.Token.ThrowIfCancellationRequested();
-            result = new Result(dir, copies, [.. job.Outputs], job.Summary, job.Title, job.Saved);
+            // the inputs' job is done; only the results wait for a drop
+            foreach (var c in copies.Where(c => !job.Outputs.Contains(c, PathComparer))) TryDeleteFile(c);
+            result = new Result(dir, copies, [.. job.Outputs], job.Summary, job.Title, job.Saved, job.Silent, job.Failed);
             long bytes = job.Outputs.Sum(Paths.SizeOf);
             var first = job.Outputs.FirstOrDefault(o => File.Exists(o) && Kinds.Of(o) == Kind.Image);
             string? dims = null;
@@ -371,8 +408,10 @@ public sealed class Preview : IDisposable
             lock (_gate)
             {
                 var keep = e.Look;
-                e.Look = new Look(bgra ?? keep?.Bgra, bgra != null ? w : keep?.W ?? 0, bgra != null ? h : keep?.H ?? 0, bgra != null ? alpha : keep?.Alpha ?? false,
-                    job.Outputs.Count > 0 ? bytes : null, true, dims, job.Outputs.Count == 0 ? job.Title : null);
+                // nothing made ("Nothing to squeeze"): no picture either, the small copy's one would contradict the note
+                bool made = job.Outputs.Count > 0;
+                e.Look = new Look(bgra ?? (made ? keep?.Bgra : null), bgra != null ? w : made ? keep?.W ?? 0 : 0, bgra != null ? h : made ? keep?.H ?? 0 : 0,
+                    bgra != null ? alpha : made && (keep?.Alpha ?? false), made ? bytes : null, true, dims, made ? null : job.Title);
             }
             Log.Info($"preview full {e.Action.Id} {sw.ElapsedMilliseconds} ms → {Paths.HumanSize(bytes)}");
             Changed?.Invoke();
@@ -383,6 +422,26 @@ public sealed class Preview : IDisposable
             result = null;
         }
         finally { tcs.TrySetResult(result); }
+    }
+
+    string FolderName => Path.GetFileName(Path.GetDirectoryName(_files[0])) is { Length: > 0 } n ? n : "src";
+
+    List<string>? _local;
+
+    /// <summary>The sources copied once into the sandbox: every full run copies from here, so a share or a USB stick is read once per bloom.</summary>
+    List<string> LocalSources()
+    {
+        if (_local != null) return _local;
+        var dir = Path.Combine(_root, "src", FolderName);
+        Directory.CreateDirectory(dir);
+        var list = new List<string>();
+        foreach (var f in _files)
+        {
+            var c = Path.Combine(dir, Path.GetFileName(f));
+            File.Copy(f, c, overwrite: false);
+            list.Add(c);
+        }
+        return _local = list;
     }
 
     /// <summary>The first picture, shrunk to <see cref="ProxySide"/>, in its own format when that can be written (so "Compress" behaves as it would).</summary>
@@ -473,7 +532,7 @@ public sealed class Preview : IDisposable
             var fi = new FileInfo(_files[i]);
             if (!fi.Exists || fi.Length != _stamps[i].Length || fi.LastWriteTimeUtc != _stamps[i].Written) return false;
         }
-        if (job.Inputs.Count != _files.Count || !job.Inputs.SequenceEqual(_files, StringComparer.OrdinalIgnoreCase)) return false;
+        if (job.Inputs.Count != _files.Count || !job.Inputs.SequenceEqual(_files, PathComparer)) return false;
 
         var target = Path.GetDirectoryName(_files[0])!;
         var tops = new List<string>();
@@ -482,45 +541,60 @@ public sealed class Preview : IDisposable
             var rel = Path.GetRelativePath(r.Dir, o);
             if (rel.StartsWith("..", StringComparison.Ordinal) || Path.IsPathRooted(rel)) return false;
             var top = rel.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)[0];
-            if (!tops.Contains(top)) tops.Add(top);
+            if (!tops.Contains(top, PathComparer)) tops.Add(top);
         }
-        var copyNames = r.Copies.Select(Path.GetFileName).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var moved = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var top in tops)
+        // names a number was added against in the sandbox: the copies, and this run's earlier outputs
+        var known = r.Copies.Select(c => Path.GetFileName(c)!).ToHashSet(PathComparer);
+        var moved = new List<(string From, string To, bool Dir)>();
+        try
         {
-            var from = Path.Combine(r.Dir, top);
-            if (Directory.Exists(from))
+            foreach (var top in tops)
             {
-                var to = Paths.UniqueDir(target, Unnumber(top, "", copyNames));
-                MoveDir(from, to);
-                moved[from] = to;
+                var from = Path.Combine(r.Dir, top);
+                if (Directory.Exists(from))
+                {
+                    var to = Paths.UniqueDir(target, Unnumber(top, "", known));
+                    MoveDir(from, to);
+                    moved.Add((from, to, true));
+                }
+                else if (File.Exists(from))
+                {
+                    var ext = Path.GetExtension(top);
+                    var to = Paths.Unique(target, Unnumber(Path.GetFileNameWithoutExtension(top), ext, known), ext);
+                    File.Move(from, to);
+                    moved.Add((from, to, false));
+                }
+                known.Add(top);
             }
-            else if (File.Exists(from))
-            {
-                var ext = Path.GetExtension(top);
-                var to = Paths.Unique(target, Unnumber(Path.GetFileNameWithoutExtension(top), ext, copyNames), ext);
-                File.Move(from, to);
-                moved[from] = to;
-            }
+        }
+        catch
+        {
+            // half done (disk full, a name taken meanwhile): put back what moved, so the normal run starts from a clean slate
+            foreach (var m in moved)
+                try { if (m.Dir) MoveDir(m.To, m.From); else File.Move(m.To, m.From); }
+                catch (Exception ex) { Log.Error($"preview rollback {m.To}", ex); }
+            throw;
         }
         foreach (var o in r.Outputs)
         {
-            var hit = moved.Keys.FirstOrDefault(k => o.Equals(k, StringComparison.OrdinalIgnoreCase)
-                || o.StartsWith(k + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase));
-            if (hit != null) job.Outputs.Add(moved[hit] + o[hit.Length..]);
+            var hit = moved.FirstOrDefault(m => o.Equals(m.From, PathCmp) || o.StartsWith(m.From + Path.DirectorySeparatorChar, PathCmp));
+            if (hit.From != null) job.Outputs.Add(hit.To + o[hit.From.Length..]);
         }
         job.Summary = r.Summary;
         job.Title = r.Title;
         job.Saved = r.Saved;
+        job.Silent = r.Silent;
+        job.Failed = r.Failed;
         Log.Info($"preview handoff {job.Action.Id}: {r.Outputs.Count} output(s) ready on drop");
         return true;
     }
 
-    /// <summary>"photo (2).jpg" only got its number because the sandbox copy "photo.jpg" sat there; beside the original, numbering starts over.</summary>
-    static string Unnumber(string stem, string ext, HashSet<string?> copies)
+    /// <summary>"photo (2).jpg" only got its number because "photo.jpg" sat in the sandbox (the copy, or this run's previous output);
+    /// beside the original, numbering starts over from there.</summary>
+    static string Unnumber(string stem, string ext, HashSet<string> known)
     {
         var m = Numbered.Match(stem);
-        return m.Success && copies.Contains(m.Groups["base"].Value + ext) ? m.Groups["base"].Value : stem;
+        return m.Success && known.Contains(m.Groups["base"].Value + ext) ? m.Groups["base"].Value : stem;
     }
 
     static void MoveDir(string from, string to)
@@ -549,7 +623,23 @@ public sealed class Preview : IDisposable
     {
         lock (_gate) if (!_lanesDone || _claims > 0) return;
         TryDeleteDir(_root);
+        lock (Open) Open.Remove(_root);
         _closed.TrySetResult();
+    }
+
+    // sandboxes of sessions still open: the app quit (or a self-test ended) with the flower up
+    static readonly HashSet<string> Open = [];
+
+    static Preview() => AppDomain.CurrentDomain.ProcessExit += (_, _) =>
+    {
+        string[] left;
+        lock (Open) left = [.. Open];
+        foreach (var d in left) TryDeleteDir(d); // best effort: a run may still be writing; the hourly sweep gets the rest
+    };
+
+    static void TryDeleteFile(string f)
+    {
+        try { File.Delete(f); } catch { }
     }
 
     static void TryDeleteDir(string d)
@@ -609,8 +699,9 @@ public sealed class Preview : IDisposable
             lock (_gate)
             {
                 var es = _ring;
+                bool canFull = full && InputBytes <= MaxFullBytes;
                 done = es.All(e => (!Quick(e.Action) || (e.Proxy?.IsCompleted ?? false) || _proxyFailed)
-                    && (!full || (e.Full?.IsCompleted ?? false)));
+                    && (!canFull || (e.Full?.IsCompleted ?? false)));
                 if (full)
                     foreach (var e in es.Where(e => e.Full == null))
                     {
