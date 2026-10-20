@@ -9,7 +9,7 @@ public static class Icons
         ["adjust"] = "", ["tag"] = "", ["ocr"] = "", ["zip"] = "", ["link"] = "",
         ["hash"] = "", ["code"] = "", ["rotate"] = "", ["cut"] = "", ["merge"] = "",
         ["mute"] = "", ["camera"] = "", ["resize"] = "", ["volume"] = "", ["folder"] = "",
-        ["copy"] = "", ["cutout"] = "",
+        ["copy"] = "", ["update"] = "\uE896", ["cutout"] = "",
     };
 
     public static string? Glyph(string? key) => key != null && Map.TryGetValue(key, out var g) ? g : null;

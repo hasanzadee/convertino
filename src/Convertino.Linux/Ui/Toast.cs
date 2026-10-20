@@ -22,8 +22,10 @@ public sealed class ToastWindow : Window
     readonly TextBlock _title, _sub;
     readonly Border _bar, _track;
     readonly Button _folder, _close;
+    readonly StackPanel _buttons;
+    readonly Border _card;
     readonly DispatcherTimer _life = new();
-    bool _closing;
+    bool _closing, _asking;
 
     public ScreenPoint Anchor { get; init; }
     public Action? OnCancel { get; set; }
@@ -70,13 +72,13 @@ public sealed class ToastWindow : Window
 
         var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"), Margin = new Thickness(14, 0, 10, 0) };
         Grid.SetColumn(text, 1);
-        var buttons = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center, Children = { _folder, _close } };
-        Grid.SetColumn(buttons, 2);
+        _buttons = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center, Children = { _folder, _close } };
+        Grid.SetColumn(_buttons, 2);
         grid.Children.Add(_iconBox);
         grid.Children.Add(text);
-        grid.Children.Add(buttons);
+        grid.Children.Add(_buttons);
 
-        var card = new Border
+        var card = _card = new Border
         {
             Width = CardW, Height = CardH, Margin = new Thickness(10),
             CornerRadius = new CornerRadius(16),
@@ -93,14 +95,14 @@ public sealed class ToastWindow : Window
         };
         card.PointerReleased += (_, e) =>
         {
-            if (e.Source is Visual v && IsInButton(v)) return;
+            if (_asking || e.Source is Visual v && IsInButton(v)) return;
             if (OnClick != null) { OnClick(); Dismiss(); return; }
             if (Outputs.Count == 1 && File.Exists(Outputs[0])) Platform.Current.Open(Outputs[0]);
             else if (Outputs.Count > 0) Platform.Current.Reveal(Outputs[0]);
             Dismiss();
         };
         card.PointerEntered += (_, _) => _life.Stop();
-        card.PointerExited += (_, _) => { if (!Running) _life.Start(); };
+        card.PointerExited += (_, _) => { if (!Running && !_asking) _life.Start(); };
         Content = card;
         _life.Tick += (_, _) => { _life.Stop(); Dismiss(); };
         Opacity = 0;
@@ -152,6 +154,41 @@ public sealed class ToastWindow : Window
         _folder.IsVisible = Outputs.Count > 0;
         _life.Interval = TimeSpan.FromSeconds(seconds ?? (error ? 9 : 5));
         _life.Start();
+    }
+
+    /// <summary>A question with two answers that stays until answered; the text may take two lines.</summary>
+    public void SetChoice(string title, string sub, string? icon, string yes, string no, Action<bool> answer, string? tip = null)
+    {
+        Running = false;
+        _asking = true;
+        _title.Text = title;
+        _sub.Text = sub;
+        _sub.IsVisible = !string.IsNullOrEmpty(sub);
+        _sub.TextWrapping = TextWrapping.Wrap;
+        _sub.MaxLines = 2;
+        _track.IsVisible = false;
+        _icon.Key = icon ?? "check";
+        _folder.IsVisible = false;
+        _close.IsVisible = false;
+        _card.Cursor = Cursor.Default;
+        if (tip != null) ToolTip.SetTip(_card, tip);
+        _buttons.Children.Insert(0, TextButton(no, false, () => { answer(false); Dismiss(); }));
+        _buttons.Children.Insert(0, TextButton(yes, true, () => { answer(true); Dismiss(); }));
+    }
+
+    static Button TextButton(string text, bool primary, Action click)
+    {
+        var t = Skin.Current;
+        var b = new Button
+        {
+            Content = new TextBlock { Text = text, FontSize = 12, FontWeight = FontWeight.SemiBold, Foreground = B(primary ? t.AccentText : t.Text) },
+            Background = primary ? t.AccentGradient() : B(Skin.WithA(t.SubText, .14)),
+            BorderThickness = new Thickness(0), CornerRadius = new CornerRadius(8),
+            Padding = new Thickness(10, 4), Margin = new Thickness(0, 0, 4, 0), MinHeight = 0,
+            VerticalAlignment = VerticalAlignment.Center, Cursor = new Cursor(StandardCursorType.Hand),
+        };
+        b.Click += (_, _) => click();
+        return b;
     }
 
     public void Dismiss()
