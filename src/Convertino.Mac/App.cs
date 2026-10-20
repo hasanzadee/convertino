@@ -28,6 +28,8 @@ public sealed class App : Application
 
     public override void Initialize()
     {
+        // Avalonia renames the process through LaunchServices; without a name Activity Monitor shows "Avalonia"
+        Name = "Convertino";
         Styles.Add(new FluentTheme());
         RequestedThemeVariant = ThemeVariant.Dark;
     }
@@ -122,8 +124,9 @@ public sealed class App : Application
     /// </summary>
     static void WelcomeCard(bool listen)
     {
-        if (listen) { Card("Convertino is running", "Drag a file in Finder, tap Shift"); return; }
-        var t = Card("Drag a file, tap Shift", "Not working? Allow Input Monitoring", seconds: 12);
+        var tap = Settings.Current.TriggerKey.Tap();
+        if (listen) { Card("Convertino is running", $"Drag a file in Finder, {tap}"); return; }
+        var t = Card($"Drag a file, {tap}", "Not working? Allow Input Monitoring", seconds: 12);
         t.OnClick = OpenInputMonitoring;
     }
 
@@ -157,7 +160,7 @@ public sealed class App : Application
         var open = new NativeMenuItem("Open panel");
         open.Click += (_, _) => _panel?.Open();
         menu.Items.Add(open);
-        menu.Items.Add(new NativeMenuItem("Convertino — drag a file, tap Shift") { IsEnabled = false });
+        menu.Items.Add(new NativeMenuItem($"Convertino — drag a file, {s.TriggerKey.Tap()}") { IsEnabled = false });
         menu.Items.Add(new NativeMenuItemSeparator());
         menu.Items.Add(Check("Enabled", s.Enabled, v => s.Enabled = v));
         var themes = new NativeMenu();
@@ -168,6 +171,14 @@ public sealed class App : Application
             themes.Items.Add(it);
         }
         menu.Items.Add(new NativeMenuItem("Theme") { Menu = themes });
+        var keys = new NativeMenu();
+        foreach (var k in TriggerKeys.All)
+        {
+            var it = new NativeMenuItem(k.Label()) { ToggleType = MenuItemToggleType.Radio, IsChecked = k == s.TriggerKey };
+            it.Click += (_, _) => { s.TriggerKey = k; s.Save(); BuildTray(); };
+            keys.Items.Add(it);
+        }
+        menu.Items.Add(new NativeMenuItem("Open with") { Menu = keys });
         menu.Items.Add(Check("Notifications", s.Notifications, v => s.Notifications = v));
         menu.Items.Add(Check("Open at login", s.LaunchAtStartup, v => { s.LaunchAtStartup = v; Platform.Current.SetAutostart(v); }));
         var recent = s.Recent.Where(r => File.Exists(r.Path) || Directory.Exists(r.Path)).Take(5).ToList();
@@ -202,7 +213,7 @@ public sealed class App : Application
             TrayIcon.SetIcons(this, [_tray]);
         }
         // later calls refresh the same status item (a new one could land somewhere else in the menu bar)
-        _tray.ToolTipText = "Convertino — drag a file, tap Shift";
+        _tray.ToolTipText = $"Convertino — drag a file, {s.TriggerKey.Tap()}";
         _tray.Menu = menu;
     }
 
@@ -222,7 +233,9 @@ public sealed class App : Application
                 {
                     try
                     {
-                        using var c = _server.Accept();
+                        // async on purpose: on macOS, Dispose() never returns while another thread sits in a blocking Accept(),
+                        // so Quit froze the app; a pending AcceptAsync is cancelled instead
+                        using var c = _server.AcceptAsync().GetAwaiter().GetResult();
                         using var ns = new NetworkStream(c);
                         using var r = new StreamReader(ns, Encoding.UTF8);
                         var cmd = r.ReadLine();
@@ -232,6 +245,7 @@ public sealed class App : Application
                         if (cmd == "menu") Dispatcher.UIThread.Post(() => _overlay?.Menu(files));
                     }
                     catch (ObjectDisposedException) { return; }
+                    catch (SocketException ex) when (ex.SocketErrorCode == SocketError.OperationAborted) { return; }
                     catch (Exception ex) { Log.Error("ipc", ex); }
                 }
             }) { IsBackground = true, Name = "Convertino IPC" }.Start();

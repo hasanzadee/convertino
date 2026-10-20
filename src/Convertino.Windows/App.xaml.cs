@@ -169,7 +169,7 @@ public partial class App : Application
             Dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle, () =>
             {
                 var t = Toasts.Create(Win32.Cursor);
-                t.SetDone("Convertino is running", "Drag any file and tap Shift — the flower opens under your cursor.", AppIcon.Render(84), "");
+                t.SetDone("Convertino is running", $"Drag any file and {Settings.Current.TriggerKey.Tap()} — the flower opens under your cursor.", AppIcon.Render(84), "");
                 Toasts.Show(t);
             });
         }

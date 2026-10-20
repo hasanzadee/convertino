@@ -66,13 +66,18 @@ public sealed class TrayPanel : Window
         Skin.Changed += () =>
         {
             if (!IsVisible || _hiding) return;
-            var offset = _scroll?.Offset ?? default;
-            Build();
-            UpdateLayout();
-            if (_scroll != null) _scroll.Offset = offset;
-            Place();
+            Rebuild();
             if (OverlayController.Diag) Log.Info($"panel theme {Skin.Current.Name}");
         };
+    }
+
+    void Rebuild()
+    {
+        var offset = _scroll?.Offset ?? default;
+        Build();
+        UpdateLayout();
+        if (_scroll != null) _scroll.Offset = offset;
+        Place();
     }
 
     double Now => _clock.Elapsed.TotalMilliseconds;
@@ -217,6 +222,7 @@ public sealed class TrayPanel : Window
     void Build()
     {
         var s = Settings.Current;
+        var key = s.TriggerKey;
         var stack = new StackPanel();
 
         // header
@@ -243,8 +249,8 @@ public sealed class TrayPanel : Window
         {
             Children =
             {
-                HowRow("file", "Drag any file, press Shift", "the flower opens under your cursor"),
-                HowRow("flip", "Shift again", "switch Convert ⇄ Tools"),
+                HowRow("file", $"Drag any file, {key.Tap()}", "the flower opens under your cursor"),
+                HowRow("flip", $"{key.KeyName()} again", "switch Convert ⇄ Tools"),
                 OperatingSystem.IsMacOS()
                     ? HowRow("folder", "Right-click → Quick Actions", "Convertino: same menu in Finder")
                     : HowRow("folder", "Right-click → Convertino", "same menu in your file manager"),
@@ -265,6 +271,7 @@ public sealed class TrayPanel : Window
             Children =
             {
                 ToggleRow("Enabled", s.Enabled, v => { s.Enabled = v; Subtitle(); }),
+                TriggerRow(key),
                 ToggleRow("Notifications", s.Notifications, v => s.Notifications = v),
                 ToggleRow(OperatingSystem.IsMacOS() ? "Open at login" : "Start at login", s.LaunchAtStartup,
                     v => { s.LaunchAtStartup = v; Platform.Current.SetAutostart(v); }),
@@ -474,7 +481,8 @@ public sealed class TrayPanel : Window
 
     void Subtitle()
     {
-        if (_subtitle != null) _subtitle.Text = Settings.Current.Enabled ? "Drag a file · tap ⇧ Shift" : "Paused";
+        var s = Settings.Current;
+        if (_subtitle != null) _subtitle.Text = s.Enabled ? $"Drag a file · {s.TriggerKey.Tap()}" : "Paused";
     }
 
     static LinearGradientBrush Diagonal(Color a, Color b) => new()
@@ -507,6 +515,46 @@ public sealed class TrayPanel : Window
             SettingsChanged?.Invoke();
         };
         return col;
+    }
+
+    /// <summary>"Open with" and a segment per key, like the Windows panel; "Shift ×2" leaves a single Shift to apps that use it on drop.</summary>
+    Control TriggerRow(TriggerKey current)
+    {
+        var keys = new UniformGrid { Columns = TriggerKeys.All.Length, Margin = new Thickness(-2, 7, -2, 0) };
+        foreach (var k in TriggerKeys.All)
+        {
+            bool on = k == current;
+            IBrush rest = on ? Gradient(T.AccentA, T.AccentB, false) : B(A(T.SubText, .12));
+            var pill = new Border
+            {
+                CornerRadius = new CornerRadius(8), Padding = new Thickness(4, 4, 4, 5), Margin = new Thickness(2, 0, 2, 0),
+                Background = rest, Cursor = new Cursor(StandardCursorType.Hand),
+                Child = new TextBlock
+                {
+                    Text = k == TriggerKey.ShiftTwice ? "Shift ×2" : k.Label(), FontSize = 11.5, HorizontalAlignment = HorizontalAlignment.Center,
+                    Foreground = B(on ? T.AccentText : T.Text), FontWeight = on ? FontWeight.SemiBold : FontWeight.Normal,
+                },
+            };
+            if (k == TriggerKey.ShiftTwice) ToolTip.SetTip(pill, "Double-tap Shift while dragging: a single Shift stays free for the app you drop on");
+            if (!on)
+            {
+                pill.PointerEntered += (_, _) => pill.Background = B(A(T.SubText, .22));
+                pill.PointerExited += (_, _) => pill.Background = rest;
+            }
+            pill.PointerReleased += (_, _) =>
+            {
+                if (Settings.Current.TriggerKey == k) return;
+                Settings.Current.TriggerKey = k;
+                Settings.Current.Save();
+                Rebuild(); // the header and the how-to card name the key
+                SettingsChanged?.Invoke();
+            };
+            keys.Children.Add(pill);
+        }
+        var row = new StackPanel { Margin = new Thickness(0, 6, 0, 6) };
+        row.Children.Add(new TextBlock { Text = "Open with", FontSize = 13, Foreground = B(T.Text) });
+        row.Children.Add(keys);
+        return row;
     }
 
     /// <summary>A whole-row switch; <paramref name="set"/> changes the setting, saving is done here.</summary>
