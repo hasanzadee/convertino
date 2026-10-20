@@ -1,11 +1,11 @@
 // Compare two cut-outs of the same picture (Core ML vs CPU): alpha difference stats plus a contact sheet
 // (both over a checkerboard, then |Δα| × 8). Exits 1 when they differ visibly.
 //   swiftc tools/mac-cutout-diff.swift -o cutdiff && ./cutdiff a.png b.png sheet.png [label-a] [label-b]
+// --scene makes the test picture: a subject with an alpha channel over a busy background.
+//   ./cutdiff --scene background.png subject.png out.png
 import AppKit
 
 let args = CommandLine.arguments
-guard args.count >= 4 else { print("usage: cutdiff <a.png> <b.png> <sheet.png> [label-a] [label-b]"); exit(2) }
-let labels = [args.count > 4 ? args[4] : "A", args.count > 5 ? args[5] : "B", "|Δα| × 8"]
 let srgb = CGColorSpace(name: CGColorSpace.sRGB)!
 let premul = CGImageAlphaInfo.premultipliedLast.rawValue
 
@@ -14,6 +14,28 @@ func load(_ path: String) -> CGImage {
           let img = CGImageSourceCreateImageAtIndex(src, 0, nil) else { print("can't read \(path)"); exit(2) }
     return img
 }
+
+func save(_ img: CGImage, _ path: String) {
+    let dest = CGImageDestinationCreateWithURL(URL(fileURLWithPath: path) as CFURL, "public.png" as CFString, 1, nil)!
+    CGImageDestinationAddImage(dest, img, nil)
+    CGImageDestinationFinalize(dest)
+}
+
+if args.count == 5 && args[1] == "--scene" {
+    let bg = load(args[2]), fg = load(args[3])
+    let w = 1600, h = 1000
+    let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: 0, space: srgb, bitmapInfo: premul)!
+    let cover = max(Double(w) / Double(bg.width), Double(h) / Double(bg.height))
+    let bw = Double(bg.width) * cover, bh = Double(bg.height) * cover
+    ctx.interpolationQuality = .high
+    ctx.draw(bg, in: CGRect(x: (Double(w) - bw) / 2, y: (Double(h) - bh) / 2, width: bw, height: bh))
+    ctx.draw(fg, in: CGRect(x: 380, y: 170, width: 660, height: 660))
+    save(ctx.makeImage()!, args[4])
+    exit(0)
+}
+
+guard args.count >= 4 else { print("usage: cutdiff <a.png> <b.png> <sheet.png> [label-a] [label-b]"); exit(2) }
+let labels = [args.count > 4 ? args[4] : "A", args.count > 5 ? args[5] : "B", "|Δα| × 8"]
 
 func pixels(_ img: CGImage) -> [UInt8] {
     let w = img.width, h = img.height
@@ -76,9 +98,7 @@ for (k, img) in [a, b, heatImg].enumerated() {
     (labels[k] as NSString).draw(at: NSPoint(x: r.minX, y: r.maxY + 6),
                                  withAttributes: [.font: NSFont.systemFont(ofSize: 14, weight: .semibold), .foregroundColor: NSColor.white])
 }
-let dest = CGImageDestinationCreateWithURL(URL(fileURLWithPath: args[3]) as CFURL, "public.png" as CFString, 1, nil)!
-CGImageDestinationAddImage(dest, sheet.makeImage()!, nil)
-CGImageDestinationFinalize(dest)
+save(sheet.makeImage()!, args[3])
 
 // fp16 on the GPU / Neural Engine shifts soft edges a little; a different mask moves whole regions
 let same = mean <= 2.0 && share <= 1.0

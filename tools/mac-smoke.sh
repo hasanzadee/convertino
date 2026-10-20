@@ -52,14 +52,12 @@ cp smoke.jpg "$OUT/pdf-render.jpg"
 if [ -n "${CUTOUT:-}" ]; then
   step "Cut out: Core ML (first load compiles, second uses the cache) vs the CPU"
   "$D" model install | tail -1
-  # a photo with a clear subject: the National Geographic screen-saver set or the account pictures, else a desktop picture
-  pics="$(find "/System/Library/Screen Savers/Default Collections" "/Library/User Pictures" "/System/Library/Desktop Pictures" \
-    -type f \( -iname '*.heic' -o -iname '*.jpg' -o -iname '*.png' \) 2>/dev/null | sort || true)"
-  sed 's|/[^/]*$||' <<<"$pics" | uniq -c || true
-  pic="$({ grep -i 'national geographic' <<<"$pics"; grep -i '/animals/' <<<"$pics"; grep -i 'user pictures' <<<"$pics" | grep -vi veertu
-           grep -i 'desktop pictures' <<<"$pics"; } | grep -m1 . || true)"
-  if [ -n "$pic" ] && sips -Z 1600 -s format png "$pic" --out cut.png >/dev/null 2>&1 && [ -s cut.png ]; then echo "picture: $pic"
-  else echo "picture: the app icon (no photos found)"; cp smoke.png cut.png; fi
+  # the test picture: the app icon (a known subject) over a full-size desktop picture, or over nothing
+  swiftc -O "$ROOT/tools/mac-cutout-diff.swift" -o "$WORK/cutdiff"
+  bg="$(find "/System/Library/Desktop Pictures" -maxdepth 1 -type f \( -iname '*.heic' -o -iname '*.jpg' -o -iname '*.png' \) 2>/dev/null | sort | head -1 || true)"
+  if [ -n "$bg" ] && sips -s format png "$bg" --out scene-bg.png >/dev/null 2>&1; then echo "background: $bg"
+  else echo "background: none found, plain white"; cp smoke.png scene-bg.png; fi
+  "$WORK/cutdiff" --scene scene-bg.png "$ROOT/packaging/linux/icons/convertino-512.png" cut.png
   cp cut.png "$OUT/cutout-input.png"
   MODELS="$HOME/Library/Application Support/Convertino/models"
   rm -rf "$MODELS"/coreml-*
@@ -71,15 +69,13 @@ if [ -n "${CUTOUT:-}" ]; then
   # ONNX Runtime keeps each partition's ML package next to its compiled model
   du -sh "$MODELS"/coreml-* || true
   echo "partitions: $(ls -d "$MODELS"/coreml-*/*/*/ 2>/dev/null | wc -l)"
-  du -sch "$MODELS"/coreml-*/*/*/model 2>/dev/null | tail -1 | sed 's/total/ML packages/' || true
-  du -sch "$MODELS"/coreml-*/*/*/compiled_model.mlmodelc 2>/dev/null | tail -1 | sed 's/total/compiled models/' || true
+  du -sch "$MODELS"/coreml-*/*/*/model/compiled_model.mlmodelc 2>/dev/null | tail -1 | sed 's/total/of that compiled models/' || true
   CONVERTINO_CUTOUT_CPU=1 "$D" run cutout cut.png
   mv "cut (cutout).png" "$OUT/cutout-cpu.png"
   tail -n +"$((n0 + 1))" "$LOG" | grep "cutout:" | tee "$OUT/cutout-log.txt"
   grep -q "inference on CoreML" "$OUT/cutout-log.txt" || { echo "Cut out didn't run on Core ML"; exit 1; }
   if grep -qE "Core ML unavailable|retrying on CPU" "$OUT/cutout-log.txt"; then echo "Core ML failed and the CPU took over"; exit 1; fi
   grep -q "program from the cache" "$OUT/cutout-log.txt" || echo "::warning::the second Core ML load didn't use the compiled-model cache"
-  swiftc -O "$ROOT/tools/mac-cutout-diff.swift" -o "$WORK/cutdiff"
   "$WORK/cutdiff" "$OUT/cutout-coreml-cached.png" "$OUT/cutout-cpu.png" "$OUT/cutout-compare.png" "Core ML" "CPU"
 fi
 
