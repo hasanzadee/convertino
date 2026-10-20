@@ -54,9 +54,9 @@ public sealed class RadialWindow : Window
 }
 
 /// <summary>
-/// The whole interaction: drag a file anywhere, tap Shift → the flower blooms under the cursor,
-/// drop on a petal → the action runs. Shift again flips between Convert and Tools.
-/// Double-tap Shift in Explorer opens the same flower for the selected files (click mode).
+/// The whole interaction: drag a file anywhere, tap the trigger key (Shift by default, see <see cref="TriggerKey"/>)
+/// → the flower blooms under the cursor, drop on a petal → the action runs. The key again flips between Convert and Tools.
+/// Double-tapping it in Explorer opens the same flower for the selected files (click mode).
 /// </summary>
 public sealed class OverlayController
 {
@@ -92,8 +92,8 @@ public sealed class OverlayController
         _releaseTimer.Tick += (_, _) => { _releaseTimer.Stop(); if (_state is State.Seed or State.Drag) Hide(); };
         _leaveTimer.Tick += (_, _) => { _leaveTimer.Stop(); if (_state == State.Drag) Hide(); };
 
-        input.ShiftDown += OnShiftDown;
-        input.ShiftDoubleTap += OnDoubleShift;
+        input.TriggerDown += OnTriggerDown;
+        input.TriggerDoubleTap += OnDoubleTap;
         input.MouseUp += _ => { if (_state is State.Seed or State.Drag) _releaseTimer.Start(); };
         input.MouseDown += p => { if (_state == State.Click && !_win.ContainsScreenPoint(p)) Hide(); };
         input.Escape += () => { if (_state is State.Seed or State.Drag or State.Click) Hide(); };
@@ -103,7 +103,9 @@ public sealed class OverlayController
 
     // ---------- triggers ----------
 
-    void OnShiftDown(bool dragging, POINT pt)
+    readonly TriggerGate _gate = new();
+
+    void OnTriggerDown(bool dragging, POINT pt)
     {
         if (!Settings.Current.Enabled) return;
         if (Visible)
@@ -111,16 +113,16 @@ public sealed class OverlayController
             if (_state != State.Seed) FlipPage();
             return;
         }
-        if (_state == State.Hidden && dragging) ShowAt(pt, State.Seed);
+        if (_state == State.Hidden && dragging && _gate.Opens(Settings.Current.TriggerKey)) ShowAt(pt, State.Seed);
     }
 
-    void OnDoubleShift(POINT pt)
+    void OnDoubleTap(POINT pt)
     {
         if (!Settings.Current.Enabled || !Settings.Current.DoubleShift || _state != State.Hidden) return;
         var fg = Win32.GetForegroundWindow();
         var cls = Win32.ClassOf(Win32.GetAncestor(fg, Win32.GA_ROOT));
         if (cls is not ("CabinetWClass" or "Progman" or "WorkerW")) return;
-        // don't hijack Shift while the user is renaming a file
+        // don't hijack the key while the user is renaming a file
         var gti = new GUITHREADINFO { cbSize = System.Runtime.InteropServices.Marshal.SizeOf<GUITHREADINFO>() };
         if (Win32.GetGUIThreadInfo(Win32.GetWindowThreadProcessId(fg, out _), ref gti) && gti.hwndFocus != IntPtr.Zero
             && Win32.ClassOf(gti.hwndFocus) == "Edit") return;

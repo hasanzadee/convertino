@@ -87,10 +87,11 @@ public sealed class App : Application
             Settings.Current.FirstRunDone = true;
             Settings.Current.Save();
             bool wayland = Environment.GetEnvironmentVariable("XDG_SESSION_TYPE") == "wayland";
+            var key = Settings.Current.TriggerKey;
             var t = Toasts.Create(new ScreenPoint(0, 0));
             t.SetDone("Convertino is running",
-                wayland ? "Wayland: drag + Shift works over X11 apps; right-click files → Convertino works everywhere."
-                        : "Drag any file and tap Shift — the flower opens under your cursor.",
+                wayland ? $"Wayland: drag + {key.KeyName()} works over X11 apps; right-click files → Convertino works everywhere."
+                        : $"Drag any file and {key.Tap()} — the flower opens under your cursor.",
                 AppIcon.Render(84), null);
             Toasts.Show(t);
         }
@@ -110,7 +111,7 @@ public sealed class App : Application
             it.Click += (_, _) => { it.IsChecked = !it.IsChecked; set(it.IsChecked); s.Save(); };
             return it;
         }
-        menu.Items.Add(new NativeMenuItem("Convertino — drag a file, tap Shift") { IsEnabled = false });
+        menu.Items.Add(new NativeMenuItem($"Convertino — drag a file, {s.TriggerKey.Tap()}") { IsEnabled = false });
         menu.Items.Add(new NativeMenuItemSeparator());
         menu.Items.Add(Check("Enabled", s.Enabled, v => s.Enabled = v));
         var themes = new NativeMenu();
@@ -121,6 +122,14 @@ public sealed class App : Application
             themes.Items.Add(it);
         }
         menu.Items.Add(new NativeMenuItem("Theme") { Menu = themes });
+        var keys = new NativeMenu();
+        foreach (var k in TriggerKeys.All)
+        {
+            var it = new NativeMenuItem(k.Label()) { ToggleType = MenuItemToggleType.Radio, IsChecked = k == s.TriggerKey };
+            it.Click += (_, _) => { s.TriggerKey = k; s.Save(); BuildTray(); };
+            keys.Items.Add(it);
+        }
+        menu.Items.Add(new NativeMenuItem("Open with") { Menu = keys });
         menu.Items.Add(Check("Notifications", s.Notifications, v => s.Notifications = v));
         menu.Items.Add(Check("Start at login", s.LaunchAtStartup, v => { s.LaunchAtStartup = v; Platform.Current.SetAutostart(v); }));
         var recent = s.Recent.Where(r => File.Exists(r.Path) || Directory.Exists(r.Path)).Take(5).ToList();
@@ -146,7 +155,7 @@ public sealed class App : Application
         using var ms = new MemoryStream();
         AppIcon.Render(64).Save(ms, PngBitmapEncoderOptions.Default);
         ms.Position = 0;
-        _tray = new TrayIcon { Icon = new WindowIcon(ms), ToolTipText = "Convertino — drag a file, tap Shift", Menu = menu, IsVisible = true };
+        _tray = new TrayIcon { Icon = new WindowIcon(ms), ToolTipText = $"Convertino — drag a file, {s.TriggerKey.Tap()}", Menu = menu, IsVisible = true };
         TrayIcon.SetIcons(this, [_tray]);
     }
 

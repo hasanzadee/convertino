@@ -160,13 +160,14 @@ public sealed class Flyout : Window
     void Build()
     {
         var s = Settings.Current;
+        var key = s.TriggerKey;
         var stack = new StackPanel();
 
         // header
         var logo = new Image { Source = new DrawingImage(AppIcon.Drawing(T)), Width = 34, Height = 34 };
         var title = new StackPanel { Margin = new Thickness(12, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
         title.Children.Add(new TextBlock { Text = "Convertino", FontFamily = Display, FontWeight = FontWeights.SemiBold, FontSize = 17, Foreground = B(T.Text) });
-        title.Children.Add(new TextBlock { Text = s.Enabled ? "Drag a file · tap ⇧ Shift" : "Paused", FontFamily = TextF, FontSize = 12, Foreground = B(T.SubText) });
+        title.Children.Add(new TextBlock { Text = s.Enabled ? $"Drag a file · {key.Tap()}" : "Paused", FontFamily = TextF, FontSize = 12, Foreground = B(T.SubText) });
         var header = new DockPanel { LastChildFill = false };
         var close = (FrameworkElement)FooterButton("\uE711", "", HideAnimated);
         close.ToolTip = "Close (Esc)";
@@ -186,9 +187,9 @@ public sealed class Flyout : Window
         {
             Children =
             {
-                HowRow("", "Drag any file, press Shift", "the flower opens under your cursor"),
-                HowRow("", "Shift again", "switch Convert ⇄ Tools"),
-                HowRow("", "Double-tap Shift in Explorer", "same menu for selected files"),
+                HowRow("", $"Drag any file, {key.Tap()}", "the flower opens under your cursor"),
+                HowRow("", $"{key.KeyName()} again", "switch Convert ⇄ Tools"),
+                HowRow("", $"Double-tap {key.KeyName()} in Explorer", "same menu for selected files"),
             },
         }, new Thickness(0, 14, 0, 0)));
 
@@ -205,7 +206,8 @@ public sealed class Flyout : Window
             Children =
             {
                 ToggleRow("Enabled", s.Enabled, v => { s.Enabled = v; s.Save(); Build(); }),
-                ToggleRow("Double-tap Shift in Explorer", s.DoubleShift, v => { s.DoubleShift = v; s.Save(); }),
+                TriggerRow(key),
+                ToggleRow($"Double-tap {key.KeyName()} in Explorer", s.DoubleShift, v => { s.DoubleShift = v; s.Save(); }),
                 ToggleRow("Notifications", s.Notifications, v => { s.Notifications = v; s.Save(); }),
                 ToggleRow("Start with Windows", s.LaunchAtStartup, v => { s.LaunchAtStartup = v; s.Save(); AutoStart.Apply(v); }),
             },
@@ -430,6 +432,36 @@ public sealed class Flyout : Window
         return dp;
     }
 
+    /// <summary>"Open with" and a pill per key; "Shift ×2" leaves a single Shift to apps that use it on drop.</summary>
+    UIElement TriggerRow(TriggerKey current)
+    {
+        var pills = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+        foreach (var k in TriggerKeys.All)
+        {
+            bool on = k == current;
+            var pill = new Border
+            {
+                CornerRadius = new CornerRadius(8), Padding = new Thickness(8, 3, 8, 4), Margin = new Thickness(4, 0, 0, 0), Cursor = Cursors.Hand,
+                Background = on ? new LinearGradientBrush(T.AccentA, T.AccentB, 0) : B(A(T.SubText, .12)),
+                ToolTip = k == TriggerKey.ShiftTwice ? "Double-tap Shift while dragging: a single Shift stays free for the app you drop on" : null,
+                Child = new TextBlock { Text = k == TriggerKey.ShiftTwice ? "Shift ×2" : k.Label(), FontFamily = TextF, FontSize = 11.5, Foreground = B(on ? T.AccentText : T.Text) },
+            };
+            pill.MouseLeftButtonUp += (_, e) =>
+            {
+                Settings.Current.TriggerKey = k;
+                Settings.Current.Save();
+                Build();
+                e.Handled = true;
+            };
+            pills.Children.Add(pill);
+        }
+        var dp = new DockPanel { Margin = new Thickness(0, 6, 0, 6) };
+        DockPanel.SetDock(pills, Dock.Right);
+        dp.Children.Add(pills);
+        dp.Children.Add(new TextBlock { Text = "Open with", FontFamily = TextF, FontSize = 13, Foreground = B(T.Text), VerticalAlignment = VerticalAlignment.Center });
+        return dp;
+    }
+
     FrameworkElement Switch(bool on, Action<bool> changed)
     {
         bool state = on;
@@ -541,7 +573,7 @@ public sealed class TrayIcon : IDisposable
         _icon = new System.Windows.Forms.NotifyIcon
         {
             Icon = AppIcon.TrayIcon(32),
-            Text = "Convertino — drag a file, tap Shift",
+            Text = $"Convertino — drag a file, {Settings.Current.TriggerKey.Tap()}",
             Visible = true,
         };
         _icon.MouseUp += (_, e) =>
@@ -562,6 +594,7 @@ public sealed class TrayIcon : IDisposable
     {
         var s = Settings.Current;
         m.Items.Clear();
+        _icon.Text = $"Convertino — drag a file, {s.TriggerKey.Tap()}";
         System.Windows.Forms.ToolStripMenuItem Item(string text, Action click, bool? check = null)
         {
             var it = new System.Windows.Forms.ToolStripMenuItem(text);
@@ -576,6 +609,10 @@ public sealed class TrayIcon : IDisposable
         foreach (var th in Theme.All)
             themes.DropDownItems.Add(Item(th.Name, () => { s.Theme = th.Name; s.Save(); Theme.Apply(th.Name); }, th.Name == Theme.Current.Name));
         m.Items.Add(themes);
+        var keys = new System.Windows.Forms.ToolStripMenuItem("Open with");
+        foreach (var k in TriggerKeys.All)
+            keys.DropDownItems.Add(Item(k.Label(), () => { s.TriggerKey = k; s.Save(); }, k == s.TriggerKey));
+        m.Items.Add(keys);
         m.Items.Add(Item("Notifications", () => { s.Notifications = !s.Notifications; s.Save(); }, s.Notifications));
         m.Items.Add(Item("Start with Windows", () => { s.LaunchAtStartup = !s.LaunchAtStartup; s.Save(); AutoStart.Apply(s.LaunchAtStartup); }, s.LaunchAtStartup));
         m.Items.Add(new System.Windows.Forms.ToolStripSeparator());
