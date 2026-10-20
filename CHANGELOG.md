@@ -4,6 +4,14 @@
 
 - Cut out on Apple silicon runs on Core ML (ONNX Runtime's Core ML provider, ML Program on the GPU / Neural Engine) instead of the CPU only, with the CPU as the fallback if Core ML fails. The first cut-out compiles the model for your Mac and caches it next to the model, so later loads are quick; `convertino model remove` deletes the cache too. The log says which provider ran and how ONNX Runtime split the model.
 
+## 1.1.1 — 2026-10-20
+
+Fixes from [@AliverdiSultanli](https://github.com/AliverdiSultanli), who also ran the first test of Convertino on a real Mac (M4, macOS 27). Thank you!
+
+- Zip: a folder passed with a trailing slash (`photos/`, shell tab completion on Linux and macOS) was zipped into itself as `.zip` and its entries lost the folder prefix; a folder with dots in its name (`release.v2`) came out as `release.zip`. Both fixed (#2).
+- Compress: images with real transparency (ICO, TGA, PSD, SVG, …) came back as JPEG on white; they now stay PNG with their alpha. Images with an alpha channel that is fully opaque go to the smaller JPEG (#3).
+- Settings: `settings.json` is written to a temporary file and swapped in, behind one lock, so a crash or a second process can never see half a file and reset your theme, toggles and recent list (#4).
+
 ## 1.1.0 — 2026-10-20
 
 - Activity card in the Windows tray panel: files handled, space saved and your day streak for the last two weeks (the numbers count up as the panel opens), a bar per day that shows that day's numbers on hover, and your most used actions. It takes the place of the how-to card once you've converted something.

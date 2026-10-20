@@ -193,7 +193,8 @@ public static class Images
             _ => "jpg",
         };
         using var img = Load(src);
-        if (outExt == "jpg" && img.HasAlpha && ext is "bmp" or "tif" or "tiff") outExt = "png";
+        // icons, TGA, PSD, SVG … with real transparency would come out on white
+        if (outExt == "jpg" && img.HasAlpha && !img.IsOpaque) outExt = "png";
         var dst = Paths.Beside(src, outExt, "(compressed)");
         int q = Settings.Current.CompressQuality;
 

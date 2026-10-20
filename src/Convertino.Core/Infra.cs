@@ -163,9 +163,23 @@ public sealed class Settings
         catch (Exception ex) { Log.Error("settings load", ex); Current = new(); }
     }
 
+    static readonly object SaveGate = new();
+
     public void Save()
     {
-        try { File.WriteAllText(Paths.Settings, JsonSerializer.Serialize(this, Json)); }
+        try
+        {
+            // jobs finish on worker threads: serialize under the Recent lock, and swap a finished file in
+            // so a crash mid-write can't leave half a settings.json (Load would then reset everything)
+            lock (SaveGate)
+            {
+                string json;
+                lock (Recent) json = JsonSerializer.Serialize(this, Json);
+                var tmp = Paths.Settings + ".tmp";
+                File.WriteAllText(tmp, json);
+                File.Move(tmp, Paths.Settings, true);
+            }
+        }
         catch (Exception ex) { Log.Error("settings save", ex); }
     }
 
