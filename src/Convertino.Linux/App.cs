@@ -22,6 +22,9 @@ public sealed class App : Application
     X11Input? _input;
     OverlayController? _overlay;
     TrayIcon? _tray;
+    // one menu for the app's lifetime, refilled by BuildTray (the macOS exporter refuses a second one; keep them alike)
+    readonly NativeMenu _menu = new();
+    TrayPanel? _panel;
     Socket? _server;
 
     public override void Initialize()
@@ -43,6 +46,7 @@ public sealed class App : Application
         Settings.Load();
         Skin.Apply(Settings.Current.Theme);
         RequestedThemeVariant = Skin.Current.IsDark ? ThemeVariant.Dark : ThemeVariant.Light;
+        Skin.Changed += () => RequestedThemeVariant = Skin.Current.IsDark ? ThemeVariant.Dark : ThemeVariant.Light;
         var platform = (LinuxPlatform)Platform.Current;
         platform.Ui = new LinuxJobUi();
         LinuxPlatform.Editors = EditorHost.ById;
@@ -51,10 +55,13 @@ public sealed class App : Application
         _input = new X11Input(a => Dispatcher.UIThread.Post(a));
         bool x11 = _input.Start();
         if (!x11) { _input = null; Log.Info("no X display — drag+Shift disabled, menu mode only"); }
+        Action<Window>? unmanaged = null;
         if (_input != null)
         {
             var display = _input.Display;
-            Toasts.Prepare = w => { if (w.TryGetPlatformHandle()?.Handle is { } h && h != IntPtr.Zero) X11.OverrideRedirect(display, h); };
+            // toasts and the panel: no window-manager frame or focus, exact position, above everything
+            unmanaged = w => { if (w.TryGetPlatformHandle()?.Handle is { } h && h != IntPtr.Zero) X11.OverrideRedirect(display, h); };
+            Toasts.Prepare = unmanaged;
         }
         _overlay = new OverlayController(_input);
         LinuxPlatform.ClipboardHost = _overlay.Host;
@@ -62,6 +69,16 @@ public sealed class App : Application
         bool selftest = Environment.GetEnvironmentVariable("CONVERTINO_EDIT_SELFTEST") is { Length: > 0 };
         if (!selftest)
         {
+            var input = _input;
+            _panel = new TrayPanel { Pointer = input != null ? () => input.Pointer : null, Thumbnail = LinuxPlatform.Thumbnail };
+            _panel.SettingsChanged += BuildTray;
+            unmanaged?.Invoke(_panel);
+            if (input != null)
+            {
+                // it never has focus (override-redirect), so a click outside and Esc are seen globally
+                input.ButtonDown += p => _panel.ClickAt(p);
+                input.Escape += () => _panel.HideAnimated();
+            }
             BuildTray();
             platform.SetAutostart(Settings.Current.LaunchAtStartup);
             StartIpc();
@@ -81,6 +98,9 @@ public sealed class App : Application
         }
         if (Environment.GetEnvironmentVariable("CONVERTINO_PIN") is { } pin && pin.Split(',') is [var px, var py])
             Dispatcher.UIThread.Post(() => _overlay.Pin(new ScreenPoint(int.Parse(px), int.Parse(py))), DispatcherPriority.Background);
+        // CONVERTINO_PANEL=1 opens the tray panel at start, =demo with two weeks of made-up activity (screenshots)
+        if (Environment.GetEnvironmentVariable("CONVERTINO_PANEL") is { Length: > 0 } panel)
+            Dispatcher.UIThread.Post(() => _panel?.Open(panel == "demo" ? Stats.Demo() : null), DispatcherPriority.Background);
         if (StartupMenu.Length > 0) Dispatcher.UIThread.Post(() => _overlay.Menu(StartupMenu), DispatcherPriority.Background);
         else if (!Settings.Current.FirstRunDone)
         {
@@ -103,15 +123,18 @@ public sealed class App : Application
 
     void BuildTray()
     {
-        _tray?.Dispose();
         var s = Settings.Current;
-        var menu = new NativeMenu();
+        var menu = _menu;
+        menu.Items.Clear();
         NativeMenuItem Check(string header, bool value, Action<bool> set)
         {
             var it = new NativeMenuItem(header) { ToggleType = MenuItemToggleType.CheckBox, IsChecked = value };
             it.Click += (_, _) => { it.IsChecked = !it.IsChecked; set(it.IsChecked); s.Save(); };
             return it;
         }
+        var open = new NativeMenuItem("Open panel");
+        open.Click += (_, _) => _panel?.Open();
+        menu.Items.Add(open);
         menu.Items.Add(new NativeMenuItem($"Convertino — drag a file, {s.TriggerKey.Tap()}") { IsEnabled = false });
         menu.Items.Add(new NativeMenuItemSeparator());
         menu.Items.Add(Check("Enabled", s.Enabled, v => s.Enabled = v));
@@ -119,7 +142,7 @@ public sealed class App : Application
         foreach (var th in Skin.All)
         {
             var it = new NativeMenuItem(th.Name) { ToggleType = MenuItemToggleType.Radio, IsChecked = th.Name == Skin.Current.Name };
-            it.Click += (_, _) => { s.Theme = th.Name; s.Save(); Skin.Apply(th.Name); BuildTray(); };
+            it.Click += (_, _) => { Skin.Choose(th.Name); BuildTray(); };
             themes.Items.Add(it);
         }
         menu.Items.Add(new NativeMenuItem("Theme") { Menu = themes });
@@ -157,11 +180,20 @@ public sealed class App : Application
         quit.Click += (_, _) => (ApplicationLifetime as IClassicDesktopStyleApplicationLifetime)?.Shutdown();
         menu.Items.Add(quit);
 
-        using var ms = new MemoryStream();
-        AppIcon.Render(64).Save(ms, PngBitmapEncoderOptions.Default);
-        ms.Position = 0;
-        _tray = new TrayIcon { Icon = new WindowIcon(ms), ToolTipText = $"Convertino — drag a file, {s.TriggerKey.Tap()}", Menu = menu, IsVisible = true };
-        TrayIcon.SetIcons(this, [_tray]);
+        var tip = $"Convertino — drag a file, {s.TriggerKey.Tap()}";
+        if (_tray == null)
+        {
+            using var ms = new MemoryStream();
+            AppIcon.Render(64).Save(ms, PngBitmapEncoderOptions.Default);
+            ms.Position = 0;
+            _tray = new TrayIcon { Icon = new WindowIcon(ms), ToolTipText = tip, Menu = menu, IsVisible = true };
+            // a left click opens the panel where the desktop reports it (KDE, XFCE, GNOME's AppIndicator extension …)
+            _tray.Clicked += (_, _) => _panel?.Toggle();
+            TrayIcon.SetIcons(this, [_tray]);
+            return;
+        }
+        // later calls refresh the same icon (re-registering it could move it around the tray)
+        _tray.ToolTipText = tip;
     }
 
     // ---------- single instance ----------

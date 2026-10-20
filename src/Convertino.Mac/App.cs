@@ -23,6 +23,9 @@ public sealed class App : Application
     MacInput? _input;
     OverlayController? _overlay;
     TrayIcon? _tray;
+    // one menu for the app's lifetime, refilled by BuildTray: Avalonia.Native throws if a live status item gets another
+    readonly NativeMenu _menu = new();
+    TrayPanel? _panel;
     Socket? _server;
 
     public override void Initialize()
@@ -44,6 +47,7 @@ public sealed class App : Application
         Settings.Load();
         Skin.Apply(Settings.Current.Theme);
         RequestedThemeVariant = Skin.Current.IsDark ? ThemeVariant.Dark : ThemeVariant.Light;
+        Skin.Changed += () => RequestedThemeVariant = Skin.Current.IsDark ? ThemeVariant.Dark : ThemeVariant.Light;
         var platform = (MacPlatform)Platform.Current;
         platform.Ui = new MacJobUi();
         MacPlatform.Editors = EditorHost.ById;
@@ -58,7 +62,31 @@ public sealed class App : Application
         bool selftest = Environment.GetEnvironmentVariable("CONVERTINO_EDIT_SELFTEST") is { Length: > 0 };
         if (!selftest)
         {
+            MacInput input = _input;
+            _panel = new TrayPanel { Pointer = () => input.Pointer, Thumbnail = MacPlatform.Thumbnail };
+            _panel.SettingsChanged += BuildTray;
+            // above every app and on every Space, like the toasts
+            _panel.Opened += (_, _) =>
+            {
+                MacWindow.Float(_panel, MacWindow.StatusLevel);
+                if (OverlayController.Diag) Log.Info("panel " + MacWindow.Describe(_panel));
+            };
+            // a press on the menu-bar item toggles the panel itself (below), or opens the menu, which closes it
+            input.ButtonDown += p => { if (!StatusItem.Contains(p)) _panel.ClickAt(p); };
+            input.Escape += () => _panel.HideAnimated();
             BuildTray();
+            // a click on the menu-bar item opens the panel (right-click / Ctrl-click: the menu), like on Windows
+            StatusItem.OnClick(() =>
+            {
+                if (OverlayController.Diag) Log.Info("status item clicked");
+                _panel.Toggle();
+            });
+            _panel.PropertyChanged += (_, e) =>
+            {
+                if (e.Property != Visual.IsVisibleProperty) return;
+                StatusItem.Highlight(_panel.IsVisible);
+                if (OverlayController.Diag) Log.Info($"panel visible={_panel.IsVisible}");
+            };
             platform.SetAutostart(Settings.Current.LaunchAtStartup);
             StartIpc();
         }
@@ -83,6 +111,9 @@ public sealed class App : Application
             Dispatcher.UIThread.Post(() => _overlay.Pin(new ScreenPoint(int.Parse(px), int.Parse(py)),
                 pinFile is { Length: > 0 } ? [Path.GetFullPath(pinFile)] : null), DispatcherPriority.Background);
         }
+        // CONVERTINO_PANEL=1 opens the menu-bar panel at start, =demo with two weeks of made-up activity (screenshots)
+        if (Environment.GetEnvironmentVariable("CONVERTINO_PANEL") is { Length: > 0 } panel)
+            Dispatcher.UIThread.Post(() => _panel?.Open(panel == "demo" ? Stats.Demo() : null), DispatcherPriority.Background);
         if (StartupMenu.Length > 0) Dispatcher.UIThread.Post(() => _overlay.Menu(StartupMenu), DispatcherPriority.Background);
         else if (!Settings.Current.FirstRunDone)
         {
@@ -133,15 +164,19 @@ public sealed class App : Application
 
     void BuildTray()
     {
-        _tray?.Dispose();
         var s = Settings.Current;
-        var menu = new NativeMenu();
+        var menu = _menu;
+        menu.Items.Clear();
         NativeMenuItem Check(string header, bool value, Action<bool> set)
         {
             var it = new NativeMenuItem(header) { ToggleType = MenuItemToggleType.CheckBox, IsChecked = value };
             it.Click += (_, _) => { it.IsChecked = !it.IsChecked; set(it.IsChecked); s.Save(); };
             return it;
         }
+        // right-click / Ctrl-click (and VoiceOver, which presses the item) open this menu; the panel stays first
+        var open = new NativeMenuItem("Open panel");
+        open.Click += (_, _) => _panel?.Open();
+        menu.Items.Add(open);
         menu.Items.Add(new NativeMenuItem($"Convertino — drag a file, {s.TriggerKey.Tap()}") { IsEnabled = false });
         menu.Items.Add(new NativeMenuItemSeparator());
         menu.Items.Add(Check("Enabled", s.Enabled, v => s.Enabled = v));
@@ -149,12 +184,7 @@ public sealed class App : Application
         foreach (var th in Skin.All)
         {
             var it = new NativeMenuItem(th.Name) { ToggleType = MenuItemToggleType.Radio, IsChecked = th.Name == Skin.Current.Name };
-            it.Click += (_, _) =>
-            {
-                s.Theme = th.Name; s.Save(); Skin.Apply(th.Name);
-                RequestedThemeVariant = Skin.Current.IsDark ? ThemeVariant.Dark : ThemeVariant.Light;
-                BuildTray();
-            };
+            it.Click += (_, _) => { Skin.Choose(th.Name); BuildTray(); };
             themes.Items.Add(it);
         }
         menu.Items.Add(new NativeMenuItem("Theme") { Menu = themes });
@@ -195,11 +225,25 @@ public sealed class App : Application
         quit.Click += (_, _) => (ApplicationLifetime as IClassicDesktopStyleApplicationLifetime)?.Shutdown();
         menu.Items.Add(quit);
 
-        using var ms = new MemoryStream();
-        AppIcon.Render(44).Save(ms, PngBitmapEncoderOptions.Default);
-        ms.Position = 0;
-        _tray = new TrayIcon { Icon = new WindowIcon(ms), ToolTipText = $"Convertino — drag a file, {s.TriggerKey.Tap()}", Menu = menu, IsVisible = true };
-        TrayIcon.SetIcons(this, [_tray]);
+        var tip = $"Convertino — drag a file, {s.TriggerKey.Tap()}";
+        if (_tray == null)
+        {
+            using var ms = new MemoryStream();
+            AppIcon.Render(44).Save(ms, PngBitmapEncoderOptions.Default);
+            ms.Position = 0;
+            // Avalonia.Native hands the tooltip to the status item as it attaches: a null one crashes
+            _tray = new TrayIcon { Icon = new WindowIcon(ms), ToolTipText = tip, Menu = menu, IsVisible = true };
+            TrayIcon.SetIcons(this, [_tray]);
+            // the menu (right-click, Ctrl-click) takes the panel's place
+            menu.Opening += (_, _) =>
+            {
+                if (OverlayController.Diag) Log.Info("tray menu opening");
+                _panel?.HideAnimated();
+            };
+            return;
+        }
+        // later calls refresh the same status item (a new one could land somewhere else in the menu bar)
+        _tray.ToolTipText = tip;
     }
 
     // ---------- single instance ----------

@@ -32,6 +32,14 @@ public sealed class Skin
         Changed?.Invoke();
     }
 
+    /// <summary>The user picked a theme (tray menu, panel): remember it and restyle.</summary>
+    public static void Choose(string name)
+    {
+        Settings.Current.Theme = name;
+        Settings.Current.Save();
+        Apply(name);
+    }
+
     public static Color WithA(Color c, double a) => Color.FromArgb((byte)Math.Clamp(a * 255, 0, 255), c.R, c.G, c.B);
 
     /// <summary>Denser glass for text-heavy surfaces (toasts, panels) so they read on any wallpaper.</summary>

@@ -43,7 +43,7 @@ Converting a file usually means opening an app, finding *Export…*, picking a f
 | 🗜 **Compress** | Smart image compression with the savings shown: `1.2 MB → 340 KB (−72%)` |
 | 📦 **Everything else** | Zip/unzip, merge/split/rotate PDFs, copy path, SHA-256, data URI |
 | 🎨 **Themes** | Catppuccin **Mocha** & **Latte**, **Sunset**, **Graphite** |
-| 📊 **Activity** | The tray panel charts your last two weeks: files handled, space saved, day streak, favourite actions (Windows) |
+| 📊 **Activity** | The tray / menu-bar panel charts your last two weeks: files handled, space saved, day streak, favourite actions |
 | ⌨️ **CLI** | `convertino convert IMG_0042.HEIC --to jpg` — the same engine without the UI |
 
 <div align="center">
@@ -77,7 +77,7 @@ Convertino installs per-user to `%LOCALAPPDATA%\Programs\Convertino` (no admin r
    tar xf convertino-linux-x64.tar.gz && cd convertino && ./install.sh
    ```
 
-The installer adds the `convertino` command, a desktop entry, autostart, and a **Convertino** entry in the right-click menu of Nautilus, Nemo, Dolphin and Caja. Optional helpers it will offer to install:
+The installer adds the `convertino` command, a desktop entry, autostart, and a **Convertino** entry in the right-click menu of Nautilus, Nemo, Dolphin and Caja. Click the tray icon (or **Open panel**, the first item of its menu) for the panel: activity, theme, options, recent files. Optional helpers it will offer to install:
 
 ```bash
 sudo apt install ffmpeg poppler-utils tesseract-ocr libreoffice   # Debian / Ubuntu
@@ -100,7 +100,7 @@ sudo pacman -S ffmpeg poppler tesseract tesseract-data-eng libreoffice-fresh   #
    cd ~/Downloads/convertino && ./install.sh
    ```
 
-The installer copies `Convertino.app` to `~/Applications`, adds the `convertino` command (`~/.local/bin`) and a **Quick Actions → Convertino** entry to Finder's right-click menu, and starts Convertino in the menu bar; it opens at login (toggle it in the menu-bar menu). `./install.sh --uninstall` removes it again. Optional helpers:
+The installer copies `Convertino.app` to `~/Applications`, adds the `convertino` command (`~/.local/bin`) and a **Quick Actions → Convertino** entry to Finder's right-click menu, and starts Convertino in the menu bar; it opens at login (toggle it in the panel). Click the menu-bar icon for the panel: activity, theme, options, recent files; right-click (or Control-click) it for the menu. `./install.sh --uninstall` removes it again. Optional helpers:
 
 ```bash
 brew install ffmpeg                  # video & audio petals
@@ -109,7 +109,7 @@ brew install --cask libreoffice      # Word / Excel / PowerPoint petals
 
 PDF rendering and OCR use what's built into macOS (CoreGraphics, the Vision framework), so they need nothing extra.
 
-**Permissions.** Convertino watches the mouse buttons and <kbd>Shift</kbd> by polling their state (no keyboard tap). In CI that works without any permission (macOS 26), and no Accessibility or Screen Recording access is needed either: the frosted glass is the system's own blur. If the flower doesn't open on your Mac, macOS may be holding back the Shift key: click the first-start card (or *Input Monitoring…* in the menu-bar menu), switch Convertino on in *System Settings → Privacy & Security → Input Monitoring*, then quit and reopen Convertino.
+**Permissions.** Convertino watches the mouse buttons and <kbd>Shift</kbd> by polling their state (no keyboard tap). In CI that works without any permission (macOS 26), and no Accessibility or Screen Recording access is needed either: the frosted glass is the system's own blur. If the flower doesn't open on your Mac, macOS may be holding back the Shift key: click the first-start card (or *Input Monitoring…* in the menu you get by right-clicking the menu-bar icon), switch Convertino on in *System Settings → Privacy & Security → Input Monitoring*, then quit and reopen Convertino.
 
 **Gatekeeper.** Convertino isn't signed with an Apple Developer ID or notarized. `install.sh` clears the download quarantine for the copy it installs, so it opens normally. If you move `Convertino.app` somewhere yourself instead, macOS says it *can't verify* the app: click *Done*, open *System Settings → Privacy & Security*, scroll down to *"Convertino" was blocked…* and click **Open Anyway** (once). Or, in Terminal: `xattr -dr com.apple.quarantine /path/to/Convertino.app`.
 
@@ -205,7 +205,7 @@ On Windows the executable is `Convertino.exe` (in `%LOCALAPPDATA%\Programs\Conve
 src/
   Convertino.Core/      shared engine: catalog of petals, converters, editors' pixel ops, CLI   (net10.0)
   Convertino.Windows/   WPF app: hooks, OLE drop target, flower, toasts, tray panel, editors     (net10.0-windows)
-  Convertino.Linux/     Avalonia app: X11 input, XDND drop target, flower, toasts, tray, editors (net10.0)
+  Convertino.Linux/     Avalonia app: X11 input, XDND drop target, flower, toasts, tray panel, editors (net10.0)
   Convertino.Mac/       macOS app on the same Avalonia UI: Quartz input, AppKit glass, Vision OCR  (net10.0)
 packaging/          installers, desktop entry, icons, file-manager integrations
 ```
