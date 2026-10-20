@@ -1,6 +1,6 @@
 # Data formats
 
-Convertino converts **JSON**, **JSON Lines** (`.jsonl`, `.ndjson`), **YAML** (`.yaml`, `.yml`), **TOML** and **XML** into one another, and to and from **CSV** and **XLSX**. Nothing needs Microsoft Office or LibreOffice, so these petals are there on every platform. The output goes beside the source like every other conversion (`config.yaml` → `config.json`).
+Convertino converts **JSON**, **JSON Lines** (`.jsonl`, `.ndjson`), **YAML** (`.yaml`, `.yml`), **TOML** and **XML** into one another, and to and from **CSV** and **XLSX**. CSV and XLSX also become **Markdown** and **HTML** tables, and JSON, XML and **CSS** get **Pretty** and **Minify**. Nothing needs Microsoft Office or LibreOffice, so these petals are there on every platform. The output goes beside the source like every other conversion (`config.yaml` → `config.json`).
 
 | Files | Convert ring | Tools ring |
 |---|---|---|
@@ -8,7 +8,8 @@ Convertino converts **JSON**, **JSON Lines** (`.jsonl`, `.ndjson`), **YAML** (`.
 | JSON Lines | JSON · YAML · TOML · XML · CSV · XLSX | Copy · Zip · Path · SHA-256 |
 | YAML / TOML | the other tree formats · CSV · XLSX | Copy · Zip · Path · SHA-256 |
 | XML | JSON · YAML · TOML · CSV · XLSX | Pretty · Minify · Copy · Zip · Path · SHA-256 |
-| CSV / XLSX | XLSX or CSV · JSON (plus PDF · ODS · HTML with an office suite) | Zip · Path · SHA-256 |
+| CSV / XLSX | XLSX or CSV · HTML table · JSON · Markdown table (plus PDF and ODS with an office suite) | Zip · Path · SHA-256 |
+| CSS | Pretty · Minify · Copy | Zip · Path · SHA-256 |
 
 ```bash
 convertino convert config.yaml --to toml
@@ -16,6 +17,8 @@ convertino convert orders.json --to xlsx
 convertino convert book.xlsx --to csv          # one CSV per sheet
 convertino run pretty response.json            # → response (pretty).json
 convertino run minify feed.xml                 # → feed (min).xml
+convertino run minify site.css                 # → site (min).css
+convertino convert sales.xlsx --to md          # → sales.md, one table per sheet
 ```
 
 Everything goes through one in-memory JSON tree, so any format converts to any other with the same rules. They are listed below.
@@ -91,4 +94,28 @@ These rules follow the common "Badgerfish-lite" convention (as in Newtonsoft.Jso
   - Columns are the union of all keys, in order of first appearance. Nested objects flatten to dotted columns (`supplier.address.city`). Lists inside a row are kept as JSON text (`["kitchen","gift"]`).
   - CSV / XLSX → JSON gives flat objects. Dotted column names are not turned back into nested objects.
 
-**With Microsoft Office or LibreOffice present**, CSV ⇄ XLSX and → JSON still use the engine above, because it keeps UTF-8 and every sheet. Excel itself reads a CSV without a BOM in the ANSI code page and saves only the active sheet to CSV. The office suite still handles PDF, ODS and HTML, and conversions from `.xls` and `.ods`.
+**With Microsoft Office or LibreOffice present**, CSV ⇄ XLSX, → JSON and the HTML and Markdown tables still use the engine above, because it keeps UTF-8 and every sheet. Excel itself reads a CSV without a BOM in the ANSI code page and saves only the active sheet to CSV. The office suite still handles PDF and ODS, and conversions from `.xls` and `.ods`.
+
+## Markdown and HTML tables
+
+CSV and XLSX also convert to a **Markdown** table (`.md`) or an **HTML** page (`.html`), both UTF-8.
+
+- **Several sheets.** An XLSX with several sheets gives one file with one table per non-empty sheet, each under its sheet name (`## Orders` in Markdown, `<h2>` in HTML). A single sheet or a CSV gives just the table.
+- The first row is the header. Columns where every filled cell is a number are right-aligned (`---:` in Markdown).
+- **Markdown** uses GitHub-style pipe tables, padded so they also read well as plain text.
+  - Markdown punctuation in cells is backslash-escaped: `\|`, `\*`, `\_`, `` \` ``, `\[`, `\]`, `\<`, `\>`, `\~`, `\&` and `\\`. A cell such as `Pipe | test` or `<b>` therefore shows exactly as written.
+  - Line breaks inside a cell become `<br>`.
+- **HTML** is a complete page with a small built-in stylesheet: borders, a sticky header and dark mode.
+  - Only `& < > " '` are escaped. Non-ASCII text and emoji stay as UTF-8 characters, not entities.
+  - Line breaks inside a cell become `<br>`.
+
+## CSS: Pretty and Minify
+
+Both tools change **only whitespace and comments**. Selectors, values, strings, `url(…)`, escapes and at-rules pass through exactly as written. I verified this in Chromium: the original, the pretty and the minified file give the same rules and the same computed styles.
+
+- **Minify** removes comments, but keeps `/*! … */` licence comments. It also removes the whitespace around `{ } ; , )` and after `:` and `(`.
+  - It never removes whitespace before `:`: `a :hover` (any hovered element inside `a`) is not `a:hover`. The one exception is a declaration's own colon (`margin : 0` → `margin:0`).
+  - It never removes whitespace before `(` (`and (min-width…)`), or around `+ - > ~` (`calc(1px + 2px)` needs it).
+  - When removing a comment would glue two words into one token, as in `a/**/b`, it leaves `/**/`.
+- **Pretty** puts each declaration on its own line, indents nested blocks (`@media`, `@supports`, CSS nesting), separates top-level rules with a blank line, and adds a space after `prop:` and after commas. Comments stay where they were.
+

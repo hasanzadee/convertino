@@ -43,7 +43,7 @@ public static partial class Data
     static string? ConvertOne(string src, string to, List<string> outputs)
     {
         var from = Canon(Kinds.Ext(src));
-        if (to is "csv" or "xlsx")
+        if (to is "csv" or "xlsx" or "md" or "html")
         {
             var grids = Sheets.IsSheet(src) ? Sheets.Read(src) : Sheets.FromTree(Read(src, from), Path.GetFileNameWithoutExtension(src));
             return Sheets.Write(grids, src, to, outputs);
@@ -798,7 +798,9 @@ public static partial class Data
         }
     }
 
-    // ---------- Pretty / Minify (JSON and XML) ----------
+    // ---------- Pretty / Minify (JSON, XML and CSS) ----------
+
+    public static bool CanReformat(string path) => Kinds.Ext(path) is "json" or "xml" or "css";
 
     public static Task Pretty(Job job) => Reformat(job, pretty: true);
     public static Task Minify(Job job) => Reformat(job, pretty: false);
@@ -811,9 +813,12 @@ public static partial class Data
             job.Report(i, job.Inputs.Count, 0.1);
             var src = job.Inputs[i];
             var ext = Kinds.Ext(src);
-            var bytes = await Task.Run(() => ext == "xml"
-                ? SaveXml(LoadXml(src, keepComments: true), pretty)
-                : Utf8.GetBytes(ReformatJson(File.ReadAllBytes(src), pretty)), job.Token);
+            var bytes = await Task.Run(() => ext switch
+            {
+                "xml" => SaveXml(LoadXml(src, keepComments: true), pretty),
+                "css" => Utf8.GetBytes(ReformatCss(File.ReadAllText(src), pretty)),
+                _ => Utf8.GetBytes(ReformatJson(File.ReadAllBytes(src), pretty)),
+            }, job.Token);
             var dst = Paths.Beside(src, ext, pretty ? "(pretty)" : "(min)");
             await File.WriteAllBytesAsync(dst, bytes, job.Token);
             job.Outputs.Add(dst);
@@ -873,6 +878,200 @@ public static partial class Data
         }
         catch (JsonException ex) { throw Bad("JSON", ex.LineNumber + 1, ex.BytePositionInLine + 1, FirstSentence(ex.Message)); }
         if (pretty) sb.Append('\n');
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// Re-lays out CSS changing nothing but whitespace and comments: strings, url(…), escapes, selectors, values and
+    /// at-rules pass through as written. Minify drops comments (keeping /*! … */ licences) and the whitespace around
+    /// { } ; , ) and after : and ( — never before ":" (a :hover ≠ a:hover) or "(" (and (…)), and never around + - in calc().
+    /// Pretty puts each declaration on its own line, indents blocks and adds a space after "prop:" and commas.
+    /// </summary>
+    static string ReformatCss(string css, bool pretty)
+    {
+        var sb = new StringBuilder(css.Length + css.Length / 4);
+        int n = css.Length, depth = 0, parens = 0;
+        bool space = false;   // whitespace was skipped since the last output
+        bool fresh = true;    // at the start of a line (Pretty) or of the output
+        bool decl = false, colonDone = false;   // in a "prop: value" statement, before / after its colon
+
+        void TrimEnd()
+        {
+            int end = sb.Length;
+            while (end > 0 && sb[end - 1] is ' ' or '\n') end--;
+            sb.Length = end;
+        }
+
+        void NewLine()
+        {
+            TrimEnd();
+            if (sb.Length > 0) sb.Append('\n').Append(' ', depth * 2);
+            fresh = true;
+            space = false;
+        }
+
+        void Put(string s)
+        {
+            if (space && !fresh && sb.Length > 0 && !(sb[^1] is '{' or '}' or ';' or '(' || !pretty && sb[^1] is ',' or ':')) sb.Append(' ');
+            sb.Append(s);
+            space = fresh = false;
+        }
+
+        // is the statement starting here a declaration (ends with ; or }) rather than a nested rule (has a { first)?
+        bool DeclarationAhead(int k)
+        {
+            for (int p = 0; k < n; k++)
+            {
+                char c = css[k];
+                if (c == '\\') k++;
+                else if (c is '"' or '\'') k = StringEnd(k) - 1;
+                else if (c == '/' && k + 1 < n && css[k + 1] == '*') k = CommentEnd(k) - 1;
+                else if (c == '(') p++;
+                else if (c == ')') p = Math.Max(0, p - 1);
+                else if (p == 0 && c is ';' or '}') return true;
+                else if (p == 0 && c == '{') return false;
+            }
+            return true;
+        }
+
+        int StringEnd(int k)   // index just past the string that starts at k
+        {
+            char q = css[k];
+            for (k++; k < n; k++)
+            {
+                if (css[k] == '\\') k++;
+                else if (css[k] == q) return k + 1;
+                else if (css[k] == '\n') return k;   // unterminated: ends at the line break
+            }
+            return n;
+        }
+
+        int CommentEnd(int k)
+        {
+            int e = css.IndexOf("*/", k + 2, StringComparison.Ordinal);
+            return e < 0 ? n : e + 2;
+        }
+
+        static bool Word(char c) => char.IsLetterOrDigit(c) || c is '-' or '_' || c > '\u007f';
+
+        for (int i = 0; i < n;)
+        {
+            char c = css[i];
+            if (c == '/' && i + 1 < n && css[i + 1] == '*')
+            {
+                int end = CommentEnd(i);
+                var comment = css[i..end];
+                i = end;
+                if (!pretty && !comment.StartsWith("/*!", StringComparison.Ordinal))
+                {
+                    // dropping it must not glue two words into one token: a/**/b
+                    if (!space && sb.Length > 0 && Word(sb[^1]) && i < n && Word(css[i])) sb.Append("/**/");
+                    continue;
+                }
+                if (pretty && fresh) { sb.Append(comment); NewLine(); }
+                else Put(comment);
+                continue;
+            }
+            if (char.IsWhiteSpace(c)) { space = true; i++; continue; }
+            if (c == '\\')
+            {
+                // an escape belongs to its token; a hex escape also owns one whitespace after it (".\31 0" is ".10")
+                int j = i + 1;
+                if (j < n && char.IsAsciiHexDigit(css[j]))
+                {
+                    while (j < n && j - i <= 6 && char.IsAsciiHexDigit(css[j])) j++;
+                    if (j < n && css[j] == '\r' && j + 1 < n && css[j + 1] == '\n') j += 2;
+                    else if (j < n && char.IsWhiteSpace(css[j])) j++;
+                }
+                else j = Math.Min(n, j + 1);
+                Put(css[i..j]);
+                i = j;
+                continue;
+            }
+            if (c is '"' or '\'')
+            {
+                int end = StringEnd(i);
+                Put(css[i..end]);
+                i = end;
+                continue;
+            }
+            if (c == '(' && !space && sb.Length >= 3 && sb.ToString(sb.Length - 3, 3).Equals("url", StringComparison.OrdinalIgnoreCase)
+                && (sb.Length == 3 || !Word(sb[^4])))
+            {
+                // url(unquoted) is one token, spaces and all; url("…") is an ordinary function with a string
+                int k = i + 1;
+                while (k < n && char.IsWhiteSpace(css[k])) k++;
+                if (k < n && css[k] is not ('"' or '\''))
+                {
+                    while (k < n && css[k] != ')') k += css[k] == '\\' ? 2 : 1;
+                    k = Math.Min(n, k + 1);
+                    Put(css[i..k]);
+                    i = k;
+                    continue;
+                }
+            }
+            i++;
+            switch (c)
+            {
+                case '{':
+                    space = false;
+                    if (pretty) { TrimEnd(); sb.Append(sb.Length > 0 ? " {" : "{"); }
+                    else sb.Append('{');
+                    depth++;
+                    if (pretty) NewLine();
+                    fresh = pretty;
+                    decl = DeclarationAhead(i);
+                    colonDone = false;
+                    break;
+                case '}':
+                    space = false;
+                    depth = Math.Max(0, depth - 1);
+                    if (pretty)
+                    {
+                        TrimEnd();
+                        sb.Append('\n').Append(' ', depth * 2).Append('}');
+                        NewLine();
+                        if (depth == 0) sb.Append('\n');   // a blank line between top-level rules
+                    }
+                    else sb.Append('}');
+                    decl = depth > 0 && DeclarationAhead(i);
+                    colonDone = false;
+                    break;
+                case ';':
+                    space = false;
+                    sb.Append(';');
+                    fresh = false;
+                    if (pretty && parens == 0) NewLine();
+                    if (parens == 0) { decl = depth > 0 && DeclarationAhead(i); colonDone = false; }
+                    break;
+                case ',':
+                    space = false;
+                    sb.Append(',');
+                    fresh = false;
+                    space = pretty;   // Pretty: one space after commas
+                    break;
+                case ':':
+                    bool propColon = decl && !colonDone && parens == 0;
+                    if (propColon) space = false;   // "margin : 0" → "margin: 0"; in a selector the space would matter
+                    Put(":");
+                    if (propColon) { colonDone = true; space = pretty; }
+                    break;
+                case '(':
+                    Put("(");
+                    parens++;
+                    break;
+                case ')':
+                    space = false;
+                    sb.Append(')');
+                    fresh = false;
+                    parens = Math.Max(0, parens - 1);
+                    break;
+                default:
+                    Put(c.ToString());
+                    break;
+            }
+        }
+        if (pretty) { TrimEnd(); sb.Append('\n'); }
         return sb.ToString();
     }
 }

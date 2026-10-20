@@ -30,6 +30,15 @@ public static partial class Sheets
     public static string Write(List<Grid> grids, string src, string to, List<string> outputs)
     {
         if (grids.Count == 0) grids = [new Grid(Path.GetFileNameWithoutExtension(src), [], true)];
+        if (to is "md" or "html")
+        {
+            // one file; with several sheets, one table per non-empty sheet under its name
+            var tables = grids.Where(g => g.Rows.Count > 0).ToList();
+            var dst = Paths.Beside(src, to);
+            File.WriteAllText(dst, to == "md" ? MarkdownTables(tables) : HtmlTables(tables, Path.GetFileNameWithoutExtension(src)), new UTF8Encoding(false));
+            outputs.Add(dst);
+            return Note(tables.Count > 0 ? tables : grids);
+        }
         if (to == "xlsx")
         {
             var dst = Paths.Beside(src, "xlsx");
@@ -170,6 +179,129 @@ public static partial class Sheets
     static string Stamp(DateTime t, char sep) =>
         t.TimeOfDay == TimeSpan.Zero ? t.ToString("yyyy-MM-dd", Inv)
         : t.ToString(t.Millisecond == 0 ? $"yyyy-MM-dd'{sep}'HH:mm:ss" : $"yyyy-MM-dd'{sep}'HH:mm:ss.fff", Inv);
+
+    // ---------- Markdown / HTML tables ----------
+
+    /// <summary>GitHub-flavoured pipe tables: the first row is the header, number columns are right-aligned, cells are escaped.</summary>
+    static string MarkdownTables(List<Grid> tables)
+    {
+        var sb = new StringBuilder();
+        foreach (var g in tables)
+        {
+            if (tables.Count > 1) sb.Append("## ").Append(MdCell(g.Name)).Append("\n\n");
+            int width = Math.Max(1, g.Rows.Max(r => r.Length));
+            var cells = g.Rows.Select(r => Enumerable.Range(0, width).Select(c => MdCell(Text(c < r.Length ? r[c] : null))).ToArray()).ToList();
+            var right = Enumerable.Range(0, width).Select(c => NumberColumn(g, c)).ToArray();
+            // columns are padded for reading as plain text, up to 40 characters
+            var w = Enumerable.Range(0, width).Select(c => Math.Clamp(cells.Max(r => r[c].Length), 3, 40)).ToArray();
+            for (int r = 0; r < cells.Count; r++)
+            {
+                sb.Append('|');
+                for (int c = 0; c < width; c++)
+                {
+                    var s = cells[r][c];
+                    var pad = new string(' ', Math.Max(0, w[c] - s.Length));
+                    sb.Append(' ').Append(right[c] ? pad + s : s + pad).Append(" |");
+                }
+                sb.Append('\n');
+                if (r > 0) continue;
+                sb.Append('|');
+                for (int c = 0; c < width; c++) sb.Append(' ').Append(right[c] ? new string('-', w[c] - 1) + ":" : new string('-', w[c])).Append(" |");
+                sb.Append('\n');
+            }
+            sb.Append('\n');
+        }
+        return sb.ToString().TrimEnd('\n') + "\n";
+    }
+
+    /// <summary>A cell for a pipe table: Markdown punctuation is backslash-escaped (| included), line breaks become &lt;br&gt;.</summary>
+    static string MdCell(string s)
+    {
+        var sb = new StringBuilder(s.Length);
+        for (int i = 0; i < s.Length; i++)
+        {
+            char c = s[i];
+            if (c is '\\' or '|' or '`' or '*' or '_' or '[' or ']' or '<' or '>' or '~' or '&') sb.Append('\\').Append(c);
+            else if (c == '\r') { sb.Append("<br>"); if (i + 1 < s.Length && s[i + 1] == '\n') i++; }
+            else if (c == '\n') sb.Append("<br>");
+            else sb.Append(c);
+        }
+        return sb.ToString();
+    }
+
+    const string TableCss = """
+        body{font-family:system-ui,'Segoe UI',Roboto,sans-serif;margin:32px;color:#1f2328;background:#fff}
+        h2{font-size:1.15em;margin:28px 0 10px}
+        table{border-collapse:collapse;font-size:14px}
+        th,td{border:1px solid #d1d9e0;padding:6px 12px;text-align:left;vertical-align:top}
+        th{background:#f6f8fa;position:sticky;top:0}
+        tbody tr:nth-child(2n) td{background:#f9fafb}
+        .n{text-align:right;font-variant-numeric:tabular-nums}
+        @media (prefers-color-scheme:dark){body{color:#e6edf3;background:#0d1117}th,td{border-color:#30363d}th{background:#161b22}tbody tr:nth-child(2n) td{background:#11161d}}
+        """;
+
+    /// <summary>A UTF-8 page with one &lt;table&gt; per sheet (a heading each when there are several); text is HTML-escaped.</summary>
+    static string HtmlTables(List<Grid> tables, string title)
+    {
+        var sb = new StringBuilder();
+        sb.Append("<!doctype html>\n<html>\n<head>\n<meta charset=\"utf-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n<title>")
+          .Append(Html(title, breaks: false)).Append("</title>\n<style>\n").Append(TableCss).Append("\n</style>\n</head>\n<body>\n");
+        foreach (var g in tables)
+        {
+            if (tables.Count > 1) sb.Append("<h2>").Append(Html(g.Name, breaks: false)).Append("</h2>\n");
+            int width = Math.Max(1, g.Rows.Max(r => r.Length));
+            var right = Enumerable.Range(0, width).Select(c => NumberColumn(g, c)).ToArray();
+            sb.Append("<table>\n");
+            for (int r = 0; r < g.Rows.Count; r++)
+            {
+                var tag = r == 0 ? "th" : "td";
+                if (r == 0) sb.Append("<thead>\n");
+                sb.Append("<tr>");
+                for (int c = 0; c < width; c++)
+                    sb.Append('<').Append(tag).Append(right[c] ? " class=\"n\">" : ">")
+                      .Append(Html(Text(c < g.Rows[r].Length ? g.Rows[r][c] : null), breaks: true)).Append("</").Append(tag).Append('>');
+                sb.Append("</tr>\n");
+                if (r == 0) sb.Append("</thead>\n<tbody>\n");
+            }
+            sb.Append("</tbody>\n</table>\n");
+        }
+        return sb.Append("</body>\n</html>\n").ToString();
+    }
+
+    /// <summary>&amp; &lt; &gt; &quot; &#39; escaped, everything else (Unicode, emoji) as it is.</summary>
+    static string Html(string s, bool breaks)
+    {
+        var sb = new StringBuilder(s.Length);
+        for (int i = 0; i < s.Length; i++)
+        {
+            switch (s[i])
+            {
+                case '&': sb.Append("&amp;"); break;
+                case '<': sb.Append("&lt;"); break;
+                case '>': sb.Append("&gt;"); break;
+                case '"': sb.Append("&quot;"); break;
+                case '\'': sb.Append("&#39;"); break;
+                case '\r' when breaks: sb.Append("<br>"); if (i + 1 < s.Length && s[i + 1] == '\n') i++; break;
+                case '\n' when breaks: sb.Append("<br>"); break;
+                default: sb.Append(s[i]); break;
+            }
+        }
+        return sb.ToString();
+    }
+
+    /// <summary>Every filled cell below the header is a number (and there is at least one).</summary>
+    static bool NumberColumn(Grid g, int c)
+    {
+        bool any = false;
+        foreach (var row in g.Rows.Skip(1))
+        {
+            var v = c < row.Length ? row[c] : null;
+            if (Blank(v)) continue;
+            if (!(v is double or Num || v is string s && Numeric().IsMatch(s))) return false;
+            any = true;
+        }
+        return any;
+    }
 
     // ---------- XLSX (MiniExcel) ----------
 

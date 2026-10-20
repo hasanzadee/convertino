@@ -44,6 +44,11 @@ jobs:
           ./dist/linux-x64/convertino convert data.yaml --to xlsx
           ./dist/linux-x64/convertino convert data.xlsx --to csv
           grep -q 'Şəki, ""AZ""' data.csv
+          ./dist/linux-x64/convertino convert data.csv --to md
+          grep -q '| Şəki, "AZ" |' data.md
+          printf 'a :hover { color : red } /* x */\n' > site.css
+          ./dist/linux-x64/convertino run minify site.css
+          grep -qx 'a :hover{color:red}' 'site (min).css'
 
   macos:
     strategy:

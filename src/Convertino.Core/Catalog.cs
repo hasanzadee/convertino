@@ -139,14 +139,15 @@ public static class Catalog
                 break;
             case Kind.Excel when hasOffice(Kind.Excel) || files.All(Sheets.IsSheet):
             {
-                // CSV ⇄ XLSX and → JSON run in-process: no office suite needed, UTF-8 kept, every sheet converted
+                // CSV ⇄ XLSX, → JSON and the HTML / Markdown tables run in-process: no office suite needed, UTF-8 kept, every sheet converted
                 bool sheets = files.All(Sheets.IsSheet), viaOffice = hasOffice(Kind.Excel);
                 if (viaOffice) conv.Add(Fmt("pdf", "print", j => office!.Convert(j, "pdf")));
                 if (ext != "xlsx") conv.Add(Fmt("xlsx", "Excel", j => sheets ? Data.Convert(j, "xlsx") : office!.Convert(j, "xlsx")));
                 if (ext != "csv") conv.Add(Fmt("csv", "UTF-8", j => sheets ? Data.Convert(j, "csv") : office!.Convert(j, "csv")));
                 if (viaOffice && ext != "ods") conv.Add(Fmt("ods", "OpenDoc", j => office!.Convert(j, "ods")));
-                if (viaOffice) conv.Add(Fmt("html", "web", j => office!.Convert(j, "html")));
+                conv.Add(Fmt("html", sheets ? "table" : "web", j => sheets ? Data.Convert(j, "html") : office!.Convert(j, "html")));
                 if (sheets) conv.Add(Fmt("json", "data", j => Data.Convert(j, "json")));
+                if (sheets) conv.Add(Fmt("md", "table", j => Data.Convert(j, "md")));
                 tools.AddRange([ZipA, PathA, HashA]);
                 break;
             }
@@ -199,12 +200,13 @@ public static class Catalog
                 break;
             case Kind.Data:
             {
-                // JSON, JSON Lines, YAML, TOML and XML into one another, and to CSV / XLSX (Services/Data.cs)
+                // JSON, JSON Lines, YAML, TOML and XML into one another, and to CSV / XLSX (Services/Data.cs);
+                // CSS only gets Pretty / Minify, so they lead its first ring
                 string self = Data.Canon(ext);
-                bool same = files.All(f => Data.Canon(Kinds.Ext(f)) == self);
+                bool same = files.All(f => Data.Canon(Kinds.Ext(f)) == self), css = files.Any(f => Kinds.Ext(f) == "css");
                 void D(string to, string hint)
                 {
-                    if (!(same && to == self)) conv.Add(Fmt(to, hint, j => Data.Convert(j, to)));
+                    if (!css && !(same && to == self)) conv.Add(Fmt(to, hint, j => Data.Convert(j, to)));
                 }
                 D("json", "web");
                 D("yaml", "readable");
@@ -213,12 +215,13 @@ public static class Catalog
                 D("csv", "table");
                 D("xlsx", "Excel");
                 if (self is "json" or "jsonl") D("jsonl", "lines");
-                if (files.All(f => Kinds.Ext(f) is "json" or "xml"))
+                var ring = css ? conv : tools;
+                if (files.All(Data.CanReformat))
                 {
-                    tools.Add(Tool("pretty", "Pretty", "code", "Pretty-print", Data.Pretty));
-                    tools.Add(Tool("minify", "Minify", "compress", "Minify", Data.Minify));
+                    ring.Add(Tool("pretty", "Pretty", "code", "Pretty-print", Data.Pretty));
+                    ring.Add(Tool("minify", "Minify", "compress", "Minify", Data.Minify));
                 }
-                tools.Add(Tool("copytext", "Copy", "copy", "Copy contents", CopyText, quick: true));
+                ring.Add(Tool("copytext", "Copy", "copy", "Copy contents", CopyText, quick: true));
                 tools.AddRange([ZipA, PathA, HashA]);
                 break;
             }
