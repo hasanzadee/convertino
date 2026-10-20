@@ -26,6 +26,8 @@ public sealed class App : Application
 
     public override void Initialize()
     {
+        // platform integrations read the application name from here (macOS showed "Avalonia" without it)
+        Name = "Convertino";
         Styles.Add(new FluentTheme());
         RequestedThemeVariant = ThemeVariant.Dark;
     }
