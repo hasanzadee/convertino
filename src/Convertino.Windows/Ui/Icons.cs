@@ -12,6 +12,7 @@ public static class Icons
         ["copy"] = "", ["update"] = "\uE896", ["cutout"] = "",
         ["half"] = "", ["fithd"] = "", ["gray"] = "",
         ["picture"] = "",
+        ["subtitles"] = "", ["encoding"] = "", ["eol"] = "",
     };
 
     public static string? Glyph(string? key) => key != null && Map.TryGetValue(key, out var g) ? g : null;

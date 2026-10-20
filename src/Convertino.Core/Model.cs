@@ -7,7 +7,7 @@ public readonly record struct RectD(double X, double Y, double Width, double Hei
     public bool IsEmpty => Width <= 0 || Height <= 0;
 }
 
-public enum Kind { Image, Pdf, Word, Excel, Slides, Text, Markdown, Video, Audio, Archive, Folder, Other }
+public enum Kind { Image, Pdf, Word, Excel, Slides, Text, Markdown, Video, Audio, Archive, Folder, Subtitles, Other }
 
 /// <summary>One petal of the flower: a conversion ("PNG") or a tool ("Crop").</summary>
 public sealed class PetalAction
@@ -71,6 +71,7 @@ public static class Kinds
         [".aac"] = Kind.Audio, [".opus"] = Kind.Audio, [".wma"] = Kind.Audio, [".aiff"] = Kind.Audio, [".amr"] = Kind.Audio,
         [".oga"] = Kind.Audio,
         [".zip"] = Kind.Archive,
+        [".srt"] = Kind.Subtitles, [".vtt"] = Kind.Subtitles, [".ass"] = Kind.Subtitles, [".ssa"] = Kind.Subtitles, [".lrc"] = Kind.Subtitles,
     };
 
     public static Kind Of(string path)
