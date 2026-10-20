@@ -13,11 +13,11 @@ static class Dev
     public static async Task Run(string id, string[] files)
     {
         files = files.Select(Path.GetFullPath).ToArray();
-        var pages = Catalog.For(files);
-        var action = pages.Convert.Concat(pages.Tools).FirstOrDefault(a => a.Id == id);
+        var all = Catalog.All(files).ToList();
+        var action = all.FirstOrDefault(a => a.Id == id);
         if (action == null)
         {
-            Log.Info($"DEV run: no action '{id}'. Available: {string.Join(", ", pages.Convert.Concat(pages.Tools).Select(a => a.Id))}");
+            Log.Info($"DEV run: no action '{id}'. Available: {string.Join(", ", all.Select(a => a.Id))}");
             return;
         }
         var job = new Job { Inputs = files, Action = action, Token = CancellationToken.None };
@@ -30,12 +30,16 @@ static class Dev
         catch (Exception ex) { Log.Error($"DEV run {id} FAILED", ex); }
     }
 
+    /// <summary>
+    /// Convertino.exe --snapshot out.png [theme] [img|tools|more|pdf|video] [hover]: one ring of the flower as a PNG.
+    /// img, tools and more are the three rings of an image (Convert, Tools, More).
+    /// </summary>
     public static void Snapshot(string outPath, string kind, int hover)
     {
         var sample = kind switch
         {
             "pdf" => @"C:\Windows\Help\sample.pdf",
-            "tools" => @"C:\Windows\Web\Wallpaper\Windows\img0.jpg",
+            "tools" or "more" => @"C:\Windows\Web\Wallpaper\Windows\img0.jpg",
             "video" => @"C:\x\clip.mp4",
             _ => @"C:\Windows\Web\Wallpaper\Windows\img0.jpg",
         };
@@ -66,9 +70,11 @@ static class Dev
         view.HubBadge = Kinds.Badge(sample);
         view.Appear();
         view.SetMode(HubMode.Info);
-        bool tools = kind == "tools";
-        view.SetPages(pages.Tools.Count > 0 ? 2 : 1, tools ? 1 : 0);
-        view.SetPetals(tools ? pages.Tools : pages.Convert, 1);
+        var rings = pages.Rings;
+        var ring = kind switch { "tools" => pages.Tools, "more" => pages.More, _ => pages.Convert };
+        int page = Math.Max(0, rings.ToList().IndexOf(ring));
+        view.SetPages(rings.Count, page);
+        view.SetPetals(rings[page], 1);
         view.SetHover(hover);
         view.Settle();
         view.Measure(new Size(view.Width, view.Height));

@@ -57,7 +57,7 @@ public static class Kinds
         [".png"] = Kind.Image, [".jpg"] = Kind.Image, [".jpeg"] = Kind.Image, [".jfif"] = Kind.Image, [".webp"] = Kind.Image,
         [".heic"] = Kind.Image, [".heif"] = Kind.Image, [".avif"] = Kind.Image, [".bmp"] = Kind.Image, [".tif"] = Kind.Image,
         [".tiff"] = Kind.Image, [".gif"] = Kind.Image, [".ico"] = Kind.Image, [".tga"] = Kind.Image, [".psd"] = Kind.Image,
-        [".svg"] = Kind.Image, [".jxl"] = Kind.Image, [".dng"] = Kind.Image, [".cr2"] = Kind.Image, [".nef"] = Kind.Image, [".arw"] = Kind.Image,
+        [".svg"] = Kind.Image, [".jxl"] = Kind.Image, [".qoi"] = Kind.Image, [".dng"] = Kind.Image, [".cr2"] = Kind.Image, [".nef"] = Kind.Image, [".arw"] = Kind.Image,
         [".pdf"] = Kind.Pdf,
         [".docx"] = Kind.Word, [".doc"] = Kind.Word, [".rtf"] = Kind.Word, [".odt"] = Kind.Word, [".docm"] = Kind.Word,
         [".xlsx"] = Kind.Excel, [".xls"] = Kind.Excel, [".xlsm"] = Kind.Excel, [".ods"] = Kind.Excel, [".csv"] = Kind.Excel,

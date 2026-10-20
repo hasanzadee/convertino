@@ -51,7 +51,7 @@ Windows (`Convertino.exe`):
 
 | Flag | Does |
 |---|---|
-| `--snapshot out.png [theme] [img\|tools\|pdf] [hoverIndex]` | render the flower to a PNG (no drag needed) |
+| `--snapshot out.png [theme] [img\|tools\|more\|pdf] [hoverIndex]` | render one ring of the flower to a PNG (no drag needed); `img`, `tools` and `more` are the three image rings |
 | `--panel out.png [theme] [demo]` | render the tray panel to a PNG (`demo` fills the Activity card with sample data) |
 | `--run <actionId> files…` | run one action headless; result in the log |
 | `--edit <crop\|addbg\|annotate\|redact\|adjust> file` | open an editor directly |

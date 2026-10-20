@@ -36,6 +36,7 @@ public static class Cli
                     o.WriteLine($"{p.Title}");
                     o.WriteLine("  convert: " + string.Join("  ", p.Convert.Select(a => $"{a.Id}")));
                     if (p.Tools.Count > 0) o.WriteLine("  tools:   " + string.Join("  ", p.Tools.Select(a => a.Interactive ? $"({a.Id})" : a.Id)));
+                    if (p.More.Count > 0) o.WriteLine("  more:    " + string.Join("  ", p.More.Select(a => a.Interactive ? $"({a.Id})" : a.Id)));
                     o.WriteLine("  (ids in parentheses open an editor and need the desktop app)");
                     return 0;
                 }

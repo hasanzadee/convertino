@@ -30,6 +30,8 @@ public static class Images
         "tif" or "tiff" => MagickFormat.Tiff,
         "bmp" => MagickFormat.Bmp,
         "gif" => MagickFormat.Gif,
+        "jxl" => MagickFormat.Jxl,
+        "qoi" => MagickFormat.Qoi,
         _ => MagickFormat.Png,
     };
 
@@ -85,6 +87,9 @@ public static class Images
                 break;
             case "heic" or "heif":
                 img.Quality = (uint)(quality ?? 70);
+                break;
+            case "jxl":
+                img.Quality = (uint)(quality ?? 90); // libjxl distance 1.0: visually lossless
                 break;
             case "tif" or "tiff":
                 img.Settings.Compression = CompressionMethod.LZW;
@@ -293,6 +298,101 @@ public static class Images
         if (ext is "jpg" or "jpeg" or "jfif") img.Quality = 95;
         img.Write(dst);
         return (dst, tags, gps);
+    }
+
+    // ---------- one-tap edits (the More ring): a new file beside the source, same format where possible ----------
+
+    public static Task Half(Job job) => Edit(job, "half", img =>
+    {
+        img.Resize(new Percentage(50));
+        return true;
+    });
+
+    /// <summary>Shrink to fit 1920 × 1080, or 1080 × 1920 for portrait images; never enlarges.</summary>
+    public static async Task FitFullHd(Job job)
+    {
+        await Edit(job, "fit", img =>
+        {
+            bool portrait = img.Height > img.Width;
+            uint w = portrait ? 1080u : 1920u, h = portrait ? 1920u : 1080u;
+            if (img.Width <= w && img.Height <= h) return false;
+            img.Resize(new MagickGeometry(w, h));
+            return true;
+        });
+        if (job.Outputs.Count == 0) { job.Title = "Already Full HD or smaller"; job.Summary = "Fits in 1920 × 1080, nothing to shrink"; }
+    }
+
+    public static Task Grayscale(Job job) => Edit(job, "grayscale", img =>
+    {
+        img.Grayscale(PixelIntensityMethod.Rec709Luma);
+        return true;
+    });
+
+    /// <summary>
+    /// Runs <paramref name="edit"/> on each input (every frame of an animated GIF / WebP) and writes the result beside it
+    /// as "name (suffix).ext"; for resizes the suffix is the new size, e.g. "photo (1920x1280).jpg". An edit that
+    /// returns false leaves that file alone (nothing to do).
+    /// </summary>
+    static async Task Edit(Job job, string suffix, Func<MagickImage, bool> edit)
+    {
+        int n = job.Inputs.Count;
+        string? sizes = null;
+        for (int i = 0; i < n; i++)
+        {
+            job.Token.ThrowIfCancellationRequested();
+            job.Report(i, n);
+            var src = job.Inputs[i];
+            var r = await Task.Run(() => EditOne(src, suffix, edit), job.Token);
+            if (r.path == null) continue;
+            job.Outputs.Add(r.path);
+            sizes = r.sizes;
+        }
+        if (job.Outputs.Count == 0) return;
+        job.Summary = job.Outputs.Count == 1 && suffix is "half" or "fit" ? sizes : SizeSummary(job);
+    }
+
+    static (string? path, string sizes) EditOne(string src, string suffix, Func<MagickImage, bool> edit)
+    {
+        var ext = EditExt(src);
+        bool resize = suffix is "half" or "fit";
+        bool toRgb = suffix == "grayscale" && ext is "webp" or "avif" or "heic" or "ico" or "qoi"; // these encoders want RGB
+        if (Kinds.Ext(src) is "gif" or "webp")
+        {
+            using var col = new MagickImageCollection(src);
+            if (col.Count > 1)
+            {
+                col.Coalesce();
+                var (w0, h0) = (col[0].Width, col[0].Height);
+                foreach (var f in col)
+                {
+                    if (!edit((MagickImage)f)) return (null, "");
+                    if (toRgb) f.ColorSpace = ColorSpace.sRGB;
+                    if (ext == "webp") f.Quality = 85;
+                }
+                var (w1, h1) = (col[0].Width, col[0].Height); // before Optimize crops frames to what changes
+                if (ext == "gif") col.Optimize();
+                var adst = Paths.Beside(src, ext, resize ? $"({w1}x{h1})" : $"({suffix})");
+                col.Write(adst, FormatOf(ext));
+                return (adst, $"{w0} × {h0} → {w1} × {h1}");
+            }
+        }
+        using var img = Load(src);
+        var (w, h) = (img.Width, img.Height);
+        if (!edit(img)) return (null, "");
+        if (toRgb) img.ColorSpace = ColorSpace.sRGB;
+        PrepareFor(img, ext);
+        var dst = Paths.Beside(src, ext, resize ? $"({img.Width}x{img.Height})" : $"({suffix})");
+        img.Write(dst, FormatOf(ext));
+        return (dst, $"{w} × {h} → {img.Width} × {img.Height}");
+    }
+
+    /// <summary>The source's own format when Convertino can write it; PNG for the rest (SVG, PSD, TGA …), JPG for camera RAW.</summary>
+    static string EditExt(string src)
+    {
+        var ext = Kinds.Ext(src) switch { "jpeg" or "jfif" => "jpg", "tif" => "tiff", "heif" => "heic", var e => e };
+        if (ext is "dng" or "cr2" or "nef" or "arw") return "jpg";
+        return ext is "png" or "jpg" or "webp" or "avif" or "heic" or "tiff" or "bmp" or "gif" or "ico" or "jxl" or "qoi" && CanWrite(FormatOf(ext))
+            ? ext : "png";
     }
 
     public static async Task MergeToPdf(Job job) => await Pdfs.ImagesToPdf(job, merge: true);

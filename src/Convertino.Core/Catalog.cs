@@ -3,7 +3,14 @@ using Convertino.Services;
 
 namespace Convertino;
 
-public sealed record Pages(List<PetalAction> Convert, List<PetalAction> Tools, string Title, string Badge);
+public sealed record Pages(List<PetalAction> Convert, List<PetalAction> Tools, string Title, string Badge)
+{
+    /// <summary>Third ring, after Tools: rarer formats and one-tap extras (for images: Half, Full HD, B&amp;W, HEIC, TIFF …).</summary>
+    public List<PetalAction> More { get; init; } = [];
+
+    /// <summary>The rings in flip order (Convert → Tools → More), empty ones left out.</summary>
+    public IReadOnlyList<IReadOnlyList<PetalAction>> Rings => new[] { Convert, Tools, More }.Where(r => r.Count > 0).ToList();
+}
 
 /// <summary>Which petals a given set of dropped files gets.</summary>
 public static class Catalog
@@ -32,11 +39,11 @@ public static class Catalog
     static PetalAction B64A => Tool("b64", "Base64", "code", "Copy as data URI", Misc.Base64, quick: true);
     static PetalAction CopyA => Tool("copy", "Copy", "copy", "Copy to clipboard", Misc.CopyFiles, quick: true);
 
-    /// <summary>Every action reachable for these files (both rings), for the CLI.</summary>
+    /// <summary>Every action reachable for these files (all rings), for the CLI.</summary>
     public static IEnumerable<PetalAction> All(IReadOnlyList<string> files)
     {
         var p = For(files);
-        return p.Convert.Concat(p.Tools);
+        return p.Convert.Concat(p.Tools).Concat(p.More);
     }
 
     public static Pages For(IReadOnlyList<string> files)
@@ -64,7 +71,7 @@ public static class Catalog
     {
         bool single = files.Count == 1;
         string ext = Kinds.Ext(files[0]);
-        List<PetalAction> conv = [], tools = [];
+        List<PetalAction> conv = [], tools = [], more = [];
         var office = Platform.Current.Office;
         bool hasOffice(Kind k) => office?.Supports(k) == true;
 
@@ -72,20 +79,28 @@ public static class Catalog
         {
             case Kind.Image:
             {
-                void F(string e, string hint, MagickFormat mf)
+                void F(List<PetalAction> ring, string e, string hint, MagickFormat mf)
                 {
-                    if (Images.CanWrite(mf)) conv.Add(Fmt(e, hint, j => Images.Convert(j, e)));
+                    if (Images.CanWrite(mf)) ring.Add(Fmt(e, hint, j => Images.Convert(j, e)));
                 }
-                F("png", "lossless", MagickFormat.Png);
-                F("jpg", "universal", MagickFormat.Jpeg);
-                F("webp", "web", MagickFormat.WebP);
-                F("avif", "smallest", MagickFormat.Avif);
+                F(conv, "png", "lossless", MagickFormat.Png);
+                F(conv, "jpg", "universal", MagickFormat.Jpeg);
+                F(conv, "webp", "web", MagickFormat.WebP);
+                F(conv, "avif", "smallest", MagickFormat.Avif);
                 conv.Add(Fmt("pdf", single ? "document" : "one file", j => Pdfs.ImagesToPdf(j, merge: true)));
-                F("heic", "Apple", MagickFormat.Heic);
-                F("ico", "icon", MagickFormat.Ico);
-                F("tiff", "print", MagickFormat.Tiff);
+                F(conv, "gif", "classic", MagickFormat.Gif);
+                // the third ring: one-tap resizes and B&W, then the rarer formats
+                more.Add(Tool("half", "Half", "half", "Half the size", Images.Half));
+                more.Add(Tool("fithd", "Full HD", "fithd", "Fit in 1920×1080", Images.FitFullHd));
+                more.Add(Tool("gray", "B&W", "gray", "Black & white", Images.Grayscale));
+                F(more, "heic", "Apple", MagickFormat.Heic);
+                F(more, "tiff", "print", MagickFormat.Tiff);
+                F(more, "ico", "icon", MagickFormat.Ico);
+                F(more, "bmp", "plain", MagickFormat.Bmp);
+                F(more, "jxl", "JPEG XL", MagickFormat.Jxl);
+                F(more, "qoi", "fast", MagickFormat.Qoi);
                 conv.RemoveAll(a => a.Id == "to-" + Norm(ext));
-                if (conv.Count > 8) conv.RemoveAt(conv.Count - 1);
+                more.RemoveAll(a => a.Id == "to-" + Norm(ext));
 
                 // AI background removal only when its model is installed (convertino model install)
                 var cutout = Cutout.Available ? Tool("cutout", "Cut out", "cutout", "Remove background", Cutout.Run) : null;
@@ -213,7 +228,7 @@ public static class Catalog
             }
 
         if (conv.Count == 0) conv.AddRange([ZipA, PathA, HashA]);
-        return new(conv, tools, title, badge);
+        return new(conv, tools, title, badge) { More = more };
     }
 
     static string Norm(string ext) => ext switch { "jpeg" or "jfif" => "jpg", "tif" => "tiff", "heif" => "heic", _ => ext };
