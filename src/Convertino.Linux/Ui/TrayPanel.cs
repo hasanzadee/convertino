@@ -294,6 +294,7 @@ public sealed class TrayPanel : Window
                 ToggleRow("Enabled", s.Enabled, v => { s.Enabled = v; Subtitle(); }),
                 TriggerRow(key),
                 ToggleRow("Notifications", s.Notifications, v => s.Notifications = v),
+                ToggleRow("Live preview", s.LivePreview, v => s.LivePreview = v),
                 ToggleRow("Tell me about new versions", s.CheckForUpdates == true, Updates.Answer),
                 ToggleRow(OperatingSystem.IsMacOS() ? "Open at login" : "Start at login", s.LaunchAtStartup,
                     v => { s.LaunchAtStartup = v; Platform.Current.SetAutostart(v); }),

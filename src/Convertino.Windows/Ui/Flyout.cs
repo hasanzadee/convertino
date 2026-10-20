@@ -210,6 +210,7 @@ public sealed class Flyout : Window
                 TriggerRow(key),
                 ToggleRow("Double-tap Shift in Explorer", s.DoubleShift, v => { s.DoubleShift = v; s.Save(); }),
                 ToggleRow("Notifications", s.Notifications, v => { s.Notifications = v; s.Save(); }),
+                ToggleRow("Live preview", s.LivePreview, v => { s.LivePreview = v; s.Save(); }),
                 ToggleRow("Tell me about new versions", s.CheckForUpdates == true, Updates.Answer),
                 ToggleRow("Start with Windows", s.LaunchAtStartup, v => { s.LaunchAtStartup = v; s.Save(); AutoStart.Apply(v); }),
             },

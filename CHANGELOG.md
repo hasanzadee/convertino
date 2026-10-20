@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- **Live preview.** Hover a petal and the flower's centre turns into a lens showing the result (B&W, Square, Rounded, Half, the AI cut-out on a checkerboard…), with its size and change (`249 KB · −84%`, `3840×3840 · 1.04 MB`); format petals show what each file would weigh, so you can see that AVIF is 127 KB and PNG 4.4 MB before choosing. Estimates (`≈`) appear within ~0.1 s from the real action run on small copies; exact sizes follow from a full run in a temporary sandbox, which starts by itself for format petals on ordinary photos and after a short hover for the rest (Cut out after a longer one). Dropping on a petal whose run is done moves its result into place at once (9 ms instead of seconds); a run still going is picked up instead of starting over. Pictures only for now; on all three platforms. **Live preview** in the panel turns it off; `convertino preview <images> [--full] [--take <petal>]` shows the same from the command line.
+
 ## 1.3.0 — 2026-10-20
 
 The biggest release so far: new formats, a ring of one-tap image tools, data and subtitle conversions, archives beyond ZIP, PDF tools and folders that convert by themselves. Every part was reviewed for safety (path traversal and decompression bombs in archives, alias bombs and deep nesting in YAML/XML, formula injection in CSV) before release.

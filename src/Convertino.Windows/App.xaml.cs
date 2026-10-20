@@ -72,7 +72,8 @@ public partial class App : Application
         {
             Settings.Load();
             Theme.Apply(e.Args.Length > 2 ? e.Args[2] : "Mocha");
-            Dev.Snapshot(e.Args[1], e.Args.Length > 3 ? e.Args[3] : "img", e.Args.Length > 4 ? int.Parse(e.Args[4]) : 2);
+            Dev.Snapshot(e.Args[1], e.Args.Length > 3 ? e.Args[3] : "img", e.Args.Length > 4 ? int.Parse(e.Args[4]) : 2,
+                e.Args.Length > 5 ? e.Args[5] : null, e.Args.Length > 6 ? e.Args[6] : null);
             Shutdown();
             return;
         }

@@ -1,9 +1,11 @@
 using System.Globalization;
+using System.Runtime.InteropServices;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.Media.Immutable;
+using Avalonia.Platform;
 using Convertino.Ui;
 
 namespace Convertino.Overlay;
@@ -79,6 +81,17 @@ public sealed class FlowerView : Control
     public string HubBadge { get; set; } = "";
     public Bitmap? Thumb { get; set; }
 
+    /// <summary>Petal results worked out ahead (live preview), or null.</summary>
+    public Preview? Ahead { get; set; }
+
+    // the hub turns into a lens showing the hovered petal's result
+    Spring _lens = new(240, 26);
+    Spring _swap = new(260, 28);
+    Bitmap? _lensImg, _lensPrev;
+    bool _lensAlpha, _prevAlpha, _working;
+    string? _lensId;
+    readonly Dictionary<string, (Preview.Look Look, Bitmap Bmp)> _lensCache = [];
+
     Skin T => Skin.Current;
 
     public FlowerView()
@@ -101,6 +114,13 @@ public sealed class FlowerView : Control
         Thumb = null;
         HubTitle = HubSub = HubBadge = "";
         Mode = HubMode.Seed;
+        Ahead = null;
+        foreach (var (_, b) in _lensCache.Values) b.Dispose();
+        _lensCache.Clear();
+        _lensImg = _lensPrev = null;
+        _lensId = null;
+        _lens.Snap(0); _swap.Snap(1);
+        _working = false;
         _pageCount = 1; _page = 0; _ringName = ""; _ringUntil = 0;
         InvalidateVisual();
     }
@@ -181,7 +201,47 @@ public sealed class FlowerView : Control
         _hover = index;
         var live = _petals.Where(p => !p.Leaving).ToList();
         for (int i = 0; i < live.Count; i++) live[i].Hover.Target = i == index ? 1 : 0;
+        UpdateLens();
         Kick();
+    }
+
+    /// <summary>The preview worked something out: new sizes on the petals, maybe a picture for the lens.</summary>
+    public void AheadChanged()
+    {
+        UpdateLens();
+        Kick();
+    }
+
+    PetalAction? Hovered => _hover >= 0 && _hover < CurrentActions.Count ? CurrentActions[_hover] : null;
+
+    void UpdateLens()
+    {
+        var a = Hovered;
+        var look = a == null ? null : Ahead?.Get(a);
+        if (a == null || look?.Bgra == null) { _lens.Target = 0; return; } // the last picture stays while it fades
+        var bmp = LensBitmap(a.Id, look);
+        if (!ReferenceEquals(bmp, _lensImg))
+        {
+            // another petal: cross-fade; the same petal's sharper picture (its full run finished): just swap
+            if (_lensImg != null && _lensId != a.Id && _lens.X > 0.05) { _lensPrev = _lensImg; _prevAlpha = _lensAlpha; _swap.Snap(0); _swap.Target = 1; }
+            _lensImg = bmp;
+            _lensAlpha = look.Alpha;
+            _lensId = a.Id;
+        }
+        _lens.Target = 1;
+    }
+
+    Bitmap LensBitmap(string id, Preview.Look look)
+    {
+        if (_lensCache.TryGetValue(id, out var c) && ReferenceEquals(c.Look, look)) return c.Bmp;
+        var h = GCHandle.Alloc(look.Bgra!, GCHandleType.Pinned);
+        try
+        {
+            var bmp = new Bitmap(PixelFormat.Bgra8888, AlphaFormat.Unpremul, h.AddrOfPinnedObject(), new PixelSize(look.W, look.H), new Vector(96, 96), look.W * 4);
+            _lensCache[id] = (look, bmp); // the old one may still be on screen (cross-fade): left to the GC
+            return bmp;
+        }
+        finally { h.Free(); }
     }
 
     /// <summary>Jump to the end state (static snapshots).</summary>
@@ -192,6 +252,7 @@ public sealed class FlowerView : Control
         _time = time;
         _petals.RemoveAll(p => p.Leaving);
         foreach (var p in _petals) { p.Bloom.Snap(p.Bloom.Target); p.Hover.Snap(p.Hover.Target); p.Delay = 0; }
+        _lens.Snap(_lens.Target); _swap.Snap(1); _lensPrev = null;
         InvalidateVisual();
     }
 
@@ -218,6 +279,11 @@ public sealed class FlowerView : Control
         busy |= _appear.Step(dt);
         busy |= _hub.Step(dt);
         busy |= _nudge.Step(dt);
+        busy |= _lens.Step(dt);
+        busy |= _swap.Step(dt);
+        if (_lens.X <= 0.002 && _lens.Target == 0) _lensImg = _lensPrev = null;
+        _working = Mode == HubMode.Info && Hovered is { } ha && Ahead?.Working(ha) == true;
+        if (_working) busy = true; // spinner on the hub's rim
         foreach (var p in _petals)
         {
             if (p.Delay > 0) { p.Delay -= dt; busy = true; continue; }
@@ -342,8 +408,14 @@ public sealed class FlowerView : Control
             else
             {
                 bool hint = !string.IsNullOrEmpty(act.Hint);
-                DrawText(dc, act.Label, LabelFace, (act.Label.Length > 4 ? 14 : 16) * bs, lc.X, lc.Y - (hint ? 6 : 0) * scale, k);
-                if (hint) DrawText(dc, act.Hint, HintFace, 9.5 * bs, lc.X, lc.Y + 11 * scale, k, sub: true);
+                // live preview: what this format would weigh, in accent when it beats the source
+                var look = Ahead?.Get(act);
+                string? size = look?.Bytes is long b ? (look.Exact ? "" : "≈") + Paths.HumanSize(b) : null;
+                double lift = size != null ? 6 : 0;
+                DrawText(dc, act.Label, LabelFace, (act.Label.Length > 4 ? 14 : 16) * bs, lc.X, lc.Y - ((hint ? 6 : 0) + lift) * scale, k);
+                if (hint) DrawText(dc, act.Hint, HintFace, 9.5 * bs, lc.X, lc.Y + (11 - lift) * scale, k, sub: true);
+                if (size != null)
+                    DrawText(dc, size, SmallFace, 9.5 * bs, lc.X, lc.Y + (hint ? 18 : 12) * scale, k, normal: Ahead!.Smaller(look!) ? T.AccentA : T.SubText);
             }
         }
     }
@@ -354,7 +426,7 @@ public sealed class FlowerView : Control
         if (accent > 0.01) using (dc.PushOpacity(accent)) Icons.Draw(dc, key, at, size, B(T.AccentText), 1.8);
     }
 
-    void DrawText(DrawingContext dc, string text, Typeface face, double size, double cx, double cy, double accent, bool sub = false)
+    void DrawText(DrawingContext dc, string text, Typeface face, double size, double cx, double cy, double accent, bool sub = false, Color? normal = null)
     {
         if (size < 4) return;
         void One(Color col, double op)
@@ -363,7 +435,7 @@ public sealed class FlowerView : Control
             using (dc.PushOpacity(op * (sub ? 0.85 : 1)))
                 dc.DrawText(ft, new Point(cx - ft.WidthIncludingTrailingWhitespace / 2, cy - ft.Height / 2));
         }
-        if (accent < 0.99) One(sub ? T.SubText : T.Text, 1 - accent);
+        if (accent < 0.99) One(normal ?? (sub ? T.SubText : T.Text), 1 - accent);
         if (accent > 0.01) One(T.AccentText, accent);
     }
 
@@ -393,21 +465,25 @@ public sealed class FlowerView : Control
         double op = Math.Clamp((hs - 0.4) / 0.6, 0, 1);
         using (dc.PushOpacity(op))
         {
+            double lens = DrawLens(dc, c, r);
             double ts = 40;
             var tr = new Rect(c.X - ts / 2, c.Y - 33, ts, ts);
-            if (Thumb != null)
+            using (dc.PushOpacity(1 - lens))
             {
-                double sc = Math.Min(ts / Thumb.Size.Width, ts / Thumb.Size.Height);
-                double w = Thumb.Size.Width * sc, hh = Thumb.Size.Height * sc;
-                var ir = new Rect(c.X - w / 2, tr.Top + (ts - hh) / 2, w, hh);
-                using (dc.PushClip(new RoundedRect(ir, 6)))
-                    dc.DrawImage(Thumb, ir);
-            }
-            else if (!string.IsNullOrEmpty(HubBadge))
-            {
-                var br = new Rect(c.X - 18, tr.Top + 6, 36, 28);
-                dc.DrawRectangle(T.AccentGradient(), null, new RoundedRect(br, 7));
-                DrawText(dc, HubBadge, SmallFace, 10, br.X + br.Width / 2, br.Y + br.Height / 2, 1);
+                if (Thumb != null)
+                {
+                    double sc = Math.Min(ts / Thumb.Size.Width, ts / Thumb.Size.Height);
+                    double w = Thumb.Size.Width * sc, hh = Thumb.Size.Height * sc;
+                    var ir = new Rect(c.X - w / 2, tr.Top + (ts - hh) / 2, w, hh);
+                    using (dc.PushClip(new RoundedRect(ir, 6)))
+                        dc.DrawImage(Thumb, ir);
+                }
+                else if (!string.IsNullOrEmpty(HubBadge))
+                {
+                    var br = new Rect(c.X - 18, tr.Top + 6, 36, 28);
+                    dc.DrawRectangle(T.AccentGradient(), null, new RoundedRect(br, 7));
+                    DrawText(dc, HubBadge, SmallFace, 10, br.X + br.Width / 2, br.Y + br.Height / 2, 1);
+                }
             }
             var acts = CurrentActions;
             bool hot = _hover >= 0 && _hover < acts.Count;
@@ -417,10 +493,16 @@ public sealed class FlowerView : Control
             {
                 var act = acts[_hover];
                 sub = act.Icon != null ? act.Verb : (string.IsNullOrEmpty(HubBadge) ? act.Hint : $"{HubBadge} → {act.Label}");
+                // live preview: the real (or estimated) size, or why there's nothing to make
+                if (Ahead?.Get(act) is { } look && Ahead.SizeLine(look) is { } line) sub = line;
             }
             if (_time < _ringUntil) { title = _ringName; sub = ""; hot = true; } // just flipped: say which ring this is
-            Fit(dc, title, LabelFace, hot ? 13 : 12, c.X, c.Y + 17, r * 1.7, hot ? T.AccentA : T.Text);
-            Fit(dc, sub, HintFace, 9.5, c.X, c.Y + 31, r * 1.6, T.SubText);
+            // over the lens the text sits on a dark scrim: white, whatever the theme
+            bool onLens = lens > 0.5;
+            Fit(dc, title, LabelFace, hot ? 13 : 12, c.X, c.Y + 17, r * 1.7, onLens ? Colors.White : hot ? T.AccentA : T.Text);
+            Fit(dc, sub, HintFace, 9.5, c.X, c.Y + 31, r * 1.6, onLens ? Color.FromArgb(225, 255, 255, 255) : T.SubText);
+            if (_working) // the hovered petal is being worked out and there's nothing to show yet
+                dc.DrawGeometry(null, new Pen(T.AccentGradient(), 2.4, lineCap: PenLineCap.Round), Arc(c, r - 3.5, _time * 5, _time * 5 + 1.3));
             if (_pageCount > 1)
                 for (int i = 0; i < _pageCount; i++)
                 {
@@ -431,9 +513,82 @@ public sealed class FlowerView : Control
         }
     }
 
+    /// <summary>The hovered petal's result filling the hub, a dark scrim at the bottom for the caption. Returns how visible it is.</summary>
+    double DrawLens(DrawingContext dc, Point c, double r)
+    {
+        double k = Math.Clamp(_lens.X, 0, 1);
+        if (k <= 0.01 || _lensImg == null) return 0;
+        var box = new Rect(c.X - r, c.Y - r, 2 * r, 2 * r);
+        var circle = new EllipseGeometry(box.Deflate(1));
+        using (dc.PushGeometryClip(circle))
+        using (dc.PushOpacity(k))
+        {
+            dc.DrawEllipse(B(T.IsDark ? Color.FromRgb(24, 24, 37) : Color.FromRgb(230, 233, 239)), null, c, r, r);
+            double sw = Math.Clamp(_swap.X, 0, 1);
+            if (_lensPrev != null && sw < 0.99) Picture(_lensPrev, _prevAlpha, 1 - sw);
+            Picture(_lensImg, _lensAlpha, _lensPrev != null ? sw : 1);
+            // scrim under the caption
+            var scrim = new LinearGradientBrush
+            {
+                StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
+                EndPoint = new RelativePoint(0, 1, RelativeUnit.Relative),
+            };
+            scrim.GradientStops.Add(new GradientStop(Color.FromArgb(0, 0, 0, 0), 0.38));
+            scrim.GradientStops.Add(new GradientStop(Color.FromArgb(150, 0, 0, 0), 0.72));
+            scrim.GradientStops.Add(new GradientStop(Color.FromArgb(190, 0, 0, 0), 1));
+            dc.DrawRectangle(scrim, null, box);
+        }
+        // a fine ring so the lens reads as glass, not a hole
+        dc.DrawEllipse(null, new Pen(B(A(T.AccentA, .55 * k)), 1.4), c, r - 0.7, r - 0.7);
+        return k;
+
+        void Picture(Bitmap img, bool alpha, double op)
+        {
+            if (op <= 0.01) return;
+            // cover the circle, easing in from a slight zoom
+            double side = 2 * r, sc = Math.Max(side / img.PixelSize.Width, side / img.PixelSize.Height) * (1 + 0.06 * (1 - k));
+            double w = img.PixelSize.Width * sc, h = img.PixelSize.Height * sc;
+            var rect = new Rect(c.X - w / 2, c.Y - h / 2, w, h);
+            using (dc.PushOpacity(op))
+            {
+                if (alpha) dc.DrawRectangle(Checker, null, rect);
+                dc.DrawImage(img, rect);
+            }
+        }
+    }
+
+    // transparency shows as the usual grey checkerboard
+    static readonly IBrush Checker = MakeChecker();
+
+    static IBrush MakeChecker()
+    {
+        var px = new byte[12 * 12 * 4];
+        for (int y = 0; y < 12; y++)
+            for (int x = 0; x < 12; x++)
+            {
+                byte v = (x < 6) == (y < 6) ? (byte)200 : (byte)236;
+                int i = (y * 12 + x) * 4;
+                px[i] = v; px[i + 1] = v; px[i + 2] = (byte)Math.Min(255, v + 6); px[i + 3] = 255;
+            }
+        var h = GCHandle.Alloc(px, GCHandleType.Pinned);
+        try
+        {
+            var bmp = new Bitmap(PixelFormat.Bgra8888, AlphaFormat.Opaque, h.AddrOfPinnedObject(), new PixelSize(12, 12), new Vector(96, 96), 48);
+            return new ImageBrush(bmp)
+            {
+                TileMode = TileMode.Tile,
+                DestinationRect = new RelativeRect(0, 0, 12, 12, RelativeUnit.Absolute),
+            };
+        }
+        finally { h.Free(); }
+    }
+
     static void Fit(DrawingContext dc, string text, Typeface face, double size, double cx, double cy, double maxW, Color col)
     {
         if (string.IsNullOrEmpty(text)) return;
+        // a little smaller rather than cut off ("3840×3840 · 1.04 MB" in the hub), then the ellipsis
+        double natural = new FormattedText(text, CultureInfo.CurrentCulture, FlowDirection.LeftToRight, face, size, Brushes.Black).WidthIncludingTrailingWhitespace;
+        if (natural > maxW) size = Math.Max(size * 0.8, size * maxW / natural);
         var ft = new FormattedText(text, CultureInfo.CurrentCulture, FlowDirection.LeftToRight, face, size, B(col))
         {
             MaxTextWidth = Math.Max(10, maxW),

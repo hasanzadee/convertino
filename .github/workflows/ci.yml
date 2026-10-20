@@ -58,6 +58,11 @@ jobs:
           printf 'a :hover { color : red } /* x */\n' > site.css
           ./dist/linux-x64/convertino run minify site.css
           grep -qx 'a :hover{color:red}' 'site (min).css'
+          # live preview: every petal worked out ahead, the "drop" on WEBP served from that run (smoke.webp exists: "smoke (2).webp")
+          ./dist/linux-x64/convertino preview smoke.png --take to-webp | tee preview.log
+          grep -q 'to-avif' preview.log
+          test -s 'smoke (2).webp'
+          test -z "$(ls -A /tmp/convertino/preview 2>/dev/null)"
       - name: Archives and file tools
         run: bash tools/files-smoke.sh dist/linux-x64/convertino
 

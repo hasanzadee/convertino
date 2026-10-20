@@ -32,6 +32,11 @@ cp "$ROOT/packaging/linux/icons/convertino-256.png" smoke.png
 "$D" run compress smoke.png
 "$D" actions smoke.png
 
+step "live preview: worked out ahead, handed over on drop"
+"$D" preview smoke.png --take to-webp | tee preview.log
+grep -q "to-avif" preview.log
+test -s "smoke (2).webp"
+
 step "archives and file tools"
 bash "$ROOT/tools/files-smoke.sh" "$D"
 

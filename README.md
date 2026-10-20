@@ -32,6 +32,7 @@ Converting a file usually means opening an app, finding *Export…*, picking a f
 
 | | |
 |---|---|
+| 🔮 **Live preview** | Hover a petal and the centre shows the result — the B&W version, the square, the cut-out on a checkerboard — and every format petal shows what the file would weigh (`AVIF 127 KB`, `PNG 4.4 MB`). Estimated within a blink, exact a moment later: the petals run while you aim, so the drop is instant |
 | ✿ **Rings** | **Convert** (formats), **Tools** (editors & actions) and, for images, **More tools** (one tap: Half, Full HD, B&W) and **More formats** (TIFF, ICO, BMP, JPEG XL, QOI…). Tap the key again, press <kbd>Tab</kbd> or turn the mouse wheel mid-drag to flip between them. |
 | 🖼 **Images** | PNG · JPG · WEBP · AVIF · GIF · PDF · TIFF · ICO · BMP · JPEG XL · QOI, from anything ImageMagick reads (HEIC, PSD, RAW, SVG…); **Half**, **Full HD** (fit in 1920 × 1080) and **B&W** in one tap |
 | 📄 **Documents** | PDF ⇄ DOCX, DOCX/XLSX/PPTX → PDF, slides → PNG, Markdown → HTML/PDF/DOCX (Microsoft Office or LibreOffice) |
@@ -53,6 +54,11 @@ Converting a file usually means opening an app, finding *Export…*, picking a f
 | 🎨 **Themes** | Catppuccin **Mocha** & **Latte**, **Sunset**, **Graphite** |
 | 📊 **Activity** | The tray / menu-bar panel charts your last two weeks: files handled, space saved, day streak, favourite actions |
 | ⌨️ **CLI** | `convertino convert IMG_0042.HEIC --to jpg` — the same engine without the UI |
+
+<div align="center">
+<img src="docs/live-preview.png" width="100%" alt="Live preview: the WEBP petal shows 249 KB (−84%) in the centre with the other formats' sizes on their petals; Cut out shows the result on a checkerboard; Square shows 3840×3840 · 1.04 MB" />
+<sub>Live preview: real sizes on the format petals · the cut-out before you drop · Square's result and size</sub>
+</div>
 
 <div align="center">
 <img src="docs/themes.png" width="100%" alt="The four themes: Mocha, Sunset (tools ring), Latte (PDF ring), Graphite" />
@@ -140,7 +146,8 @@ convertino model install
 |---|---|
 | Drag file(s) · tap <kbd>Shift</kbd> | The flower opens under the cursor on the **Convert** ring |
 | <kbd>Shift</kbd> again, <kbd>Tab</kbd> or the mouse wheel | Next ring: **Convert** → **Tools** → **More tools** → **More formats** (images) → Convert; the centre names the ring for a moment. <kbd>Shift</kbd>+<kbd>Tab</kbd> or wheel up goes back, so the rarer formats are one step back from Convert |
-| Drop on a petal | Runs it; the result appears beside the source and a card shows the outcome |
+| Hover a petal *(pictures)* | The centre shows the result and its size; format petals show what each file would weigh — `≈` while estimated, exact once worked out |
+| Drop on a petal | Runs it; the result appears beside the source and a card shows the outcome. If the preview already worked it out, it's there the instant you drop |
 | Drop on the centre · drag away · <kbd>Esc</kbd> | Cancel — nothing happens, the flower fades |
 | Double-tap <kbd>Shift</kbd> in Explorer / on the desktop *(Windows)* | Same flower for the selected files — click a petal |
 | Right-click → **Send to → Convertino** *(Windows)* | Same flower for the selected files |
@@ -206,6 +213,7 @@ convertino run extract backup.tar.xz              # → backup/
 convertino run split-100mb video.mkv              # → video.mkv.001, .002 …  (join: convertino run join video.mkv.001)
 convertino run verify ubuntu.iso SHA256SUMS       # Matches ✓ / Doesn't match ✗ (exit code 1)
 convertino actions report.pdf                     # what's possible for these files
+convertino preview photo.jpg --full               # what each petal would give: look + estimated, then exact size
 convertino menu photo.png notes.md                # open the flower for them (used by file-manager menus)
 convertino model install | status | remove        # the AI cut-out model
 convertino watch ~/Inbox --to pdf                 # convert every new file there, until Ctrl+C
@@ -237,6 +245,7 @@ On Windows the executable is `Convertino.exe` (in `%LOCALAPPDATA%\Programs\Conve
 - **Catching the drop.** The flower is a transparent, topmost, non-activating window that *is* a drop target: Explorer's OLE drag (or the file manager's XDND drag, or Finder's drag session) hands it the file list the moment the cursor enters. Hit-testing follows the petal shapes; on Windows and X11 the corners pass drops through to whatever is underneath.
 - **The glass.** On Windows and X11 the screen behind the flower is captured just before it appears, downscaled, blurred and saturated on the CPU, then drawn under each petal — real frosted glass without compositor tricks. On macOS the window server does it: a behind-window `NSVisualEffectView`, masked to the petal shapes.
 - **The motion.** Every petal, the hub and the hover state are damped springs, so the bloom overshoots slightly and settles like something physical.
+- **Working ahead.** While the flower is open, the petals' own actions run in the background: first on a 640 px copy (and a 320 px one — two sizes give the curve to scale the file size up to the real picture), so the centre can show the result and the petals an estimate within ~0.1 s; then on a full copy in a temporary sandbox, for the exact size. Dropping on a petal whose run has finished just moves its result beside the source (named as a normal run would name it, and only if the source hasn't changed). Nothing is written next to your files until you drop, the sandbox is removed when the flower closes, and only one-tap actions that create a new file take part (no clipboard, no editors). Switch it off with **Live preview** in the panel.
 - **The work.** Actions run in the background and report progress to a card in the corner. Office conversions work on a private copy, so a document you have open is never touched.
 
 ```

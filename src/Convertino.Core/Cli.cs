@@ -13,7 +13,7 @@ public static class Cli
     public static readonly string Version = typeof(Cli).Assembly.GetName().Version?.ToString(3) ?? "1.0.0";
 
     public static bool IsCommand(string[] args) =>
-        args.Length > 0 && args[0] is "convert" or "run" or "actions" or "model" or "watch" or "--help" or "-h" or "help" or "--version" or "-v";
+        args.Length > 0 && args[0] is "convert" or "run" or "actions" or "model" or "watch" or "preview" or "--help" or "-h" or "help" or "--version" or "-v";
 
     public static async Task<int> Run(string[] args, TextWriter? output = null)
     {
@@ -76,6 +76,8 @@ public static class Cli
                     return await RunAction(args[1], args.Skip(2), o);
                 case "watch":
                     return await Watch(args.Skip(1).ToArray(), o);
+                case "preview":
+                    return await PreviewCmd(args.Skip(1).ToArray(), o);
             }
         }
         catch (Exception ex)
@@ -103,6 +105,52 @@ public static class Cli
         if (!string.IsNullOrEmpty(job.Title)) o.WriteLine(job.Title);
         if (!string.IsNullOrEmpty(job.Summary)) o.WriteLine(job.Summary);
         return job.Failed ? 1 : 0;
+    }
+
+    /// <summary>
+    /// What the flower works out while it's open: quick look + estimate, then the exact size, per petal.
+    /// With --take &lt;id&gt; it also "drops" on that petal: the finished run is moved beside the source, as on a real drop.
+    /// </summary>
+    static async Task<int> PreviewCmd(string[] a, TextWriter o)
+    {
+        int ti = Array.IndexOf(a, "--take");
+        string? take = ti >= 0 && ti + 1 < a.Length ? a[ti + 1] : null;
+        bool full = a.Contains("--full") || take != null;
+        var files = Files(a.Where((x, i) => x is not ("--full" or "--verbose") && (ti < 0 || (i != ti && i != ti + 1))), o);
+        if (files == null) return 2;
+        Settings.Current.LivePreview = true;
+        if (a.Contains("--verbose")) Log.Echo = true;
+        var pv = Preview.For(files);
+        if (pv == null) { o.WriteLine("no live preview for these files (pictures only, all in one folder)"); return 2; }
+        try { return await PreviewRun(pv, files, full, take, o); }
+        finally
+        {
+            pv.Dispose();
+            await Task.WhenAny(pv.Closed, Task.Delay(10_000)); // leave no sandbox behind in the temp folder
+        }
+    }
+
+    static async Task<int> PreviewRun(Preview pv, List<string> files, bool full, string? take, TextWriter o)
+    {
+        var all = Catalog.All(files).ToList();
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        await pv.Settle(all, full);
+        o.WriteLine($"{files.Count} file(s), {Paths.HumanSize(pv.InputBytes)}, worked out in {sw.ElapsedMilliseconds} ms");
+        foreach (var act in all)
+        {
+            var l = pv.Get(act);
+            if (l == null) continue;
+            o.WriteLine($"  {act.Id,-12} {(l.Bgra != null ? $"look {l.W}x{l.H}" : "no look"),-14} {pv.SizeLine(l) ?? "-"}");
+        }
+        if (take == null) return 0;
+        var action = all.FirstOrDefault(x => x.Id == take);
+        var handoff = action == null ? null : pv.Take(action);
+        if (action == null || handoff == null) { o.WriteLine($"nothing to take for '{take}'"); return 2; }
+        var job = new Job { Inputs = files, Action = action };
+        if (!await handoff.Into(job)) { o.WriteLine("handoff refused"); return 1; }
+        foreach (var f in job.Outputs) o.WriteLine(f);
+        if (!string.IsNullOrEmpty(job.Summary)) o.WriteLine(job.Summary);
+        return 0;
     }
 
     const string WatchUsage = """
@@ -206,6 +254,7 @@ public static class Cli
               convertino run <action> <files…>             e.g. convertino run compress *.png
               convertino actions <files…>                  list what's possible for these files
               convertino watch <folder> --to <format>      convert every new file in a folder (also: watch add|list|remove)
+              convertino preview <images…> [--full]        what each petal would give: estimated, then exact sizes
               convertino model install                     download the offline AI model for Cut out (224 MB)
               convertino --version
             """);
