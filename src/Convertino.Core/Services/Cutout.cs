@@ -27,6 +27,7 @@ public static class Cutout
     static readonly Timer Idle = new(_ => Unload());
     static InferenceSession? _session;
     static string _device = "";
+    static string _ranOn = ""; // what made the last mask: the one-time CPU timing can switch _device right after
     // DirectML on Windows, Core ML on Apple silicon (Intel Macs never get here); Linux runs on the CPU
     static bool _cpuOnly = !(OperatingSystem.IsWindows() || OperatingSystem.IsMacOS()) || Environment.GetEnvironmentVariable("CONVERTINO_CUTOUT_CPU") == "1";
 
@@ -52,7 +53,7 @@ public static class Cutout
             Idle.Change(TimeSpan.FromMinutes(3), Timeout.InfiniteTimeSpan);
             Gate.Release();
         }
-        job.Summary = $"Transparent PNG · {_device} · {sw.Elapsed.TotalSeconds:0.0} s";
+        job.Summary = $"Transparent PNG · {_ranOn} · {sw.Elapsed.TotalSeconds:0.0} s";
     }
 
     static void CutOne(string src, string dst, CancellationToken ct, Action<double> report)
@@ -170,6 +171,7 @@ public static class Cutout
         try
         {
             var result = InferOn(s, _device, img, ct, out long ms);
+            _ranOn = _device;
             if (_device == "CoreML" && !ForceCoreML && CoreMLChoice() == null) PickFaster(img, ms, ct);
             return result;
         }
@@ -180,7 +182,9 @@ public static class Cutout
             _session?.Dispose();
             _session = null;
             _cpuOnly = true;
-            return InferOn(Open(), _device, img, ct, out _);
+            var result = InferOn(Open(), _device, img, ct, out _);
+            _ranOn = _device;
+            return result;
         }
     }
 
