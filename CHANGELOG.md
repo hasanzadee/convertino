@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Subtitles: SRT, WebVTT, ASS and SSA files (and LRC lyrics) convert into each other and to plain text. Timestamps stay to the millisecond (ASS itself counts hundredths); line breaks, italics, bold and top-of-screen cues ({\an8}, `line:0`) carry over, and ASS styles, positions and drawings are dropped. Each conversion is written as UTF-8 and reads legacy encodings correctly.
+- **UTF-8** tool for subtitles: re-encodes Windows-1251/1252/1254, KOI8-R, the system code page and UTF-16 as UTF-8 (BOMs are honoured; otherwise the encoding is detected) and fixes mixed line endings. It writes `movie (UTF-8).srt` and says *Already UTF-8* when there's nothing to fix.
+- **Subtitles** tool for videos (with ffmpeg): saves the first text subtitle track beside the video as SRT (`movie.eng.srt`), with ASS styles dropped. It says so clearly when the video has no subtitle track, or only picture-based ones (PGS, VobSub).
+
 ## 1.2.0 — 2026-10-20
 
 Thanks again to [@AliverdiSultanli](https://github.com/AliverdiSultanli) for the trigger keys, the update check and the macOS Quit fix, all tested on his Mac.

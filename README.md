@@ -36,6 +36,7 @@ Converting a file usually means opening an app, finding *Export…*, picking a f
 | 🖼 **Images** | PNG · JPG · WEBP · AVIF · PDF · ICO · TIFF, from anything ImageMagick reads (HEIC, PSD, RAW, SVG…) |
 | 📄 **Documents** | PDF ⇄ DOCX, DOCX/XLSX/PPTX → PDF, slides → PNG, Markdown → HTML/PDF/DOCX (Microsoft Office or LibreOffice) |
 | 🎞 **Video & audio** | MP4 · WEBM · GIF · MOV · MKV · MP3 · WAV · FLAC · OGG · OPUS · M4A, plus compress, 720p, mute, grab frame, loudness, trim silence |
+| 💬 **Subtitles** | SRT ⇄ VTT ⇄ ASS/SSA (and LRC) with exact timings and italics, legacy encodings → UTF-8, a video's subtitle track → SRT |
 | ✂️ **Editors** | **Crop**, **Add BG** (screenshot beautifier), **Annotate** (arrows, text, numbered steps, highlighter), **Redact** (pixelate / blur / black, *find text automatically*), **Adjust** (light, colour, sharpen, vignette, rotate, resize) |
 | 🤖 **Cut out** | AI background removal (BiRefNet-lite), fully offline, GPU-accelerated on Windows |
 | 🔤 **Text** | Copy text from images and scanned PDFs (Windows OCR / Apple Vision / Tesseract) |
@@ -159,8 +160,9 @@ While dragging over a petal, the caption under the Explorer drag image says what
 | **PowerPoint / ODP** | PDF · PNG slides · PPTX · ODP | Zip · Path · SHA-256 |
 | **Markdown** | HTML · PDF · DOCX · Copy | Zip · Path · SHA-256 |
 | **Text** | PDF · DOCX · Copy | Zip · Path · SHA-256 · Base64 |
-| **Video** | MP4 · WEBM · GIF · MP3 · MOV · MKV · WAV | Compress · 720p · Mute · Frame |
+| **Video** | MP4 · WEBM · GIF · MP3 · MOV · MKV · WAV | Compress · 720p · Mute · Frame · Subtitles |
 | **Audio** | MP3 · M4A · WAV · FLAC · OGG · OPUS | Loudness · Trim silence · Zip · Path |
+| **Subtitles** (SRT / VTT / ASS / SSA / LRC) | SRT · VTT · ASS · TXT | UTF-8 · Zip · Path · SHA-256 |
 | **ZIP** | Extract · Path · SHA-256 | |
 | **Folder / anything else** | Zip · Path · Copy / SHA-256 · Base64 | |
 
@@ -173,6 +175,9 @@ convertino convert IMG_0042.HEIC --to jpg        # → IMG_0042.jpg
 convertino convert slides.pptx --to pdf
 convertino run compress *.png                     # any petal id
 convertino run ocr scan.pdf                       # text → clipboard
+convertino convert movie.srt --to vtt             # also ass, srt, txt
+convertino run utf8 old-cyrillic.srt              # → old-cyrillic (UTF-8).srt
+convertino run subtitles movie.mkv                # first subtitle track → movie.eng.srt
 convertino actions report.pdf                     # what's possible for these files
 convertino menu photo.png notes.md                # open the flower for them (used by file-manager menus)
 convertino model install | status | remove        # the AI cut-out model
@@ -190,6 +195,7 @@ On Windows the executable is `Convertino.exe` (in `%LOCALAPPDATA%\Programs\Conve
 | Office documents | Microsoft Office (COM), else LibreOffice | LibreOffice (headless) | LibreOffice (headless) |
 | OCR | Windows OCR (installed language packs), else Tesseract | Tesseract | Vision framework, else Tesseract |
 | Video / audio | ffmpeg | ffmpeg | ffmpeg (Homebrew) |
+| Subtitles | built in (ffmpeg for a video's track) | built in | built in |
 | Cut out | ONNX Runtime + DirectML (GPU), CPU fallback | ONNX Runtime (CPU) | ONNX Runtime (CPU, Apple silicon) |
 | UI | WPF, Win32 hooks, OLE drag & drop | Avalonia, X11 polling, XDND | Avalonia, Quartz polling, AppKit drag & drop |
 

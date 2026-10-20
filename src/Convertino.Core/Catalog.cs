@@ -184,6 +184,7 @@ public static class Catalog
                 tools.Add(Tool("720p", "720p", "resize", "Downscale to 720p", Media.To720));
                 tools.Add(Tool("mute", "Mute", "mute", "Remove audio", Media.Mute));
                 tools.Add(Tool("frame", "Frame", "camera", "Grab a still", Media.Snapshot));
+                tools.Add(Tool("subtitles", "Subtitles", "subtitles", "Save subtitles as SRT", Subtitles.FromVideo));
                 break;
             case Kind.Audio when Media.Available:
                 foreach (var (e, h) in new[] { ("mp3", "universal"), ("m4a", "AAC"), ("wav", "raw"), ("flac", "lossless"), ("ogg", "Vorbis"), ("opus", "tiny") })
@@ -199,6 +200,16 @@ public static class Catalog
             case Kind.Folder:
                 conv.AddRange([ZipA, PathA, CopyA]);
                 break;
+            case Kind.Subtitles:
+            {
+                // .ssa → ASS would only drop its styles; players read SSA as it is
+                bool same = files.All(f => Kinds.Ext(f) == ext);
+                foreach (var (e, h) in new[] { ("srt", "universal"), ("vtt", "web"), ("ass", "advanced"), ("txt", "text only") })
+                    if (!same || (e != ext && !(e == "ass" && ext == "ssa"))) conv.Add(Fmt(e, h, j => Subtitles.Convert(j, e)));
+                tools.Add(Tool("utf8", "UTF-8", "encoding", "Re-encode as UTF-8", Subtitles.ToUtf8));
+                tools.AddRange([ZipA, PathA, HashA]);
+                break;
+            }
             default:
                 conv.AddRange([ZipA, PathA, HashA, B64A]);
                 break;
