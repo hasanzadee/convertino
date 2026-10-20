@@ -1,7 +1,13 @@
 # Changelog
 
-## Unreleased
+## 1.2.0 — 2026-10-20
 
+Thanks again to [@AliverdiSultanli](https://github.com/AliverdiSultanli) for the trigger keys, the update check and the macOS Quit fix, all tested on his Mac.
+
+- Choose the key that opens the flower: **Open with** → Shift (default), Shift twice, Ctrl or Alt (Control / Option on macOS), in the tray panel and the tray / menu-bar menu. Hints and the Explorer drag caption follow the key. *Shift twice* leaves a single Shift to apps that use it on drop, such as Claude, which attaches a file on Shift + drop (#6).
+- Know when a new version is out: **Check for updates…** in the menus and **Updates** in the panel footer, plus an optional daily check. It's off until you answer a one-time *Notify about updates?* card; it only reads the latest release from GitHub, sends nothing else, and never downloads or installs anything (#11).
+- macOS: **Quit Convertino** froze the app until it was killed (#8).
+- macOS: Activity Monitor and Force Quit listed the app as *Avalonia*; it's *Convertino* now (#10).
 - Activity card on Linux and macOS: a new panel opens from the tray icon (Linux) or **Open panel** in the tray / menu-bar menu, with the same counting-up numbers, a bar per day that shows that day's numbers on hover, and your most used actions; until you've converted something it shows how to start. It closes on Esc, a click outside or ✕. `CONVERTINO_PANEL=1` (or `=demo`) opens it at start, for screenshots.
 - The Linux and macOS panel now has everything the Windows one has: the four theme swatches (switching restyles everything at once and is remembered), the Enabled / Notifications / Tell me about new versions / Start at login (Open at login on macOS) switches, the **Open with** key picker (Shift, Shift ×2, Ctrl/Control, Alt/Option), your recent files with thumbnails, and Log / Updates / Quit. **Open panel** is now the first item of the tray / menu-bar menu, and the menu follows what you change in the panel (it is refreshed in place; the tray icon is no longer re-created on a theme change).
 - macOS: a click on the menu-bar icon opens the panel straight away, like the tray icon on Windows; right-click or Control-click it for the menu. Avalonia's status item can only open its menu, so Convertino takes the plain click itself.

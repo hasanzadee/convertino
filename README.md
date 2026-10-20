@@ -6,7 +6,7 @@
 
 **Drag a file. Tap Shift. Pick a petal.**
 
-A radial converter & quick editor for Windows, Linux and macOS. Start dragging any file, tap <kbd>Shift</kbd>, and a glass flower blooms under your cursor. Drop the file on a petal and the result lands right next to the original.
+A radial converter & quick editor for Windows, Linux and macOS. Start dragging any file, tap <kbd>Shift</kbd> (or the key you pick: <kbd>Shift</kbd> twice, <kbd>Ctrl</kbd>, <kbd>Alt</kbd>), and a glass flower blooms under your cursor. Drop the file on a petal and the result lands right next to the original.
 
 [![Build](https://github.com/hasanzadee/convertino/actions/workflows/ci.yml/badge.svg)](https://github.com/hasanzadee/convertino/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/hasanzadee/convertino?color=cba6f7&label=release)](https://github.com/hasanzadee/convertino/releases/latest)
@@ -32,7 +32,7 @@ Converting a file usually means opening an app, finding *Export…*, picking a f
 
 | | |
 |---|---|
-| ✿ **Two rings** | **Convert** (formats) and **Tools** (editors & actions). Tap <kbd>Shift</kbd> again mid-drag to flip between them. |
+| ✿ **Two rings** | **Convert** (formats) and **Tools** (editors & actions). Tap the key again mid-drag to flip between them. |
 | 🖼 **Images** | PNG · JPG · WEBP · AVIF · PDF · ICO · TIFF, from anything ImageMagick reads (HEIC, PSD, RAW, SVG…) |
 | 📄 **Documents** | PDF ⇄ DOCX, DOCX/XLSX/PPTX → PDF, slides → PNG, Markdown → HTML/PDF/DOCX (Microsoft Office or LibreOffice) |
 | 🎞 **Video & audio** | MP4 · WEBM · GIF · MOV · MKV · MP3 · WAV · FLAC · OGG · OPUS · M4A, plus compress, 720p, mute, grab frame, loudness, trim silence |
@@ -91,7 +91,7 @@ sudo pacman -S ffmpeg poppler tesseract tesseract-data-eng libreoffice-fresh   #
 
 ### macOS 13 or later (Apple silicon or Intel)
 
-> **Status: new, not yet tried on a real Mac.** Every CI run tests the macOS build on GitHub's macOS runners (macOS 26 on Apple silicon, macOS 15 on Intel): conversions, PDF rendering, OCR, Cut out, the editors, the glass, `convertino menu`, the Quick Action, and the gesture itself with synthetic input (press, drag, tap <kbd>Shift</kbd>, drop on a petal → the converted file appears). What hasn't happened yet is a person dragging from Finder on real hardware. If you try it, please [send a macOS report](https://github.com/hasanzadee/convertino/issues/new?template=macos_report.yml) either way.
+> **Status: tested on a real Mac** (MacBook M4, macOS 27): conversions, HEIC, video, PDF rendering, Vision OCR, Cut out, the glass flower on Retina and an external display, and dragging from Finder with the trigger key. Every CI run also tests the build on GitHub's macOS runners (Apple silicon and Intel), including the gesture with synthetic input. If something doesn't work on your Mac, please [send a macOS report](https://github.com/hasanzadee/convertino/issues/new?template=macos_report.yml).
 
 1. Download **`convertino-macos-arm64.zip`** (Apple silicon: M1 and later) or **`convertino-macos-x64.zip`** (Intel) from the [latest release](https://github.com/hasanzadee/convertino/releases/latest).
 2. Unzip it (double-click it in Finder) and run the installer from Terminal:
@@ -109,7 +109,7 @@ brew install --cask libreoffice      # Word / Excel / PowerPoint petals
 
 PDF rendering and OCR use what's built into macOS (CoreGraphics, the Vision framework), so they need nothing extra.
 
-**Permissions.** Convertino watches the mouse buttons and <kbd>Shift</kbd> by polling their state (no keyboard tap). In CI that works without any permission (macOS 26), and no Accessibility or Screen Recording access is needed either: the frosted glass is the system's own blur. If the flower doesn't open on your Mac, macOS may be holding back the Shift key: click the first-start card (or *Input Monitoring…* in the menu you get by right-clicking the menu-bar icon), switch Convertino on in *System Settings → Privacy & Security → Input Monitoring*, then quit and reopen Convertino.
+**Permissions.** Convertino watches the mouse buttons and the trigger key by polling their state (no keyboard tap). That works without any permission (seen on a MacBook M4 with macOS 27 and in CI), and no Accessibility or Screen Recording access is needed either: the frosted glass is the system's own blur. If the flower doesn't open on your Mac, macOS may be holding back the Shift key: click the first-start card (or *Input Monitoring…* in the menu you get by right-clicking the menu-bar icon), switch Convertino on in *System Settings → Privacy & Security → Input Monitoring*, then quit and reopen Convertino.
 
 **Gatekeeper.** Convertino isn't signed with an Apple Developer ID or notarized. `install.sh` clears the download quarantine for the copy it installs, so it opens normally. If you move `Convertino.app` somewhere yourself instead, macOS says it *can't verify* the app: click *Done*, open *System Settings → Privacy & Security*, scroll down to *"Convertino" was blocked…* and click **Open Anyway** (once). Or, in Terminal: `xattr -dr com.apple.quarantine /path/to/Convertino.app`.
 
@@ -236,7 +236,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for developer flags (render the flower to
 
 **Where are my settings?** `%APPDATA%\Convertino` on Windows, `~/.config/convertino` on Linux, `~/Library/Application Support/Convertino` on macOS (`settings.json`, `convertino.log`, `models/`).
 
-**macOS?** Yes — see [Install](#macos-13-or-later-apple-silicon-or-intel). It's the newest port and still waiting for its first real-hardware report.
+**macOS?** Yes — see [Install](#macos-13-or-later-apple-silicon-or-intel). It's the newest port; it has been tested on a MacBook M4 with macOS 27, and CI runs it on Apple silicon and Intel.
 
 ## Credits
 
