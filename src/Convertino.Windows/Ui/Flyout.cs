@@ -189,7 +189,7 @@ public sealed class Flyout : Window
             {
                 HowRow("", $"Drag any file, {key.Tap()}", "the flower opens under your cursor"),
                 HowRow("", $"{key.KeyName()} again", "switch Convert ⇄ Tools"),
-                HowRow("", $"Double-tap {key.KeyName()} in Explorer", "same menu for selected files"),
+                HowRow("", "Double-tap Shift in Explorer", "same menu for selected files"),
             },
         }, new Thickness(0, 14, 0, 0)));
 
@@ -207,7 +207,7 @@ public sealed class Flyout : Window
             {
                 ToggleRow("Enabled", s.Enabled, v => { s.Enabled = v; s.Save(); Build(); }),
                 TriggerRow(key),
-                ToggleRow($"Double-tap {key.KeyName()} in Explorer", s.DoubleShift, v => { s.DoubleShift = v; s.Save(); }),
+                ToggleRow("Double-tap Shift in Explorer", s.DoubleShift, v => { s.DoubleShift = v; s.Save(); }),
                 ToggleRow("Notifications", s.Notifications, v => { s.Notifications = v; s.Save(); }),
                 ToggleRow("Start with Windows", s.LaunchAtStartup, v => { s.LaunchAtStartup = v; s.Save(); AutoStart.Apply(v); }),
             },

@@ -56,7 +56,7 @@ public sealed class RadialWindow : Window
 /// <summary>
 /// The whole interaction: drag a file anywhere, tap the trigger key (Shift by default, see <see cref="TriggerKey"/>)
 /// → the flower blooms under the cursor, drop on a petal → the action runs. The key again flips between Convert and Tools.
-/// Double-tapping it in Explorer opens the same flower for the selected files (click mode).
+/// Double-tap Shift in Explorer opens the same flower for the selected files (click mode).
 /// </summary>
 public sealed class OverlayController
 {
@@ -93,7 +93,7 @@ public sealed class OverlayController
         _leaveTimer.Tick += (_, _) => { _leaveTimer.Stop(); if (_state == State.Drag) Hide(); };
 
         input.TriggerDown += OnTriggerDown;
-        input.TriggerDoubleTap += OnDoubleTap;
+        input.ShiftDoubleTap += OnDoubleShift;
         input.MouseUp += _ => { if (_state is State.Seed or State.Drag) _releaseTimer.Start(); };
         input.MouseDown += p => { if (_state == State.Click && !_win.ContainsScreenPoint(p)) Hide(); };
         input.Escape += () => { if (_state is State.Seed or State.Drag or State.Click) Hide(); };
@@ -116,13 +116,13 @@ public sealed class OverlayController
         if (_state == State.Hidden && dragging && _gate.Opens(Settings.Current.TriggerKey)) ShowAt(pt, State.Seed);
     }
 
-    void OnDoubleTap(POINT pt)
+    void OnDoubleShift(POINT pt)
     {
         if (!Settings.Current.Enabled || !Settings.Current.DoubleShift || _state != State.Hidden) return;
         var fg = Win32.GetForegroundWindow();
         var cls = Win32.ClassOf(Win32.GetAncestor(fg, Win32.GA_ROOT));
         if (cls is not ("CabinetWClass" or "Progman" or "WorkerW")) return;
-        // don't hijack the key while the user is renaming a file
+        // don't hijack Shift while the user is renaming a file
         var gti = new GUITHREADINFO { cbSize = System.Runtime.InteropServices.Marshal.SizeOf<GUITHREADINFO>() };
         if (Win32.GetGUIThreadInfo(Win32.GetWindowThreadProcessId(fg, out _), ref gti) && gti.hwndFocus != IntPtr.Zero
             && Win32.ClassOf(gti.hwndFocus) == "Edit") return;
@@ -335,6 +335,8 @@ public sealed class OverlayController
     int _described = int.MinValue;
 
     /// <summary>Drag feedback under Explorer's drag image: "Convert to PNG", "Crop", or "Drop on a petal".</summary>
+    static string ToolsKey() => Settings.Current.TriggerKey.Modifier() == ModifierKey.Shift ? "⇧" : Settings.Current.TriggerKey.KeyName();
+
     DragDropEffects Feedback(DragEventArgs e)
     {
         var pos = e.GetPosition(_win);
@@ -352,7 +354,7 @@ public sealed class OverlayController
                 if (a.Icon == null) Shell.SetDropDescription(e.Data, 1, "Convert to %1", a.Label);
                 else Shell.SetDropDescription(e.Data, 1, "%1", a.Verb);
             }
-            else Shell.SetDropDescription(e.Data, 0, _pages?.Tools.Count > 0 ? "Drop on a petal · ⇧ for tools" : "Drop on a petal");
+            else Shell.SetDropDescription(e.Data, 0, _pages?.Tools.Count > 0 ? $"Drop on a petal · {ToolsKey()} for tools" : "Drop on a petal");
         }
         return effect;
     }

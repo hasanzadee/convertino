@@ -26,14 +26,15 @@ public sealed class GlobalInput : IDisposable
 
     // keyboard state (hook thread only)
     bool _triggerHeld;
-    bool _otherKeyDuringTrigger;
-    uint _triggerDownTime;
+    bool _shiftHeld;
+    bool _otherKeyDuringShift;
+    uint _shiftDownTime;
     uint _lastTapUpTime;
 
     /// <summary>The trigger key (Shift, Ctrl or Alt, from the settings) went down. Args: whether a left-button drag is in progress, cursor position.</summary>
     public event Action<bool, POINT>? TriggerDown;
-    /// <summary>The trigger key was tapped twice quickly with no other key in between (and no mouse drag).</summary>
-    public event Action<POINT>? TriggerDoubleTap;
+    /// <summary>Shift was tapped twice quickly with no other key in between (and no mouse drag). Always Shift, whatever the trigger key.</summary>
+    public event Action<POINT>? ShiftDoubleTap;
     public event Action<POINT>? MouseDown;
     public event Action<POINT>? MouseUp;
     public event Action? Escape;
@@ -87,11 +88,12 @@ public sealed class GlobalInput : IDisposable
             int msg = wParam.ToInt32();
             bool down = msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN;
             bool up = msg == WM_KEYUP || msg == WM_SYSKEYUP;
+            bool isShift = k.vkCode is VK_LSHIFT or VK_RSHIFT or VK_SHIFT;
             bool isTrigger = Settings.Current.TriggerKey.Modifier() switch
             {
                 ModifierKey.Ctrl => k.vkCode is VK_LCONTROL or VK_RCONTROL or VK_CONTROL,
                 ModifierKey.Alt => k.vkCode is VK_LMENU or VK_RMENU or VK_MENU,
-                _ => k.vkCode is VK_LSHIFT or VK_RSHIFT or VK_SHIFT,
+                _ => isShift,
             };
 
             if (isTrigger)
@@ -99,23 +101,32 @@ public sealed class GlobalInput : IDisposable
                 if (down && !_triggerHeld)
                 {
                     _triggerHeld = true;
-                    _otherKeyDuringTrigger = false;
-                    _triggerDownTime = k.time;
                     bool dragging = _dragging && _lDown;
                     GetCursorPos(out var pt);
                     Post(() => TriggerDown?.Invoke(dragging, pt));
                 }
-                else if (up && _triggerHeld)
+                else if (up) _triggerHeld = false;
+            }
+
+            if (isShift)
+            {
+                if (down && !_shiftHeld)
                 {
-                    _triggerHeld = false;
-                    bool cleanTap = !_otherKeyDuringTrigger && !_lDown && k.time - _triggerDownTime < 350;
+                    _shiftHeld = true;
+                    _otherKeyDuringShift = false;
+                    _shiftDownTime = k.time;
+                }
+                else if (up && _shiftHeld)
+                {
+                    _shiftHeld = false;
+                    bool cleanTap = !_otherKeyDuringShift && !_lDown && k.time - _shiftDownTime < 350;
                     if (cleanTap)
                     {
                         if (_lastTapUpTime != 0 && k.time - _lastTapUpTime < 420)
                         {
                             _lastTapUpTime = 0;
                             GetCursorPos(out var pt);
-                            Post(() => TriggerDoubleTap?.Invoke(pt));
+                            Post(() => ShiftDoubleTap?.Invoke(pt));
                         }
                         else _lastTapUpTime = k.time;
                     }
@@ -124,7 +135,7 @@ public sealed class GlobalInput : IDisposable
             }
             else if (down)
             {
-                _otherKeyDuringTrigger = true;
+                _otherKeyDuringShift = true;
                 _lastTapUpTime = 0;
                 if (k.vkCode == VK_ESCAPE) Post(() => Escape?.Invoke());
             }
