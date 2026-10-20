@@ -66,6 +66,11 @@ public sealed class FlowerView : Control
     bool _ticking;
     int _hover = -1;
     int _pageCount = 1, _page;
+    string _ringName = "";
+    double _ringUntil;
+
+    /// <summary>How long the hub shows a ring's name after a flip, in seconds.</summary>
+    const double RingNameTime = 1.1;
 
     public Bitmap? Backdrop { get; set; }
     public HubMode Mode { get; private set; } = HubMode.Seed;
@@ -96,13 +101,19 @@ public sealed class FlowerView : Control
         Thumb = null;
         HubTitle = HubSub = HubBadge = "";
         Mode = HubMode.Seed;
-        _pageCount = 1; _page = 0;
+        _pageCount = 1; _page = 0; _ringName = ""; _ringUntil = 0;
         InvalidateVisual();
     }
 
     public void Appear() { _appear.Target = 1; _hub.Target = 1; Kick(); }
     public void SetMode(HubMode m) { Mode = m; Kick(); }
-    public void SetPages(int count, int page) { _pageCount = count; _page = page; Kick(); }
+    /// <summary>Page dots; with a <paramref name="name"/> the hub also shows the ring's name for a moment (after a flip).</summary>
+    public void SetPages(int count, int page, string? name = null)
+    {
+        _pageCount = count; _page = page;
+        if (!string.IsNullOrEmpty(name)) { _ringName = name; _ringUntil = _time + RingNameTime; }
+        Kick();
+    }
 
     public void SetPetals(IReadOnlyList<PetalAction> actions, double dir)
     {
@@ -216,6 +227,7 @@ public sealed class FlowerView : Control
         }
         _petals.RemoveAll(p => p.Leaving && p.Bloom.X <= 0.002 && p.Bloom.Target == 0);
         if (Mode == HubMode.Seed && _appear.Target > 0) busy = true;
+        if (_time < _ringUntil) busy = true; // repaint once the ring's name gives way
         InvalidateVisual();
         var top = TopLevel.GetTopLevel(this);
         if (busy && top != null) top.RequestAnimationFrame(OnFrame);
@@ -406,6 +418,7 @@ public sealed class FlowerView : Control
                 var act = acts[_hover];
                 sub = act.Icon != null ? act.Verb : (string.IsNullOrEmpty(HubBadge) ? act.Hint : $"{HubBadge} → {act.Label}");
             }
+            if (_time < _ringUntil) { title = _ringName; sub = ""; hot = true; } // just flipped: say which ring this is
             Fit(dc, title, LabelFace, hot ? 13 : 12, c.X, c.Y + 17, r * 1.7, hot ? T.AccentA : T.Text);
             Fit(dc, sub, HintFace, 9.5, c.X, c.Y + 31, r * 1.6, T.SubText);
             if (_pageCount > 1)

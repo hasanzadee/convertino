@@ -10,6 +10,7 @@ using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.Media.Immutable;
+using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using Convertino.Overlay;
 using Convertino.Services;
@@ -64,7 +65,7 @@ public sealed class TrayPanel : Window
         _ticker.Tick += (_, _) => Tick();
         KeyDown += (_, e) => { if (e.Key == Key.Escape) HideAnimated(); };
         // focus moving elsewhere closes it too (a click outside is caught by ClickAt, focus or not)
-        Deactivated += (_, _) => { if (Now - _shownAt > 300) HideAnimated(); };
+        Deactivated += (_, _) => { if (!_picking && Now - _shownAt > 300) HideAnimated(); };
         // restyle in place (a swatch here or the tray menu), scrolled where it was
         Skin.Changed += () =>
         {
@@ -157,7 +158,7 @@ public sealed class TrayPanel : Window
     /// <summary>A mouse button went down somewhere on screen (global input): outside the panel, that closes it.</summary>
     public void ClickAt(ScreenPoint p)
     {
-        if (!IsVisible || _hiding || Now - _shownAt < 150) return;
+        if (!IsVisible || _hiding || _picking || Now - _shownAt < 150) return;
         double s = DesktopScaling;
         var r = new PixelRect(Position, new PixelSize((int)Math.Round(Bounds.Width * s), (int)Math.Round(Bounds.Height * s)));
         if (!r.Contains(new PixelPoint(p.X, p.Y))) HideAnimated();
@@ -270,7 +271,7 @@ public sealed class TrayPanel : Window
             Children =
             {
                 HowRow("file", $"Drag any file, {key.Tap()}", "the flower opens under your cursor"),
-                HowRow("flip", $"{key.KeyName()} again", "switch Convert ⇄ Tools"),
+                HowRow("flip", $"{key.KeyName()} again, Tab or wheel", "next ring; Shift+Tab goes back"),
                 OperatingSystem.IsMacOS()
                     ? HowRow("folder", "Right-click → Quick Actions", "Convertino: same menu in Finder")
                     : HowRow("folder", "Right-click → Convertino", "same menu in your file manager"),
@@ -298,6 +299,10 @@ public sealed class TrayPanel : Window
                     v => { s.LaunchAtStartup = v; Platform.Current.SetAutostart(v); }),
             },
         }, new Thickness(0)));
+
+        // folders whose new files convert by themselves
+        stack.Children.Add(Label("Watch folders"));
+        stack.Children.Add(WatchCard());
 
         // recent
         var recent = s.Recent.Where(r => File.Exists(r.Path) || Directory.Exists(r.Path)).Take(4).ToList();
@@ -647,6 +652,94 @@ public sealed class TrayPanel : Window
         if (d.TotalHours < 1) return $"{(int)d.TotalMinutes} min ago";
         if (d.TotalDays < 1) return $"{(int)d.TotalHours} h ago";
         return t.ToString("d MMM");
+    }
+
+    // ---------- watch folders ----------
+
+    string? _pendingWatch; // picked, waiting for "new files become …"
+    bool _picking;         // the folder dialog is up: losing focus to it mustn't close the panel
+
+    Control WatchCard()
+    {
+        var list = new StackPanel();
+        foreach (var wf in Watches.Load())
+        {
+            var path = wf.Path;
+            var icon = new Border
+            {
+                Width = 30, Height = 30, CornerRadius = new CornerRadius(6), Margin = new Thickness(0, 0, 10, 0), Background = B(A(T.SubText, .14)),
+                Child = new IconView { Key = "folder", Width = 14, Height = 14, Brush = B(T.SubText), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center },
+            };
+            var text = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+            text.Children.Add(new TextBlock { Text = System.IO.Path.GetFileName(path.TrimEnd('/', '\\')), FontSize = 12.5, Foreground = B(T.Text), TextTrimming = TextTrimming.CharacterEllipsis, MaxWidth = 210 });
+            text.Children.Add(new TextBlock { Text = $"new files → {Watches.LabelOf(wf.Action)} · in {wf.Out}" + (Directory.Exists(path) ? "" : " · missing"), FontSize = 11, Foreground = B(T.SubText) });
+            var main = new Border
+            {
+                Background = Brushes.Transparent, Cursor = new Cursor(StandardCursorType.Hand),
+                Child = new StackPanel { Orientation = Orientation.Horizontal, Children = { icon, text } },
+            };
+            ToolTip.SetTip(main, path);
+            main.PointerReleased += (_, _) => { if (Directory.Exists(path)) { Platform.Current.Open(path); HideAnimated(); } };
+            var remove = IconButton("x", () => { try { Watches.Remove(path); } catch (Exception ex) { Log.Error("watch remove", ex); } Rebuild(); });
+            ToolTip.SetTip(remove, "Stop watching");
+            remove.VerticalAlignment = VerticalAlignment.Center;
+            var row = new DockPanel { Margin = new Thickness(0, 4, 0, 4) };
+            DockPanel.SetDock(remove, Dock.Right);
+            row.Children.Add(remove);
+            row.Children.Add(main);
+            list.Children.Add(row);
+        }
+
+        if (_pendingWatch is { } dir)
+        {
+            list.Children.Add(new TextBlock
+            {
+                Text = $"New files in {System.IO.Path.GetFileName(dir.TrimEnd('/', '\\'))} become:", FontSize = 12.5,
+                Foreground = B(T.Text), Margin = new Thickness(0, 6, 0, 0), TextTrimming = TextTrimming.CharacterEllipsis,
+            });
+            var pills = new UniformGrid { Columns = 3, Margin = new Thickness(-2, 6, -2, 2) };
+            foreach (var (id, label) in Watches.Presets)
+            {
+                IBrush rest = B(A(T.SubText, .12));
+                var caption = new TextBlock { Text = label, FontSize = 11.5, Foreground = B(T.Text), HorizontalAlignment = HorizontalAlignment.Center };
+                var pill = new Border
+                {
+                    CornerRadius = new CornerRadius(8), Padding = new Thickness(4, 4, 4, 5), Margin = new Thickness(2),
+                    Background = rest, Cursor = new Cursor(StandardCursorType.Hand), Child = caption,
+                };
+                pill.PointerEntered += (_, _) => { pill.Background = Gradient(T.AccentA, T.AccentB, false); caption.Foreground = B(T.AccentText); };
+                pill.PointerExited += (_, _) => { pill.Background = rest; caption.Foreground = B(T.Text); };
+                pill.PointerReleased += (_, _) =>
+                {
+                    try { Watches.Add(new WatchFolder { Path = dir, Action = id }); } catch (Exception ex) { Log.Error("watch add", ex); }
+                    _pendingWatch = null;
+                    Rebuild();
+                };
+                pills.Children.Add(pill);
+            }
+            list.Children.Add(pills);
+            list.Children.Add(new TextBlock { Text = "Results go to a Converted folder inside it.", FontSize = 11, Foreground = B(T.SubText), Margin = new Thickness(2, 2, 0, 4) });
+            list.Children.Add(FooterButton("x", "Cancel", () => { _pendingWatch = null; Rebuild(); }));
+        }
+        else list.Children.Add(FooterButton("folder", "Watch a folder…", PickWatchFolder));
+        return Card(list, new Thickness(0));
+    }
+
+    async void PickWatchFolder()
+    {
+        _picking = true;
+        try
+        {
+            var picked = await StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
+            {
+                Title = "New files in this folder will be converted automatically", AllowMultiple = false,
+            });
+            if (picked.Count > 0 && picked[0].TryGetLocalPath() is { } path) _pendingWatch = path;
+        }
+        catch (Exception ex) { Log.Error("folder picker", ex); }
+        finally { _picking = false; }
+        if (IsVisible && !_hiding) { Rebuild(); Activate(); }
+        else { _hiddenAt = -1e9; Open(); }
     }
 
     Control FooterButton(string icon, string text, Action click)

@@ -96,10 +96,11 @@ public static class Clip
     {
         Application.Current.Dispatcher.Invoke(() =>
         {
-            for (int i = 0; i < 10; i++)
+            for (int i = 0; ; i++)
             {
                 try { a(); return; }
-                catch { Thread.Sleep(40); }
+                // another app may hold the clipboard for a moment; a locked screen keeps it shut, so say so
+                catch (Exception ex) when (i < 9) { Log.Info("clipboard busy: " + ex.Message); Thread.Sleep(40); }
             }
         });
     }
@@ -107,6 +108,30 @@ public static class Clip
     public static void SetText(string text) => Retry(() => Clipboard.SetDataObject(new DataObject(DataFormats.UnicodeText, text), true));
 
     public static void SetImage(BitmapSource bmp) => Retry(() => Clipboard.SetImage(bmp));
+
+    /// <summary>
+    /// The picture in two shapes: "PNG" keeps transparency for apps that read it (Office, browsers, Telegram, Discord …),
+    /// a plain bitmap on white serves the rest, since most of them ignore a bitmap's alpha and would show black.
+    /// Both are built on the caller's (worker) thread; only handing them over runs on the UI thread, with the retries.
+    /// </summary>
+    public static void SetPng(byte[] png)
+    {
+        var frame = System.Windows.Media.Imaging.BitmapFrame.Create(new System.IO.MemoryStream(png), BitmapCreateOptions.PreservePixelFormat, BitmapCacheOption.OnLoad);
+        var (px, w, h) = Wpf.Pixels(frame);
+        for (int i = 0; i < px.Length; i += 4)
+        {
+            int a = px[i + 3];
+            if (a == 255) continue;
+            for (int c = 0; c < 3; c++) px[i + c] = (byte)((px[i + c] * a + 255 * (255 - a) + 127) / 255);
+            px[i + 3] = 255;
+        }
+        var opaque = BitmapSource.Create(w, h, 96, 96, System.Windows.Media.PixelFormats.Bgr32, null, px, w * 4);
+        opaque.Freeze();
+        var data = new DataObject();
+        data.SetData("PNG", new System.IO.MemoryStream(png), false);
+        data.SetImage(opaque);
+        Retry(() => Clipboard.SetDataObject(data, true));
+    }
 
     public static void SetFiles(IEnumerable<string> files)
     {

@@ -1,4 +1,5 @@
-// Drag a file with synthetic input the way a person would: press, drag, tap Shift, drop on the first petal.
+// Drag a file with synthetic input the way a person would: press, drag, tap Shift, page the rings with the wheel and
+// Tab (both round trips, so it ends on Convert again), drop on the first petal.
 // CI uses it to exercise Convertino's drag + Shift gesture on a macOS runner (needs Accessibility for the caller).
 //   swiftc tools/mac-drag-test.swift -o dragtest && ./dragtest /path/to/file.png [screenshot.png]
 // The drag source is this script's own window, so the geometry is exact; the drop target is the running Convertino.
@@ -53,6 +54,13 @@ func shift(down: Bool) {
     e.flags = down ? .maskShift : []
     e.post(tap: .cghidEventTap)
 }
+func scroll(_ lines: Int32) {
+    CGEvent(scrollWheelEvent2Source: source, units: .line, wheelCount: 1, wheel1: lines, wheel2: 0, wheel3: 0)!.post(tap: .cghidEventTap)
+}
+func tab() {
+    CGEvent(keyboardEventSource: source, virtualKey: 48, keyDown: true)!.post(tap: .cghidEventTap); usleep(90_000)
+    CGEvent(keyboardEventSource: source, virtualKey: 48, keyDown: false)!.post(tap: .cghidEventTap)
+}
 func drag(from a: CGPoint, to b: CGPoint, steps: Int) {
     for i in 1...steps {
         let t = CGFloat(i) / CGFloat(steps)
@@ -71,10 +79,18 @@ DispatchQueue.global().async {
     drag(from: start, to: held, steps: 30)
     usleep(400_000)
     shift(down: true); usleep(120_000)
-    shift(down: false); usleep(900_000)
+    shift(down: false); usleep(500_000)
+    // move a little so the drag enters the flower and it blooms (a seed that sees no drag closes after 1.6 s)
+    let near = CGPoint(x: held.x, y: held.y - 30)
+    drag(from: held, to: near, steps: 6); usleep(500_000)
+    // Convertino logs "ring 2/4 Tools (wheel)" etc. with CONVERTINO_DEBUG=1; nothing here depends on it
+    scroll(-3); usleep(500_000)          // next ring
+    scroll(3); usleep(500_000)           // back to Convert
+    for _ in 0..<4 { tab(); usleep(400_000) } // an image has four rings: four Tabs come back round (Tab needs Input Monitoring)
+    print("paged with the wheel and Tab")
     // the first Convert petal sits straight above the centre, halfway across the ring (R1 64 … R2 170)
     let petal = CGPoint(x: held.x, y: held.y - 117)
-    drag(from: held, to: petal, steps: 20)
+    drag(from: near, to: petal, steps: 20)
     usleep(800_000)
     if let shot {
         let p = Process()

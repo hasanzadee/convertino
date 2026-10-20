@@ -52,6 +52,7 @@ public sealed class WinPlatform : IPlatform
 
     public void SetClipboardText(string text) => Clip.SetText(text);
     public void SetClipboardFiles(IEnumerable<string> files) => Clip.SetFiles(files);
+    public void SetClipboardImage(byte[] png) => Clip.SetPng(png);
 
     public Func<Job, Task>? Editor(string id) => id switch
     {

@@ -3,7 +3,31 @@ using Convertino.Services;
 
 namespace Convertino;
 
-public sealed record Pages(List<PetalAction> Convert, List<PetalAction> Tools, string Title, string Badge);
+/// <summary>One page of the flower: its petals and the name the hub shows when you flip to it.</summary>
+public sealed record Ring(string Name, IReadOnlyList<PetalAction> Petals);
+
+public sealed record Pages(List<PetalAction> Convert, List<PetalAction> Tools, string Title, string Badge)
+{
+    /// <summary>Most petals one ring shows; a longer list is spread evenly over consecutive rings ("Tools", "Tools 2").</summary>
+    public const int MaxPetals = 10;
+
+    /// <summary>One-tap extras after Tools: no window, a new file beside the source or the clipboard (images: Half, Full HD, B&amp;W …).</summary>
+    public List<PetalAction> More { get; init; } = [];
+
+    /// <summary>Rarer output formats. Last in the cycle, so they sit one step back from Convert (images: HEIC, TIFF, ICO, BMP, JPEG XL, QOI).</summary>
+    public List<PetalAction> MoreFormats { get; init; } = [];
+
+    /// <summary>The rings in flip order, Convert → Tools → More tools → More formats, empty ones left out.</summary>
+    public IReadOnlyList<Ring> Rings => [.. Split("Convert", Convert), .. Split("Tools", Tools), .. Split("More tools", More), .. Split("More formats", MoreFormats)];
+
+    static IEnumerable<Ring> Split(string name, List<PetalAction> petals)
+    {
+        if (petals.Count == 0) yield break;
+        int rings = (petals.Count + MaxPetals - 1) / MaxPetals, size = (petals.Count + rings - 1) / rings;
+        for (int i = 0; i < rings; i++)
+            yield return new(i == 0 ? name : $"{name} {i + 1}", petals.Skip(i * size).Take(size).ToList());
+    }
+}
 
 /// <summary>Which petals a given set of dropped files gets.</summary>
 public static class Catalog
@@ -31,12 +55,35 @@ public static class Catalog
     static PetalAction HashA => Tool("sha", "SHA-256", "hash", "Copy SHA-256 hash", Misc.Sha256, quick: true);
     static PetalAction B64A => Tool("b64", "Base64", "code", "Copy as data URI", Misc.Base64, quick: true);
     static PetalAction CopyA => Tool("copy", "Copy", "copy", "Copy to clipboard", Misc.CopyFiles, quick: true);
+    static PetalAction VerifyA => Tool("verify", "Verify", "check", "Verify checksum", FileTools.Verify);
+    static PetalAction DupesA => Tool("dupes", "Duplicates", "search", "Find duplicate files", FileTools.Duplicates);
+    static PetalAction SevenZA => Pack("7z", "7Z", "smallest", Archives.SevenZip);
+    static PetalAction TarGzA => Pack("tar.gz", "TAR.GZ", "Linux, Mac", Archives.TarGz);
 
-    /// <summary>Every action reachable for these files (both rings), for the CLI.</summary>
+    static PetalAction Pack(string ext, string label, string hint, Func<Job, Task> run) => new()
+    {
+        Id = "to-" + ext, Label = label, Hint = hint, Verb = $"Compress to .{ext}", Short = $"→ {label}", Run = run,
+    };
+
+    /// <summary>For the Tools ring: split presets that fit one file (none under 10 MB), then MD5 / SHA-1 / SHA-512.</summary>
+    static IEnumerable<PetalAction> FileToolsFor(IReadOnlyList<string> files)
+    {
+        if (files.Count == 1)
+            foreach (var p in FileTools.SplitPresets(Paths.SizeOf(files[0])))
+                yield return new()
+                {
+                    Id = "split-" + p.Id, Label = p.Label, Hint = p.Hint, Verb = $"Split into {p.Label} parts", Short = $"Split {p.Label}",
+                    Run = j => FileTools.Split(j, p.Bytes),
+                };
+        foreach (var (id, label) in new[] { ("md5", "MD5"), ("sha1", "SHA-1"), ("sha512", "SHA-512") })
+            yield return Tool(id, label, "hash", $"Copy {label} hash", j => FileTools.CopyHash(j, label));
+    }
+
+    /// <summary>Every action reachable for these files (all rings), for the CLI.</summary>
     public static IEnumerable<PetalAction> All(IReadOnlyList<string> files)
     {
         var p = For(files);
-        return p.Convert.Concat(p.Tools);
+        return p.Convert.Concat(p.Tools).Concat(p.More).Concat(p.MoreFormats);
     }
 
     public static Pages For(IReadOnlyList<string> files)
@@ -48,10 +95,15 @@ public static class Catalog
 
         if (kinds.Count == 1) return ForKind(kinds[0], files, title, badge);
 
+        // one .sha256 / SHA256SUMS dropped together with the files it lists
+        var lists = files.Where(f => Kinds.Of(f) == Kind.Checksum).ToList();
+        if (lists.Count == 1 && FileTools.Covers(lists[0], files.Where(f => f != lists[0]).ToList()))
+            return new([VerifyA, ZipA, PathA], [], title, badge);
+
         // mixed: images + PDFs can still become one PDF
         if (kinds.All(k => k is Kind.Image or Kind.Pdf))
             return new([Tool("merge", "Merge PDF", "merge", "Merge into one PDF", Pdfs.Merge), ZipA, PathA], [], title, badge);
-        return new([ZipA, PathA, CopyA], [], title, badge);
+        return new([ZipA, SevenZA, TarGzA, DupesA, PathA, CopyA], [], title, badge);
     }
 
     static PetalAction? Editor(string id, string label, string icon, string verb)
@@ -64,7 +116,7 @@ public static class Catalog
     {
         bool single = files.Count == 1;
         string ext = Kinds.Ext(files[0]);
-        List<PetalAction> conv = [], tools = [];
+        List<PetalAction> conv = [], tools = [], more = [], formats = [];
         var office = Platform.Current.Office;
         bool hasOffice(Kind k) => office?.Supports(k) == true;
 
@@ -72,20 +124,31 @@ public static class Catalog
         {
             case Kind.Image:
             {
-                void F(string e, string hint, MagickFormat mf)
+                void F(List<PetalAction> ring, string e, string hint, MagickFormat mf)
                 {
-                    if (Images.CanWrite(mf)) conv.Add(Fmt(e, hint, j => Images.Convert(j, e)));
+                    if (Images.CanWrite(mf)) ring.Add(Fmt(e, hint, j => Images.Convert(j, e)));
                 }
-                F("png", "lossless", MagickFormat.Png);
-                F("jpg", "universal", MagickFormat.Jpeg);
-                F("webp", "web", MagickFormat.WebP);
-                F("avif", "smallest", MagickFormat.Avif);
+                F(conv, "png", "lossless", MagickFormat.Png);
+                F(conv, "jpg", "universal", MagickFormat.Jpeg);
+                F(conv, "webp", "web", MagickFormat.WebP);
+                F(conv, "avif", "smallest", MagickFormat.Avif);
                 conv.Add(Fmt("pdf", single ? "document" : "one file", j => Pdfs.ImagesToPdf(j, merge: true)));
-                F("heic", "Apple", MagickFormat.Heic);
-                F("ico", "icon", MagickFormat.Ico);
-                F("tiff", "print", MagickFormat.Tiff);
+                F(conv, "gif", "classic", MagickFormat.Gif);
+                // rarer formats get the last ring, one step back from Convert
+                F(formats, "heic", "Apple", MagickFormat.Heic);
+                F(formats, "tiff", "print", MagickFormat.Tiff);
+                F(formats, "ico", "icon", MagickFormat.Ico);
+                F(formats, "bmp", "plain", MagickFormat.Bmp);
+                F(formats, "jxl", "JPEG XL", MagickFormat.Jxl);
+                F(formats, "qoi", "fast", MagickFormat.Qoi);
                 conv.RemoveAll(a => a.Id == "to-" + Norm(ext));
-                if (conv.Count > 8) conv.RemoveAt(conv.Count - 1);
+                formats.RemoveAll(a => a.Id == "to-" + Norm(ext));
+                // More tools: one tap, no window, a new file beside each source (the same for one image or many).
+                // New one-tap image tools go here; editors and AI stay on Tools. Rings over 10 petals split by themselves.
+                more.Add(Tool("half", "Half", "half", "Half the size", Images.Half));
+                more.Add(Tool("fithd", "Full HD", "fithd", "Fit in 1920×1080", Images.FitFullHd));
+                more.Add(Tool("gray", "B&W", "gray", "Black & white", Images.Grayscale));
+                more.AddRange(ImageTools.Petals(files)); // Messenger, Square, Rounded, Palette, Favicon, Copy, QR; Compare/Contact/Slideshow for several
 
                 // AI background removal only when its model is installed (convertino model install)
                 var cutout = Cutout.Available ? Tool("cutout", "Cut out", "cutout", "Remove background", Cutout.Run) : null;
@@ -121,6 +184,10 @@ public static class Catalog
                 conv.Add(Fmt("txt", "text", Pdfs.ToText));
                 conv.Add(Fmt("png", "pages", j => Pdfs.ToImages(j, "png")));
                 if (!single) tools.Add(Tool("merge", "Merge", "merge", $"Merge {files.Count} PDFs", Pdfs.Merge));
+                if (Pdfs.CanCompress) tools.Add(Tool("compress", "Compress", "compress", "Make the PDF smaller", Pdfs.Compress));
+                tools.Add(Tool("pdfimages", "Images", "picture", "Extract the images", Pdfs.ExtractImages));
+                tools.Add(Tool("pagenum", "Numbers", "hash", "Add page numbers", Pdfs.PageNumbers));
+                tools.Add(Tool("cover", "Cover", "camera", "First page as PNG", Pdfs.Cover));
                 tools.Add(Tool("ocr", "Text", "ocr", "Copy text (OCR)", Pdfs.Ocr_));
                 tools.Add(Tool("split", "Split", "cut", "One PDF per page", Pdfs.Split));
                 tools.Add(Tool("rotate", "Rotate", "rotate", "Rotate 90°", Pdfs.Rotate));
@@ -137,14 +204,20 @@ public static class Catalog
                 conv.Add(Fmt("html", "web", j => office!.Convert(j, "html")));
                 tools.AddRange([ZipA, PathA, HashA]);
                 break;
-            case Kind.Excel when hasOffice(Kind.Excel):
-                conv.Add(Fmt("pdf", "print", j => office!.Convert(j, "pdf")));
-                if (ext != "xlsx") conv.Add(Fmt("xlsx", "Excel", j => office!.Convert(j, "xlsx")));
-                if (ext != "csv") conv.Add(Fmt("csv", "UTF-8", j => office!.Convert(j, "csv")));
-                if (ext != "ods") conv.Add(Fmt("ods", "OpenDoc", j => office!.Convert(j, "ods")));
-                conv.Add(Fmt("html", "web", j => office!.Convert(j, "html")));
+            case Kind.Excel when hasOffice(Kind.Excel) || files.All(Sheets.IsSheet):
+            {
+                // CSV ⇄ XLSX, → JSON and the HTML / Markdown tables run in-process: no office suite needed, UTF-8 kept, every sheet converted
+                bool sheets = files.All(Sheets.IsSheet), viaOffice = hasOffice(Kind.Excel);
+                if (viaOffice) conv.Add(Fmt("pdf", "print", j => office!.Convert(j, "pdf")));
+                if (ext != "xlsx") conv.Add(Fmt("xlsx", "Excel", j => sheets ? Data.Convert(j, "xlsx") : office!.Convert(j, "xlsx")));
+                if (ext != "csv") conv.Add(Fmt("csv", "UTF-8", j => sheets ? Data.Convert(j, "csv") : office!.Convert(j, "csv")));
+                if (viaOffice && ext != "ods") conv.Add(Fmt("ods", "OpenDoc", j => office!.Convert(j, "ods")));
+                conv.Add(Fmt("html", sheets ? "table" : "web", j => sheets ? Data.Convert(j, "html") : office!.Convert(j, "html")));
+                if (sheets) conv.Add(Fmt("json", "data", j => Data.Convert(j, "json")));
+                if (sheets) conv.Add(Fmt("md", "table", j => Data.Convert(j, "md")));
                 tools.AddRange([ZipA, PathA, HashA]);
                 break;
+            }
             case Kind.Slides when hasOffice(Kind.Slides):
                 conv.Add(Fmt("pdf", "handout", j => office!.Convert(j, "pdf")));
                 conv.Add(Fmt("png", "slides", j => office!.Convert(j, "png")));
@@ -160,6 +233,7 @@ public static class Catalog
                 }
                 conv.Add(Tool("copytext", "Copy", "copy", "Copy contents", CopyText, quick: true));
                 tools.AddRange([ZipA, PathA, HashA, B64A]);
+                tools.AddRange(ImageTools.Petals(files)); // QR code of the text
                 break;
             case Kind.Markdown:
                 conv.Add(Fmt("html", "web page", Misc.MarkdownHtml));
@@ -184,6 +258,7 @@ public static class Catalog
                 tools.Add(Tool("720p", "720p", "resize", "Downscale to 720p", Media.To720));
                 tools.Add(Tool("mute", "Mute", "mute", "Remove audio", Media.Mute));
                 tools.Add(Tool("frame", "Frame", "camera", "Grab a still", Media.Snapshot));
+                tools.Add(Tool("subtitles", "Subtitles", "subtitles", "Save subtitles as SRT", Subtitles.FromVideo));
                 break;
             case Kind.Audio when Media.Available:
                 foreach (var (e, h) in new[] { ("mp3", "universal"), ("m4a", "AAC"), ("wav", "raw"), ("flac", "lossless"), ("ogg", "Vorbis"), ("opus", "tiny") })
@@ -192,16 +267,72 @@ public static class Catalog
                 tools.Add(Tool("trim", "Trim", "cut", "Trim silence", Media.TrimSilence));
                 tools.AddRange([ZipA, PathA]);
                 break;
+            case Kind.Data:
+            {
+                // JSON, JSON Lines, YAML, TOML and XML into one another, and to CSV / XLSX (Services/Data.cs);
+                // CSS only gets Pretty / Minify, so they lead its first ring
+                string self = Data.Canon(ext);
+                bool same = files.All(f => Data.Canon(Kinds.Ext(f)) == self), css = files.Any(f => Kinds.Ext(f) == "css");
+                void D(string to, string hint)
+                {
+                    if (!css && !(same && to == self)) conv.Add(Fmt(to, hint, j => Data.Convert(j, to)));
+                }
+                D("json", "web");
+                D("yaml", "readable");
+                D("toml", "config");
+                D("xml", "markup");
+                D("csv", "table");
+                D("xlsx", "Excel");
+                if (self is "json" or "jsonl") D("jsonl", "lines");
+                var ring = css ? conv : tools;
+                if (files.All(Data.CanReformat))
+                {
+                    ring.Add(Tool("pretty", "Pretty", "code", "Pretty-print", Data.Pretty));
+                    ring.Add(Tool("minify", "Minify", "compress", "Minify", Data.Minify));
+                }
+                ring.Add(Tool("copytext", "Copy", "copy", "Copy contents", CopyText, quick: true));
+                tools.AddRange([ZipA, PathA, HashA, B64A]);
+                break;
+            }
             case Kind.Archive:
-                conv.Add(Tool("extract", "Extract", "folder", "Extract here", Misc.Extract));
+                conv.Add(Tool("extract", "Extract", "folder", "Extract here", Archives.Extract));
+                conv.AddRange([PathA, HashA]);
+                tools.AddRange(FileToolsFor(files));
+                break;
+            case Kind.Part:
+                conv.Add(Tool("join", "Join", "merge", "Join the parts", FileTools.Join));
                 conv.AddRange([PathA, HashA]);
                 break;
-            case Kind.Folder:
-                conv.AddRange([ZipA, PathA, CopyA]);
+            case Kind.Checksum:
+                conv.Add(VerifyA);
+                conv.Add(Tool("copytext", "Copy", "copy", "Copy contents", CopyText, quick: true));
+                conv.Add(PathA);
                 break;
+            case Kind.Folder:
+                conv.AddRange([ZipA, SevenZA, TarGzA, DupesA, PathA, CopyA]);
+                break;
+            case Kind.Subtitles:
+            {
+                // .ssa → ASS would only drop its styles; players read SSA as it is
+                bool same = files.All(f => Kinds.Ext(f) == ext);
+                foreach (var (e, h) in new[] { ("srt", "universal"), ("vtt", "web"), ("ass", "advanced"), ("txt", "text only") })
+                    if (!same || (e != ext && !(e == "ass" && ext == "ssa"))) conv.Add(Fmt(e, h, j => Subtitles.Convert(j, e)));
+                tools.AddRange([ZipA, PathA, HashA]);
+                break;
+            }
             default:
                 conv.AddRange([ZipA, PathA, HashA, B64A]);
+                tools.AddRange(FileToolsFor(files));
+                tools.AddRange(ImageTools.Petals(files)); // QR code of a .url / .webloc link
+                if (!single) conv.InsertRange(1, [SevenZA, TarGzA]);
                 break;
+        }
+
+        // several files of one kind: which of them are the same?
+        if (!single && kind is not (Kind.Folder or Kind.Part or Kind.Checksum))
+        {
+            var ring = tools.Count > 0 ? tools : conv;
+            if (ring.Count < 8) ring.Add(DupesA);
         }
 
         foreach (var ext2 in Extensions)
@@ -212,8 +343,16 @@ public static class Catalog
                 if (ring.Count > 8) ring.RemoveAt(ring.Count - 1);
             }
 
+        // UTF-8 and LF / CRLF for anything that is plain text, whatever its kind: decided by extension and a sniff
+        if (TextFiles.Petals(files) is { Count: > 0 } text)
+        {
+            var ring = tools.Count > 0 ? tools : conv;
+            ring.InsertRange(0, text);
+            while (ring.Count > 8) ring.RemoveAt(ring.Count - 1);
+        }
+
         if (conv.Count == 0) conv.AddRange([ZipA, PathA, HashA]);
-        return new(conv, tools, title, badge);
+        return new(conv, tools, title, badge) { More = more, MoreFormats = formats };
     }
 
     static string Norm(string ext) => ext switch { "jpeg" or "jfif" => "jpg", "tif" => "tiff", "heif" => "heic", _ => ext };
@@ -235,7 +374,7 @@ public static class Catalog
     static async Task CopyText(Job job)
     {
         var parts = new List<string>();
-        foreach (var f in job.Inputs) parts.Add(await File.ReadAllTextAsync(f, job.Token));
+        foreach (var f in job.Inputs) parts.Add(TextFiles.Decode(await File.ReadAllBytesAsync(f, job.Token)));
         var text = string.Join(Environment.NewLine + Environment.NewLine, parts);
         Platform.Current.SetClipboardText(text);
         job.Title = "Text copied";

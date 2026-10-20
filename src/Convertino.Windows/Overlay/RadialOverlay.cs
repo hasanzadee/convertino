@@ -55,7 +55,8 @@ public sealed class RadialWindow : Window
 
 /// <summary>
 /// The whole interaction: drag a file anywhere, tap the trigger key (Shift by default, see <see cref="TriggerKey"/>)
-/// → the flower blooms under the cursor, drop on a petal → the action runs. The key again flips between Convert and Tools.
+/// → the flower blooms under the cursor, drop on a petal → the action runs. The key again, Tab / Shift+Tab or the mouse
+/// wheel flip between its rings (Convert → Tools → More tools → More formats, see <see cref="RingPager"/>).
 /// Double-tap Shift in Explorer opens the same flower for the selected files (click mode).
 /// </summary>
 public sealed class OverlayController
@@ -71,7 +72,7 @@ public sealed class OverlayController
     State _state = State.Hidden;
     IReadOnlyList<string> _files = [];
     Pages? _pages;
-    int _page;
+    readonly RingPager _pager = new();
     bool _helperEntered;
     RECT _placed;
     int _session;
@@ -93,6 +94,9 @@ public sealed class OverlayController
         _leaveTimer.Tick += (_, _) => { _leaveTimer.Stop(); if (_state == State.Drag) Hide(); };
 
         input.TriggerDown += OnTriggerDown;
+        input.TriggerUp += () => Flip(_pager.TriggerUp(), "key");
+        input.Tab += back => Flip(_pager.Tab(back), "tab");
+        input.Wheel += delta => Flip(_pager.Wheel(-delta), "wheel");
         input.ShiftDoubleTap += OnDoubleShift;
         input.MouseUp += _ => { if (_state is State.Seed or State.Drag) _releaseTimer.Start(); };
         input.MouseDown += p => { if (_state == State.Click && !_win.ContainsScreenPoint(p)) Hide(); };
@@ -110,7 +114,7 @@ public sealed class OverlayController
         if (!Settings.Current.Enabled) return;
         if (Visible)
         {
-            if (_state != State.Seed) FlipPage();
+            if (_state != State.Seed) _pager.TriggerDown(); // flips when the key comes back up
             return;
         }
         if (_state == State.Hidden && dragging && _gate.Opens(Settings.Current.TriggerKey)) ShowAt(pt, State.Seed);
@@ -140,6 +144,23 @@ public sealed class OverlayController
         ShowAt(Win32.Cursor, State.Click);
         Bloom(files);
     }
+
+    // ---------- dev (Convertino.exe --paging-selftest) ----------
+
+    /// <summary>Open the flower for files as if mid-drag over <paramref name="at"/>, without showing its window.</summary>
+    internal void DevBloom(IReadOnlyList<string> files, RECT at)
+    {
+        _session++;
+        _win.View.Reset();
+        _placed = at;
+        _win.MoveTo(at); // still hidden
+        _state = State.Seed;
+        _win.View.Appear();
+        Bloom(files);
+    }
+
+    internal FlowerView DevView => _win.View;
+    internal string DevRing => _pages == null ? "closed" : $"{_pager.Page + 1}/{_pager.Count} {_pager.Name}";
 
     // ---------- show / hide ----------
 
@@ -177,15 +198,17 @@ public sealed class OverlayController
         _seedTimeout.Stop();
         _files = files;
         _pages = Catalog.For(files);
-        _page = 0;
+        _pager.Reset(_pages);
         var v = _win.View;
         v.HubTitle = files.Count == 1 ? Paths.HumanSize(Paths.SizeOf(files[0])) : $"{files.Count} items";
         v.HubSub = files.Count == 1 ? _pages.Title : Paths.HumanSize(files.Sum(Paths.SizeOf));
         v.HubBadge = _pages.Badge;
         v.SetMode(HubMode.Info);
-        v.SetPages(_pages.Tools.Count > 0 ? 2 : 1, 0);
-        v.SetPetals(_pages.Convert, +1);
+        v.SetPages(_pager.Count, 0);
+        v.SetPetals(_pager.Current, +1);
         if (_state == State.Seed) _state = State.Drag;
+        // where the window really is: EnsurePlaced may have re-centred it on a monitor with another DPI
+        _input.Paging = Win32.GetWindowRect(_win.Hwnd, out var shown) ? shown : _placed;
 
         int session = _session;
         var first = files[0];
@@ -195,13 +218,14 @@ public sealed class OverlayController
         }, TaskScheduler.FromCurrentSynchronizationContext());
     }
 
-    void FlipPage()
+    /// <summary>Show the next (+1) or previous (−1) ring; 0 = the input didn't ask for a flip.</summary>
+    void Flip(int dir, string why)
     {
-        if (_pages == null) return;
-        if (_pages.Tools.Count == 0) { _win.View.Nudge(); return; }
-        _page ^= 1;
-        _win.View.SetPages(2, _page);
-        _win.View.SetPetals(_page == 0 ? _pages.Convert : _pages.Tools, _page == 0 ? -1 : +1);
+        if (dir == 0 || _pages == null || _state is not (State.Drag or State.Click)) return;
+        if (!_pager.Step(dir)) { _win.View.Nudge(); return; }
+        Log.Info($"ring {_pager.Page + 1}/{_pager.Count} {_pager.Name} ({why})");
+        _win.View.SetPages(_pager.Count, _pager.Page, _pager.Name);
+        _win.View.SetPetals(_pager.Current, dir);
         UpdateHover(Mouse.GetPosition(_win));
     }
 
@@ -209,6 +233,7 @@ public sealed class OverlayController
     {
         if (_state is State.Hidden or State.Leaving) return;
         _state = State.Leaving;
+        _input.Paging = null;
         _seedTimeout.Stop();
         _releaseTimer.Stop();
         _leaveTimer.Stop();
@@ -229,8 +254,10 @@ public sealed class OverlayController
         if (_state != State.Leaving) return;
         _win.Hide();
         _state = State.Hidden;
+        _input.Paging = null;
         _files = [];
         _pages = null;
+        _pager.Clear();
     }
 
     // ---------- OLE drag & drop ----------
@@ -322,7 +349,7 @@ public sealed class OverlayController
     {
         if (_state != State.Click) return;
         var pos = e.GetPosition(_win);
-        if (_win.View.IsOverHub(pos)) { FlipPage(); return; }
+        if (_win.View.IsOverHub(pos)) { Flip(+1, "hub"); return; }
         Launch(_win.View.HitTestPetal(pos));
     }
 
@@ -344,7 +371,7 @@ public sealed class OverlayController
         var acts = _win.View.CurrentActions;
         bool onPetal = idx >= 0 && idx < acts.Count;
         var effect = onPetal ? SafeEffect(e) : DragDropEffects.None;
-        int key = onPetal ? idx * 2 + _page : -1;
+        int key = onPetal ? idx * 16 + _pager.Page : -1;
         if (key != _described)
         {
             _described = key;
@@ -354,7 +381,7 @@ public sealed class OverlayController
                 if (a.Icon == null) Shell.SetDropDescription(e.Data, 1, "Convert to %1", a.Label);
                 else Shell.SetDropDescription(e.Data, 1, "%1", a.Verb);
             }
-            else Shell.SetDropDescription(e.Data, 0, _pages?.Tools.Count > 0 ? $"Drop on a petal · {ToolsKey()} for tools" : "Drop on a petal");
+            else Shell.SetDropDescription(e.Data, 0, _pager.Count > 1 ? $"Drop on a petal · {ToolsKey()}, Tab or wheel for more" : "Drop on a petal");
         }
         return effect;
     }
@@ -367,6 +394,7 @@ public sealed class OverlayController
         var files = _files;
         var where = Win32.Cursor;
         _state = State.Leaving;
+        _input.Paging = null;
         _seedTimeout.Stop();
         int session = _session;
         _win.View.Launch(idx);

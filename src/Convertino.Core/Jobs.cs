@@ -56,13 +56,18 @@ public static class Jobs
 
         if (job.Outputs.Count > 0) Settings.Current.AddRecent(job.Outputs[0], action.Verb);
         if (error == null) _ = Task.Run(() => Stats.Record(job));
-        if (!notify && error == null) { view?.Dismiss(); return; }
+        if (!notify && error == null && !job.Failed) { view?.Dismiss(); return; }
 
         EnsureView();
         if (view == null) return;
         if (error != null)
         {
             view.Failed("Couldn't " + Lower(action.Verb), Friendly(error), action.Icon);
+            return;
+        }
+        if (job.Failed)
+        {
+            view.Failed(job.Title ?? "Couldn't " + Lower(action.Verb), job.Summary ?? "", action.Icon);
             return;
         }
         if (job.Summary == null && job.Outputs.Count > 0) job.Summary = Services.Images.SizeSummary(job);
@@ -88,6 +93,7 @@ public static class Jobs
         if (e is UnauthorizedAccessException) return "No permission to write next to the file";
         if (e is IOException && msg.Contains("being used")) return "The file is open in another app";
         if (msg.Contains("NoDecodeDelegate") || msg.Contains("no decode delegate")) return "This image format isn't supported";
+        if (e.HResult == unchecked((int)0x800401D0)) return "The clipboard is locked (another app, or the screen is locked)";   // CLIPBRD_E_CANT_OPEN
         return msg.Length > 140 ? msg[..140] + "…" : msg;
     }
 

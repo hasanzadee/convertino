@@ -32,16 +32,24 @@ Converting a file usually means opening an app, finding *Export…*, picking a f
 
 | | |
 |---|---|
-| ✿ **Two rings** | **Convert** (formats) and **Tools** (editors & actions). Tap the key again mid-drag to flip between them. |
-| 🖼 **Images** | PNG · JPG · WEBP · AVIF · PDF · ICO · TIFF, from anything ImageMagick reads (HEIC, PSD, RAW, SVG…) |
+| ✿ **Rings** | **Convert** (formats), **Tools** (editors & actions) and, for images, **More tools** (one tap: Half, Full HD, B&W) and **More formats** (TIFF, ICO, BMP, JPEG XL, QOI…). Tap the key again, press <kbd>Tab</kbd> or turn the mouse wheel mid-drag to flip between them. |
+| 🖼 **Images** | PNG · JPG · WEBP · AVIF · GIF · PDF · TIFF · ICO · BMP · JPEG XL · QOI, from anything ImageMagick reads (HEIC, PSD, RAW, SVG…); **Half**, **Full HD** (fit in 1920 × 1080) and **B&W** in one tap |
 | 📄 **Documents** | PDF ⇄ DOCX, DOCX/XLSX/PPTX → PDF, slides → PNG, Markdown → HTML/PDF/DOCX (Microsoft Office or LibreOffice) |
+| 🧾 **Data** | JSON ⇄ YAML ⇄ TOML ⇄ XML, JSON / CSV ⇄ XLSX (every sheet), CSV / XLSX → Markdown and HTML tables, JSON Lines, Pretty / Minify for JSON, XML and CSS; no office suite needed ([rules](docs/data-formats.md)) |
 | 🎞 **Video & audio** | MP4 · WEBM · GIF · MOV · MKV · MP3 · WAV · FLAC · OGG · OPUS · M4A, plus compress, 720p, mute, grab frame, loudness, trim silence |
+| 💬 **Subtitles** | SRT ⇄ VTT ⇄ ASS/SSA (and LRC) with exact timings and italics, a video's subtitle track → SRT |
+| 🔡 **Encodings** | Any text file (TXT, MD, CSV, JSON, SRT…) → UTF-8 from Windows-1251/1252/1254, KOI8-R, DOS 866 or UTF-16; LF ⇄ CRLF |
 | ✂️ **Editors** | **Crop**, **Add BG** (screenshot beautifier), **Annotate** (arrows, text, numbered steps, highlighter), **Redact** (pixelate / blur / black, *find text automatically*), **Adjust** (light, colour, sharpen, vignette, rotate, resize) |
 | 🤖 **Cut out** | AI background removal (BiRefNet-lite), fully offline, GPU-accelerated on Windows |
 | 🔤 **Text** | Copy text from images and scanned PDFs (Windows OCR / Apple Vision / Tesseract) |
 | 🧹 **Clean** | Strip EXIF & GPS — losslessly for JPEGs; strip PDF metadata |
 | 🗜 **Compress** | Smart image compression with the savings shown: `1.2 MB → 340 KB (−72%)` |
-| 📦 **Everything else** | Zip/unzip, merge/split/rotate PDFs, copy path, SHA-256, data URI |
+| 📑 **PDF tools** | Merge, split, rotate, page numbers, cover image, extract every image at original quality, compress (with Ghostscript) |
+| 📥 **Watch folders** | New files in a folder convert by themselves into its `Converted` subfolder (panel, or `convertino watch`) |
+| 🗃 **Archives** | Extract ZIP · 7Z · RAR · TAR · TAR.GZ / BZ2 / XZ · GZ · BZ2 · XZ into a new folder, refusing `../` and absolute paths, skipping links and stopping decompression bombs; pack folders as ZIP · 7Z · TAR.GZ |
+| 🧰 **File tools** | Split big files into 25 / 50 / 100 MB… parts and join the `.001` back; find duplicates (an HTML report, nothing is deleted); verify a `.sha256` / `SHA256SUMS` (*Matches ✓*); copy MD5 · SHA-1 · SHA-256 · SHA-512 |
+| 🧰 **Image tools** | One tap, no questions: **Messenger** (≤ 2560 px JPEG, GPS gone), **Square** (blurred fill), **Rounded** (corners + shadow), **Palette**, **Favicon** set, **Copy** the picture itself, **Read QR** / make a **QR** from a text or link file; for several images **Contact sheet**, **Slideshow** (GIF + WEBP) and **Compare** |
+| 📦 **Everything else** | Copy path, data URI |
 | 🎨 **Themes** | Catppuccin **Mocha** & **Latte**, **Sunset**, **Graphite** |
 | 📊 **Activity** | The tray / menu-bar panel charts your last two weeks: files handled, space saved, day streak, favourite actions |
 | ⌨️ **CLI** | `convertino convert IMG_0042.HEIC --to jpg` — the same engine without the UI |
@@ -62,7 +70,7 @@ Converting a file usually means opening an app, finding *Export…*, picking a f
    powershell -ExecutionPolicy Bypass -File install.ps1
    ```
 
-Convertino installs per-user to `%LOCALAPPDATA%\Programs\Convertino` (no admin rights), adds a Start-menu entry and **Send to → Convertino**, starts in the tray and launches with Windows (toggle it in the tray panel). Click the tray icon for the panel (theme, options, recent files; closes on Esc or a click outside); right-click it for a quick menu with **Quit Convertino**. For video and audio petals install ffmpeg: `winget install Gyan.FFmpeg`.
+Convertino installs per-user to `%LOCALAPPDATA%\Programs\Convertino` (no admin rights), adds a Start-menu entry and **Send to → Convertino**, starts in the tray and launches with Windows (toggle it in the tray panel). Click the tray icon for the panel (theme, options, recent files; closes on Esc or a click outside); right-click it for a quick menu with **Quit Convertino**. For video and audio petals install ffmpeg: `winget install Gyan.FFmpeg`; for PDF compression, Ghostscript: `winget install ArtifexSoftware.GhostScript`.
 
 <div align="center">
 <img src="docs/panel.png" width="320" alt="The tray panel: two weeks of activity, themes and options" />
@@ -80,10 +88,12 @@ Convertino installs per-user to `%LOCALAPPDATA%\Programs\Convertino` (no admin r
 The installer adds the `convertino` command, a desktop entry, autostart, and a **Convertino** entry in the right-click menu of Nautilus, Nemo, Dolphin and Caja. Click the tray icon (or **Open panel**, the first item of its menu) for the panel: activity, theme, options, recent files. Optional helpers it will offer to install:
 
 ```bash
-sudo apt install ffmpeg poppler-utils tesseract-ocr libreoffice   # Debian / Ubuntu
+sudo apt install ffmpeg poppler-utils tesseract-ocr libreoffice ghostscript   # Debian / Ubuntu
 sudo dnf install ffmpeg poppler-utils tesseract libreoffice       # Fedora
 sudo pacman -S ffmpeg poppler tesseract tesseract-data-eng libreoffice-fresh   # Arch
 ```
+
+**Copy image** hands the picture to `wl-copy` on Wayland (package `wl-clipboard`) or `xclip` on X11; the card tells you which one is missing.
 
 <img src="docs/linux-tools.png" width="300" align="right" alt="The Tools ring on Linux (Avalonia build) over a file manager" />
 
@@ -104,6 +114,7 @@ The installer copies `Convertino.app` to `~/Applications`, adds the `convertino`
 
 ```bash
 brew install ffmpeg                  # video & audio petals
+brew install ghostscript             # PDF compression
 brew install --cask libreoffice      # Word / Excel / PowerPoint petals
 ```
 
@@ -128,7 +139,7 @@ convertino model install
 | Gesture | What happens |
 |---|---|
 | Drag file(s) · tap <kbd>Shift</kbd> | The flower opens under the cursor on the **Convert** ring |
-| <kbd>Shift</kbd> again while dragging | Flip to the **Tools** ring and back |
+| <kbd>Shift</kbd> again, <kbd>Tab</kbd> or the mouse wheel | Next ring: **Convert** → **Tools** → **More tools** → **More formats** (images) → Convert; the centre names the ring for a moment. <kbd>Shift</kbd>+<kbd>Tab</kbd> or wheel up goes back, so the rarer formats are one step back from Convert |
 | Drop on a petal | Runs it; the result appears beside the source and a card shows the outcome |
 | Drop on the centre · drag away · <kbd>Esc</kbd> | Cancel — nothing happens, the flower fades |
 | Double-tap <kbd>Shift</kbd> in Explorer / on the desktop *(Windows)* | Same flower for the selected files — click a petal |
@@ -138,6 +149,8 @@ convertino model install
 | Click the result card | Open the file · folder icon reveals it · × cancels a running job |
 
 <kbd>Shift</kbd> is the default. To use another key, pick it under **Open with** in the tray panel or the tray / menu-bar menu: <kbd>Shift</kbd>, <kbd>Shift</kbd> twice, <kbd>Ctrl</kbd> or <kbd>Alt</kbd> (<kbd>⌃ Control</kbd> / <kbd>⌥ Option</kbd> on macOS). The gestures above then use that key.
+
+The wheel flips the rings while the pointer is over the flower; a touchpad swipe or a quick spin counts as one flip. On Windows, Tab and the wheel don't reach the window behind the flower while it's open; <kbd>Alt</kbd>+<kbd>Tab</kbd>, <kbd>Win</kbd>+<kbd>Tab</kbd> and <kbd>Ctrl</kbd>+<kbd>Tab</kbd> stay the system's (unless that modifier is your trigger key). On Linux and macOS Convertino only watches them, so they reach the app behind as well: in Linux click mode, Tab also moves the focus in the file manager. On macOS, Tab during a drag needs Input Monitoring (like <kbd>Esc</kbd>, see *Permissions* above); in the Quick Action's flower it always works.
 
 While dragging over a petal, the caption under the Explorer drag image says what will happen (*Convert to DOCX*, *Crop*…). Convertino always copies — even though <kbd>Shift</kbd> normally means *move*, the source file is never touched.
 
@@ -150,32 +163,53 @@ While dragging over a petal, the caption under the Explorer drag image says what
 
 | Files | Convert ring | Tools ring |
 |---|---|---|
-| **Image** | PNG · JPG · WEBP · AVIF · PDF · ICO · TIFF *(HEIC where the codec allows)* | Cut out · Compress · Clean · Adjust · Annotate · Add BG · Crop · Redact · Text |
+| **Image** | PNG · JPG · WEBP · AVIF · PDF · GIF | Cut out · Compress · Clean · Adjust · Annotate · Add BG · Crop · Redact · Text |
 | **Several images** | same, as a batch; PDF merges them | Compress · Clean · Cut out · Text · Zip |
 | **Images + PDFs** | Merge into one PDF · Zip · Path | |
 | **PDF** | DOCX · JPG · TXT · PNG | Text (OCR) · Split · Rotate · Clean · Merge · Zip |
 | **Word / RTF / ODT** | PDF · DOCX · TXT · PNG pages · RTF · ODT · HTML | Zip · Path · SHA-256 |
-| **Excel / CSV / ODS** | PDF · XLSX · CSV · ODS · HTML | Zip · Path · SHA-256 |
+| **Excel / CSV / ODS** | PDF · XLSX · CSV · ODS · HTML · JSON · MD *(CSV ⇄ XLSX, JSON and the HTML / Markdown tables without an office suite)* | Zip · Path · SHA-256 |
+| **JSON / YAML / TOML / XML** | JSON · YAML · TOML · XML · CSV · XLSX *(+ JSONL for JSON)* | Pretty · Minify *(JSON, XML)* · Copy · Zip · Path · SHA-256 · Base64 |
+| **CSS** | Pretty · Minify · Copy | Zip · Path · SHA-256 · Base64 |
 | **PowerPoint / ODP** | PDF · PNG slides · PPTX · ODP | Zip · Path · SHA-256 |
-| **Markdown** | HTML · PDF · DOCX · Copy | Zip · Path · SHA-256 |
-| **Text** | PDF · DOCX · Copy | Zip · Path · SHA-256 · Base64 |
-| **Video** | MP4 · WEBM · GIF · MP3 · MOV · MKV · WAV | Compress · 720p · Mute · Frame |
+| **Markdown** | HTML · PDF · DOCX · Copy | UTF-8 · LF/CRLF · Zip · Path · SHA-256 |
+| **Text** | PDF · DOCX · Copy | UTF-8 · LF/CRLF · Zip · Path · SHA-256 · Base64 |
+| **Video** | MP4 · WEBM · GIF · MP3 · MOV · MKV · WAV | Compress · 720p · Mute · Frame · Subtitles |
 | **Audio** | MP3 · M4A · WAV · FLAC · OGG · OPUS | Loudness · Trim silence · Zip · Path |
-| **ZIP** | Extract · Path · SHA-256 | |
-| **Folder / anything else** | Zip · Path · Copy / SHA-256 · Base64 | |
+| **Subtitles** (SRT / VTT / ASS / SSA / LRC) | SRT · VTT · ASS · TXT | UTF-8 · LF/CRLF · Zip · Path · SHA-256 |
+| **Archive** (ZIP, 7Z, RAR, TAR, TAR.GZ…) | Extract · Path · SHA-256 | Split · MD5 · SHA-1 · SHA-512 |
+| **Split part** (`.001`) | Join · Path · SHA-256 | |
+| **Checksum** (`.sha256`, `.md5`, `SHA256SUMS`…) | Verify · Copy · Path | |
+| **File + its checksum** | Verify · Zip · Path | |
+| **Folder** | Zip · 7Z · TAR.GZ · Duplicates · Path · Copy | |
+| **Anything else** | Zip · Path · SHA-256 · Base64 | Split into 25 / 50 / 100 MB… *(files over 10 MB)* · MD5 · SHA-1 · SHA-512 |
+| **Several files** | the ring for their kind, plus Duplicates; mixed kinds: Zip · 7Z · TAR.GZ · Duplicates · Path · Copy | |
+
+Images (one or several) also get **More tools**: Half · Full HD · B&W, and **More formats**: HEIC *(where the codec allows)* · TIFF · ICO · BMP · JXL · QOI. Half, Full HD and B&W keep the source's format and write beside it: `photo (2016x1512).jpg`, `photo (1920x1080).jpg`, `photo (grayscale).jpg`. Full HD only ever shrinks (portrait images fit in 1080 × 1920), and animated GIF / WebP stay animated. No ring shows more than 10 petals; a longer list carries on in a second ring of the same name.
 
 Petals only appear when the engine behind them is available (e.g. office formats need Microsoft Office or LibreOffice).
+Plain-text files of any kind (TXT, Markdown, CSV/TSV, JSON, YAML, XML, INI, HTML, scripts, subtitles…) also get **UTF-8** and **LF** or **CRLF** (whichever the file doesn't use) at the front of their tools; files with NUL bytes are treated as binary and never get them.
 
 ## Command line
 
 ```bash
 convertino convert IMG_0042.HEIC --to jpg        # → IMG_0042.jpg
 convertino convert slides.pptx --to pdf
+convertino convert config.yaml --to json        # JSON · YAML · TOML · XML · CSV · XLSX
 convertino run compress *.png                     # any petal id
 convertino run ocr scan.pdf                       # text → clipboard
+convertino convert movie.srt --to vtt             # also ass, srt, txt
+convertino run utf8 old-cyrillic.txt              # → old-cyrillic (UTF-8).txt (any text file)
+convertino run lf deploy.sh                       # → deploy (LF).sh; crlf the other way
+convertino run subtitles movie.mkv                # first subtitle track → movie.eng.srt
+convertino run extract backup.tar.xz              # → backup/
+convertino run split-100mb video.mkv              # → video.mkv.001, .002 …  (join: convertino run join video.mkv.001)
+convertino run verify ubuntu.iso SHA256SUMS       # Matches ✓ / Doesn't match ✗ (exit code 1)
 convertino actions report.pdf                     # what's possible for these files
 convertino menu photo.png notes.md                # open the flower for them (used by file-manager menus)
 convertino model install | status | remove        # the AI cut-out model
+convertino watch ~/Inbox --to pdf                 # convert every new file there, until Ctrl+C
+convertino watch add ~/Inbox --to webp            # same, run by the desktop app (also: watch list | remove)
 ```
 
 On Windows the executable is `Convertino.exe` (in `%LOCALAPPDATA%\Programs\Convertino`); on macOS the installer puts a `convertino` wrapper for `~/Applications/Convertino.app` in `~/.local/bin`.
@@ -188,8 +222,12 @@ On Windows the executable is `Convertino.exe` (in `%LOCALAPPDATA%\Programs\Conve
 | PDF render | Windows.Data.Pdf | poppler `pdftoppm` (or Ghostscript) | CoreGraphics (poppler / Ghostscript fallback) |
 | PDF text / merge / split | PdfPig · PDFsharp | PdfPig · PDFsharp | PdfPig · PDFsharp |
 | Office documents | Microsoft Office (COM), else LibreOffice | LibreOffice (headless) | LibreOffice (headless) |
+| Data (JSON, YAML, TOML, XML, CSV, XLSX) | System.Text.Json · YamlDotNet · Tomlyn · LINQ to XML · MiniExcel | same | same |
 | OCR | Windows OCR (installed language packs), else Tesseract | Tesseract | Vision framework, else Tesseract |
+| QR codes | ZXing.Net (read) · QRCoder (make) | ZXing.Net · QRCoder | ZXing.Net · QRCoder |
+| Picture on the clipboard | WPF clipboard (PNG + bitmap) | `wl-copy` (Wayland) or `xclip` (X11) | NSPasteboard (PNG + TIFF) |
 | Video / audio | ffmpeg | ffmpeg | ffmpeg (Homebrew) |
+| Subtitles | built in (ffmpeg for a video's track) | built in | built in |
 | Cut out | ONNX Runtime + DirectML (GPU), CPU fallback | ONNX Runtime (CPU) | ONNX Runtime (CPU, Apple silicon) |
 | UI | WPF, Win32 hooks, OLE drag & drop | Avalonia, X11 polling, XDND | Avalonia, Quartz polling, AppKit drag & drop |
 

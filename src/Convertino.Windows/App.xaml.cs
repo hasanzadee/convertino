@@ -60,6 +60,14 @@ public partial class App : Application
             return;
         }
 
+        if (e.Args.Length == 2 && e.Args[0] == "--paging-selftest")
+        {
+            Theme.Apply("Mocha");
+            Dev.PagingSelfTest(System.IO.Path.GetFullPath(e.Args[1]));
+            Shutdown();
+            return;
+        }
+
         if (e.Args.Length >= 2 && e.Args[0] == "--snapshot")
         {
             Settings.Load();
@@ -153,6 +161,7 @@ public partial class App : Application
         if (menuFiles.Length > 0) Dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle, () => _overlay.Menu(menuFiles));
         _tray = new TrayIcon();
         _tray.Attach(_input);
+        Watches.StartAll();
         AutoStart.Apply(Settings.Current.LaunchAtStartup);
 
         var wakeThread = new Thread(() =>

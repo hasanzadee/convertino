@@ -32,6 +32,9 @@ cp "$ROOT/packaging/linux/icons/convertino-256.png" smoke.png
 "$D" run compress smoke.png
 "$D" actions smoke.png
 
+step "archives and file tools"
+bash "$ROOT/tools/files-smoke.sh" "$D"
+
 step "PDF: PDFsharp writes, CoreGraphics renders"
 "$D" convert smoke.png --to pdf && test -s smoke.pdf
 "$D" convert smoke.pdf --to jpg && test -s smoke.jpg
@@ -248,6 +251,9 @@ swiftc -O "$ROOT/tools/mac-drag-test.swift" -o "$WORK/dragtest"
 limit 60 "$WORK/dragtest" "$WORK/drag.png" "$OUT/4-drag-over-petal.png" || echo "::warning::dragtest exited with $?"
 sleep 2
 shot 5-after-drop
+grep -E "INF ring [0-9]" "$LOG" | tail -8 || true
+if grep -q "(wheel)" "$LOG"; then echo "the wheel flipped the rings during the drag"
+else echo "::warning::the wheel didn't flip the rings during the synthetic drag"; fi
 if [ -s "$WORK/drag.jpg" ]; then
   echo "drop on the first petal converted drag.png → drag.jpg"
 else

@@ -13,6 +13,7 @@ public static class Media
 
     public static string? FFmpeg { get { Locate(); return _ffmpeg; } }
     public static bool Available => FFmpeg != null;
+    public static string? FFprobe { get { Locate(); return _ffprobe; } }
 
     static void Locate()
     {

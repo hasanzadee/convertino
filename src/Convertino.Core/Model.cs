@@ -7,7 +7,7 @@ public readonly record struct RectD(double X, double Y, double Width, double Hei
     public bool IsEmpty => Width <= 0 || Height <= 0;
 }
 
-public enum Kind { Image, Pdf, Word, Excel, Slides, Text, Markdown, Video, Audio, Archive, Folder, Other }
+public enum Kind { Image, Pdf, Word, Excel, Slides, Text, Markdown, Video, Audio, Archive, Folder, Subtitles, Part, Checksum, Data, Other }
 
 /// <summary>One petal of the flower: a conversion ("PNG") or a tool ("Crop").</summary>
 public sealed class PetalAction
@@ -43,6 +43,10 @@ public sealed class Job
     public string? Title { get; set; }
     /// <summary>Nothing to report (e.g. an editor was closed without saving).</summary>
     public bool Silent { get; set; }
+    /// <summary>The job ran but its answer is "no" (a checksum that doesn't match): an error card, and exit code 1 on the command line.</summary>
+    public bool Failed { get; set; }
+    /// <summary>Overrides the "space saved" tally when the outputs aren't smaller copies of the inputs (e.g. a report).</summary>
+    public long? Saved { get; set; }
 
     public void Report(double p) => OnProgress?.Invoke(p);
 
@@ -57,25 +61,33 @@ public static class Kinds
         [".png"] = Kind.Image, [".jpg"] = Kind.Image, [".jpeg"] = Kind.Image, [".jfif"] = Kind.Image, [".webp"] = Kind.Image,
         [".heic"] = Kind.Image, [".heif"] = Kind.Image, [".avif"] = Kind.Image, [".bmp"] = Kind.Image, [".tif"] = Kind.Image,
         [".tiff"] = Kind.Image, [".gif"] = Kind.Image, [".ico"] = Kind.Image, [".tga"] = Kind.Image, [".psd"] = Kind.Image,
-        [".svg"] = Kind.Image, [".jxl"] = Kind.Image, [".dng"] = Kind.Image, [".cr2"] = Kind.Image, [".nef"] = Kind.Image, [".arw"] = Kind.Image,
+        [".svg"] = Kind.Image, [".jxl"] = Kind.Image, [".qoi"] = Kind.Image, [".dng"] = Kind.Image, [".cr2"] = Kind.Image, [".nef"] = Kind.Image, [".arw"] = Kind.Image,
         [".pdf"] = Kind.Pdf,
         [".docx"] = Kind.Word, [".doc"] = Kind.Word, [".rtf"] = Kind.Word, [".odt"] = Kind.Word, [".docm"] = Kind.Word,
         [".xlsx"] = Kind.Excel, [".xls"] = Kind.Excel, [".xlsm"] = Kind.Excel, [".ods"] = Kind.Excel, [".csv"] = Kind.Excel,
         [".pptx"] = Kind.Slides, [".ppt"] = Kind.Slides, [".odp"] = Kind.Slides, [".pps"] = Kind.Slides, [".ppsx"] = Kind.Slides,
         [".txt"] = Kind.Text, [".log"] = Kind.Text,
         [".md"] = Kind.Markdown, [".markdown"] = Kind.Markdown,
+        [".json"] = Kind.Data, [".jsonl"] = Kind.Data, [".ndjson"] = Kind.Data, [".yaml"] = Kind.Data, [".yml"] = Kind.Data, [".toml"] = Kind.Data, [".xml"] = Kind.Data, [".css"] = Kind.Data,
         [".mp4"] = Kind.Video, [".mov"] = Kind.Video, [".mkv"] = Kind.Video, [".webm"] = Kind.Video, [".avi"] = Kind.Video,
         [".m4v"] = Kind.Video, [".wmv"] = Kind.Video, [".flv"] = Kind.Video, [".mpg"] = Kind.Video, [".mpeg"] = Kind.Video,
         [".ts"] = Kind.Video, [".3gp"] = Kind.Video, [".mts"] = Kind.Video,
         [".mp3"] = Kind.Audio, [".wav"] = Kind.Audio, [".flac"] = Kind.Audio, [".ogg"] = Kind.Audio, [".m4a"] = Kind.Audio,
         [".aac"] = Kind.Audio, [".opus"] = Kind.Audio, [".wma"] = Kind.Audio, [".aiff"] = Kind.Audio, [".amr"] = Kind.Audio,
         [".oga"] = Kind.Audio,
-        [".zip"] = Kind.Archive,
+        [".zip"] = Kind.Archive, [".7z"] = Kind.Archive, [".rar"] = Kind.Archive, [".tar"] = Kind.Archive, [".tgz"] = Kind.Archive,
+        [".gz"] = Kind.Archive, [".bz2"] = Kind.Archive, [".tbz2"] = Kind.Archive, [".tbz"] = Kind.Archive, [".xz"] = Kind.Archive,
+        [".txz"] = Kind.Archive,
+        [".001"] = Kind.Part,
+        [".sha256"] = Kind.Checksum, [".sha1"] = Kind.Checksum, [".md5"] = Kind.Checksum, [".sha512"] = Kind.Checksum,
+        [".sha256sum"] = Kind.Checksum, [".sha1sum"] = Kind.Checksum, [".md5sum"] = Kind.Checksum, [".sha512sum"] = Kind.Checksum,
+        [".srt"] = Kind.Subtitles, [".vtt"] = Kind.Subtitles, [".ass"] = Kind.Subtitles, [".ssa"] = Kind.Subtitles, [".lrc"] = Kind.Subtitles,
     };
 
     public static Kind Of(string path)
     {
         if (Directory.Exists(path)) return Kind.Folder;
+        if (Services.FileTools.IsChecksumList(path)) return Kind.Checksum;
         return Map.TryGetValue(Path.GetExtension(path), out var k) ? k : Kind.Other;
     }
 

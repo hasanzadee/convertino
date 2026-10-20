@@ -47,17 +47,6 @@ public static class Misc
         job.Summary = $"{Paths.HumanSize(before)} → {Paths.HumanSize(after)}";
     }
 
-    public static async Task Extract(Job job)
-    {
-        foreach (var src in job.Inputs)
-        {
-            var dst = Paths.UniqueDir(Path.GetDirectoryName(src)!, Path.GetFileNameWithoutExtension(src));
-            await Task.Run(() => ZipFile.ExtractToDirectory(src, dst), job.Token);
-            job.Outputs.Add(dst);
-        }
-        job.Summary = "Extracted";
-    }
-
     public static Task CopyPath(Job job)
     {
         Platform.Current.SetClipboardText(string.Join(Environment.NewLine, job.Inputs));
@@ -89,6 +78,7 @@ public static class Misc
             ".png" => "image/png", ".jpg" or ".jpeg" => "image/jpeg", ".gif" => "image/gif", ".webp" => "image/webp",
             ".svg" => "image/svg+xml", ".pdf" => "application/pdf", ".json" => "application/json", ".txt" => "text/plain",
             ".woff2" => "font/woff2", ".ico" => "image/x-icon",
+            ".css" => "text/css", ".xml" => "application/xml", ".yaml" or ".yml" => "application/yaml", ".toml" => "application/toml",
             _ => "application/octet-stream",
         };
         Platform.Current.SetClipboardText($"data:{mime};base64,{Convert.ToBase64String(bytes)}");

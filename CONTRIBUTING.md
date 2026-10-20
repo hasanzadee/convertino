@@ -51,7 +51,8 @@ Windows (`Convertino.exe`):
 
 | Flag | Does |
 |---|---|
-| `--snapshot out.png [theme] [img\|tools\|pdf] [hoverIndex]` | render the flower to a PNG (no drag needed) |
+| `--snapshot out.png [theme] [img\|tools\|more\|formats\|pdf] [hoverIndex]` | render one ring of the flower to a PNG (no drag needed); `img`, `tools`, `more` and `formats` are the four image rings |
+| `--paging-selftest dir` | feed the hook callbacks wheel / Tab / Shift data and check the overlay cycles every ring and swallows only what it should; no hooks, no injected input, no window. Writes `results.txt` and a PNG per ring |
 | `--panel out.png [theme] [demo]` | render the tray panel to a PNG (`demo` fills the Activity card with sample data) |
 | `--run <actionId> files…` | run one action headless; result in the log |
 | `--edit <crop\|addbg\|annotate\|redact\|adjust> file` | open an editor directly |

@@ -13,6 +13,10 @@ public sealed class MacInput : IDisposable
 
     /// <summary>The trigger key (Shift, Control or Option, from the settings) went down. Args: dragging?, where.</summary>
     public event Action<bool, ScreenPoint>? TriggerDown;
+    /// <summary>The trigger key came back up.</summary>
+    public event Action? TriggerUp;
+    /// <summary>Tab went down (arg: Shift held → previous). Like Esc, only seen with Input Monitoring.</summary>
+    public event Action<bool>? Tab;
     public event Action<ScreenPoint>? ButtonDown;
     public event Action<ScreenPoint>? ButtonUp;
     public event Action? Escape;
@@ -39,12 +43,12 @@ public sealed class MacInput : IDisposable
 
     void Loop()
     {
-        bool lDown = false, rDown = false, dragging = false, trigger = false, esc = false;
+        bool lDown = false, rDown = false, dragging = false, trigger = false, esc = false, tab = false;
         double downX = 0, downY = 0;
         bool diag = Overlay.OverlayController.Diag;
         while (_run)
         {
-            bool l, r, t, e;
+            bool l, r, t, e, tb, shift;
             CGPoint c;
             try
             {
@@ -56,9 +60,13 @@ public sealed class MacInput : IDisposable
                     ModifierKey.Alt => Quartz.OptionFlag,
                     _ => Quartz.ShiftFlag,
                 };
-                t = (Quartz.CGEventSourceFlagsState(Quartz.CombinedSessionState) & flag) != 0;
-                // plain keys may read as "up" without Input Monitoring; Esc is a nicety (dragging away also cancels)
+                ulong flags = Quartz.CGEventSourceFlagsState(Quartz.CombinedSessionState);
+                t = (flags & flag) != 0;
+                shift = (flags & Quartz.ShiftFlag) != 0;
+                // plain keys may read as "up" without Input Monitoring; Esc and Tab are niceties (dragging away also
+                // cancels, the trigger key and the wheel also flip, and in click mode the flower's window gets Tab itself)
                 e = Quartz.CGEventSourceKeyState(Quartz.CombinedSessionState, Quartz.EscapeKey);
+                tb = Quartz.CGEventSourceKeyState(Quartz.CombinedSessionState, Quartz.TabKey);
                 c = Quartz.Cursor();
             }
             catch (Exception ex) { Log.Error("input poll", ex); return; }
@@ -72,9 +80,12 @@ public sealed class MacInput : IDisposable
             lDown = l;
 
             if (t && !trigger) { bool d = dragging && l; _post(() => TriggerDown?.Invoke(d, pt)); if (diag) Log.Info($"mac trigger d={d}"); }
+            if (!t && trigger) _post(() => TriggerUp?.Invoke());
             trigger = t;
             if (e && !esc) _post(() => Escape?.Invoke());
             esc = e;
+            if (tb && !tab) { bool back = shift; _post(() => Tab?.Invoke(back)); }
+            tab = tb;
 
             Thread.Sleep(l || Hot ? 12 : 40);
         }
