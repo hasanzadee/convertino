@@ -121,6 +121,10 @@ public static class Catalog
                 conv.Add(Fmt("txt", "text", Pdfs.ToText));
                 conv.Add(Fmt("png", "pages", j => Pdfs.ToImages(j, "png")));
                 if (!single) tools.Add(Tool("merge", "Merge", "merge", $"Merge {files.Count} PDFs", Pdfs.Merge));
+                if (Pdfs.CanCompress) tools.Add(Tool("compress", "Compress", "compress", "Make the PDF smaller", Pdfs.Compress));
+                tools.Add(Tool("pdfimages", "Images", "picture", "Extract the images", Pdfs.ExtractImages));
+                tools.Add(Tool("pagenum", "Numbers", "hash", "Add page numbers", Pdfs.PageNumbers));
+                tools.Add(Tool("cover", "Cover", "camera", "First page as PNG", Pdfs.Cover));
                 tools.Add(Tool("ocr", "Text", "ocr", "Copy text (OCR)", Pdfs.Ocr_));
                 tools.Add(Tool("split", "Split", "cut", "One PDF per page", Pdfs.Split));
                 tools.Add(Tool("rotate", "Rotate", "rotate", "Rotate 90°", Pdfs.Rotate));
