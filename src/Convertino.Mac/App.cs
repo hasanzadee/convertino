@@ -204,7 +204,9 @@ public sealed class App : Application
                 {
                     try
                     {
-                        using var c = _server.Accept();
+                        // async on purpose: on macOS, Dispose() never returns while another thread sits in a blocking Accept(),
+                        // so Quit froze the app; a pending AcceptAsync is cancelled instead
+                        using var c = _server.AcceptAsync().GetAwaiter().GetResult();
                         using var ns = new NetworkStream(c);
                         using var r = new StreamReader(ns, Encoding.UTF8);
                         var cmd = r.ReadLine();
@@ -214,6 +216,7 @@ public sealed class App : Application
                         if (cmd == "menu") Dispatcher.UIThread.Post(() => _overlay?.Menu(files));
                     }
                     catch (ObjectDisposedException) { return; }
+                    catch (SocketException ex) when (ex.SocketErrorCode == SocketError.OperationAborted) { return; }
                     catch (Exception ex) { Log.Error("ipc", ex); }
                 }
             }) { IsBackground = true, Name = "Convertino IPC" }.Start();
