@@ -36,7 +36,7 @@ public static class Catalog
     public static IEnumerable<PetalAction> All(IReadOnlyList<string> files)
     {
         var p = For(files);
-        return p.Convert.Concat(p.Tools);
+        return p.Convert.Concat(p.Tools).Concat(ImageTools.Petals(files)).DistinctBy(a => a.Id);
     }
 
     public static Pages For(IReadOnlyList<string> files)

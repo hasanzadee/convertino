@@ -100,6 +100,13 @@ public sealed class MacPlatform : IPlatform
             SetClipboardText(string.Join("\n", list));
     }
 
+    public void SetClipboardImage(byte[] png)
+    {
+        // AppKit wants the main thread once the app runs; a CLI run has no UI loop and may call it directly
+        if (ClipboardHost != null) Dispatcher.UIThread.Invoke(() => Pasteboard.SetImage(png));
+        else Pasteboard.SetImage(png);
+    }
+
     public Func<Job, Task>? Editor(string id) => Editors?.Invoke(id);
 
     public void Reveal(string path) => Run("/usr/bin/open", ["-R", path], wait: false);

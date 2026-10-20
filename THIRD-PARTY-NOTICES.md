@@ -8,6 +8,8 @@ Convertino is MIT-licensed. It builds on these projects (all used unmodified, vi
 | [PdfPig](https://github.com/UglyToad/PdfPig) | Apache-2.0 | PDF text extraction |
 | [PDFsharp](https://github.com/empira/PDFsharp) 6.2.x | MIT | PDF merge / split / rotate / metadata, images → PDF |
 | [Markdig](https://github.com/xoofx/markdig) | BSD-2-Clause | Markdown → HTML |
+| [ZXing.Net](https://github.com/micjahn/ZXing.Net) 0.16.11 | Apache-2.0 | reading QR / Data Matrix / Aztec codes |
+| [QRCoder](https://github.com/Shane32/QRCoder) 1.6.0 | MIT | making QR codes (PNG written by QRCoder itself, no System.Drawing) |
 | [ONNX Runtime](https://github.com/microsoft/onnxruntime) (+ DirectML) | MIT | running the cut-out model |
 | [BiRefNet](https://github.com/ZhengPeng7/BiRefNet) — `BiRefNet_lite` ONNX export by [onnx-community](https://huggingface.co/onnx-community/BiRefNet_lite-ONNX) | MIT | background removal model (downloaded on request, not redistributed) |
 | [Avalonia](https://github.com/AvaloniaUI/Avalonia) | MIT | Linux and macOS user interface |

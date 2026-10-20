@@ -69,6 +69,38 @@ public sealed class LinuxPlatform : IPlatform
         SetClipboardText(string.Join("\n", list.Select(f => new Uri(f).AbsoluteUri)));
     }
 
+    /// <summary>
+    /// Pictures go through the session's own clipboard tool on Wayland (wl-copy) and X11 (xclip): both keep serving
+    /// the PNG after Convertino exits, which a CLI run needs, and every app that pastes images reads image/png.
+    /// </summary>
+    public void SetClipboardImage(byte[] png)
+    {
+        bool wayland = !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("WAYLAND_DISPLAY"));
+        bool x11 = !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("DISPLAY"));
+        var tools = new List<(string exe, string args)>();
+        if (wayland || !x11) tools.Add(("wl-copy", "--type image/png"));
+        if (x11 || !wayland) tools.Add(("xclip", "-selection clipboard -t image/png -i"));
+        foreach (var (exe, args) in tools)
+            if (Paths.Which(exe) is { } p && PipeBytes(p, args, png)) return;
+        throw new InvalidOperationException(wayland && !x11 ? "Copy image needs wl-clipboard: sudo apt install wl-clipboard"
+            : x11 && !wayland ? "Copy image needs xclip: sudo apt install xclip"
+            : "Copy image needs wl-clipboard (Wayland) or xclip (X11)");
+    }
+
+    static bool PipeBytes(string exe, string args, byte[] input)
+    {
+        try
+        {
+            var psi = new ProcessStartInfo(exe, args) { RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false };
+            using var p = Process.Start(psi)!;
+            p.StandardInput.BaseStream.Write(input);
+            p.StandardInput.Close();
+            // the tool forks a child that serves the selection; a quick non-zero exit means it found no display
+            return !p.WaitForExit(3000) || p.ExitCode == 0;
+        }
+        catch (Exception ex) { Log.Error(exe, ex); return false; }
+    }
+
     static bool Pipe(string exe, string args, string input)
     {
         try

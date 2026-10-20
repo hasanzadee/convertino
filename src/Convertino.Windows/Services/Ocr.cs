@@ -96,10 +96,11 @@ public static class Clip
     {
         Application.Current.Dispatcher.Invoke(() =>
         {
-            for (int i = 0; i < 10; i++)
+            for (int i = 0; ; i++)
             {
                 try { a(); return; }
-                catch { Thread.Sleep(40); }
+                // another app may hold the clipboard for a moment; a locked screen keeps it shut, so say so
+                catch (Exception ex) when (i < 9) { Log.Info("clipboard busy: " + ex.Message); Thread.Sleep(40); }
             }
         });
     }
@@ -107,6 +108,29 @@ public static class Clip
     public static void SetText(string text) => Retry(() => Clipboard.SetDataObject(new DataObject(DataFormats.UnicodeText, text), true));
 
     public static void SetImage(BitmapSource bmp) => Retry(() => Clipboard.SetImage(bmp));
+
+    /// <summary>
+    /// The picture in two shapes: "PNG" keeps transparency for apps that read it (Office, browsers, Telegram, Discord …),
+    /// a plain bitmap on white serves the rest, since most of them ignore a bitmap's alpha and would show black.
+    /// </summary>
+    public static void SetPng(byte[] png) => Retry(() =>
+    {
+        var frame = System.Windows.Media.Imaging.BitmapFrame.Create(new System.IO.MemoryStream(png), BitmapCreateOptions.PreservePixelFormat, BitmapCacheOption.OnLoad);
+        int w = frame.PixelWidth, h = frame.PixelHeight;
+        var dv = new System.Windows.Media.DrawingVisual();
+        using (var dc = dv.RenderOpen())
+        {
+            dc.DrawRectangle(System.Windows.Media.Brushes.White, null, new Rect(0, 0, w, h));
+            dc.DrawImage(frame, new Rect(0, 0, w, h));
+        }
+        var opaque = new RenderTargetBitmap(w, h, 96, 96, System.Windows.Media.PixelFormats.Pbgra32);
+        opaque.Render(dv);
+        opaque.Freeze();
+        var data = new DataObject();
+        data.SetData("PNG", new System.IO.MemoryStream(png), false);
+        data.SetImage(opaque);
+        Clipboard.SetDataObject(data, true);
+    });
 
     public static void SetFiles(IEnumerable<string> files)
     {

@@ -41,6 +41,7 @@ Converting a file usually means opening an app, finding *Export…*, picking a f
 | 🔤 **Text** | Copy text from images and scanned PDFs (Windows OCR / Apple Vision / Tesseract) |
 | 🧹 **Clean** | Strip EXIF & GPS — losslessly for JPEGs; strip PDF metadata |
 | 🗜 **Compress** | Smart image compression with the savings shown: `1.2 MB → 340 KB (−72%)` |
+| 🧰 **Image tools** | One tap, no questions: **Messenger** (≤ 2560 px JPEG, GPS gone), **Square** (blurred fill), **Rounded** (corners + shadow), **Palette**, **Favicon** set, **Copy** the picture itself, **Read QR** / make a **QR** from a text or link file; for several images **Contact sheet**, **Slideshow** (GIF + WEBP) and **Compare** |
 | 📦 **Everything else** | Zip/unzip, merge/split/rotate PDFs, copy path, SHA-256, data URI |
 | 🎨 **Themes** | Catppuccin **Mocha** & **Latte**, **Sunset**, **Graphite** |
 | 📊 **Activity** | The tray / menu-bar panel charts your last two weeks: files handled, space saved, day streak, favourite actions |
@@ -84,6 +85,8 @@ sudo apt install ffmpeg poppler-utils tesseract-ocr libreoffice   # Debian / Ubu
 sudo dnf install ffmpeg poppler-utils tesseract libreoffice       # Fedora
 sudo pacman -S ffmpeg poppler tesseract tesseract-data-eng libreoffice-fresh   # Arch
 ```
+
+**Copy image** hands the picture to `wl-copy` on Wayland (package `wl-clipboard`) or `xclip` on X11; the card tells you which one is missing.
 
 <img src="docs/linux-tools.png" width="300" align="right" alt="The Tools ring on Linux (Avalonia build) over a file manager" />
 
@@ -189,6 +192,8 @@ On Windows the executable is `Convertino.exe` (in `%LOCALAPPDATA%\Programs\Conve
 | PDF text / merge / split | PdfPig · PDFsharp | PdfPig · PDFsharp | PdfPig · PDFsharp |
 | Office documents | Microsoft Office (COM), else LibreOffice | LibreOffice (headless) | LibreOffice (headless) |
 | OCR | Windows OCR (installed language packs), else Tesseract | Tesseract | Vision framework, else Tesseract |
+| QR codes | ZXing.Net (read) · QRCoder (make) | ZXing.Net · QRCoder | ZXing.Net · QRCoder |
+| Picture on the clipboard | WPF clipboard (PNG + bitmap) | `wl-copy` (Wayland) or `xclip` (X11) | NSPasteboard (PNG + TIFF) |
 | Video / audio | ffmpeg | ffmpeg | ffmpeg (Homebrew) |
 | Cut out | ONNX Runtime + DirectML (GPU), CPU fallback | ONNX Runtime (CPU) | ONNX Runtime (CPU, Apple silicon) |
 | UI | WPF, Win32 hooks, OLE drag & drop | Avalonia, X11 polling, XDND | Avalonia, Quartz polling, AppKit drag & drop |
