@@ -28,6 +28,8 @@ public sealed class App : Application
 
     public override void Initialize()
     {
+        // Avalonia renames the process through LaunchServices; without a name Activity Monitor shows "Avalonia"
+        Name = "Convertino";
         Styles.Add(new FluentTheme());
         RequestedThemeVariant = ThemeVariant.Dark;
     }
@@ -120,8 +122,9 @@ public sealed class App : Application
     /// </summary>
     static void WelcomeCard(bool listen)
     {
-        if (listen) { Card("Convertino is running", "Drag a file in Finder, tap Shift"); return; }
-        var t = Card("Drag a file, tap Shift", "Not working? Allow Input Monitoring", seconds: 12);
+        var tap = Settings.Current.TriggerKey.Tap();
+        if (listen) { Card("Convertino is running", $"Drag a file in Finder, {tap}"); return; }
+        var t = Card($"Drag a file, {tap}", "Not working? Allow Input Monitoring", seconds: 12);
         t.OnClick = OpenInputMonitoring;
     }
 
@@ -152,7 +155,7 @@ public sealed class App : Application
             it.Click += (_, _) => { it.IsChecked = !it.IsChecked; set(it.IsChecked); s.Save(); };
             return it;
         }
-        menu.Items.Add(new NativeMenuItem("Convertino — drag a file, tap Shift") { IsEnabled = false });
+        menu.Items.Add(new NativeMenuItem($"Convertino — drag a file, {s.TriggerKey.Tap()}") { IsEnabled = false });
         // the status item always opens this menu (no click event on macOS), so the panel is one item away
         var open = new NativeMenuItem("Open panel");
         open.Click += (_, _) => _panel?.Open();
@@ -172,6 +175,14 @@ public sealed class App : Application
             themes.Items.Add(it);
         }
         menu.Items.Add(new NativeMenuItem("Theme") { Menu = themes });
+        var keys = new NativeMenu();
+        foreach (var k in TriggerKeys.All)
+        {
+            var it = new NativeMenuItem(k.Label()) { ToggleType = MenuItemToggleType.Radio, IsChecked = k == s.TriggerKey };
+            it.Click += (_, _) => { s.TriggerKey = k; s.Save(); BuildTray(); };
+            keys.Items.Add(it);
+        }
+        menu.Items.Add(new NativeMenuItem("Open with") { Menu = keys });
         menu.Items.Add(Check("Notifications", s.Notifications, v => s.Notifications = v));
         menu.Items.Add(Check("Open at login", s.LaunchAtStartup, v => { s.LaunchAtStartup = v; Platform.Current.SetAutostart(v); }));
         var recent = s.Recent.Where(r => File.Exists(r.Path) || Directory.Exists(r.Path)).Take(5).ToList();
@@ -200,7 +211,7 @@ public sealed class App : Application
         using var ms = new MemoryStream();
         AppIcon.Render(44).Save(ms, PngBitmapEncoderOptions.Default);
         ms.Position = 0;
-        _tray = new TrayIcon { Icon = new WindowIcon(ms), ToolTipText = "Convertino — drag a file, tap Shift", Menu = menu, IsVisible = true };
+        _tray = new TrayIcon { Icon = new WindowIcon(ms), ToolTipText = $"Convertino — drag a file, {s.TriggerKey.Tap()}", Menu = menu, IsVisible = true };
         TrayIcon.SetIcons(this, [_tray]);
     }
 
@@ -220,7 +231,9 @@ public sealed class App : Application
                 {
                     try
                     {
-                        using var c = _server.Accept();
+                        // async on purpose: on macOS, Dispose() never returns while another thread sits in a blocking Accept(),
+                        // so Quit froze the app; a pending AcceptAsync is cancelled instead
+                        using var c = _server.AcceptAsync().GetAwaiter().GetResult();
                         using var ns = new NetworkStream(c);
                         using var r = new StreamReader(ns, Encoding.UTF8);
                         var cmd = r.ReadLine();
@@ -230,6 +243,7 @@ public sealed class App : Application
                         if (cmd == "menu") Dispatcher.UIThread.Post(() => _overlay?.Menu(files));
                     }
                     catch (ObjectDisposedException) { return; }
+                    catch (SocketException ex) when (ex.SocketErrorCode == SocketError.OperationAborted) { return; }
                     catch (Exception ex) { Log.Error("ipc", ex); }
                 }
             }) { IsBackground = true, Name = "Convertino IPC" }.Start();

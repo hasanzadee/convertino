@@ -137,6 +137,8 @@ convertino model install
 | Right-click → **Quick Actions → Convertino** *(macOS Finder)* | Same flower for the selected files |
 | Click the result card | Open the file · folder icon reveals it · × cancels a running job |
 
+<kbd>Shift</kbd> is the default. To use another key, pick it under **Open with** in the tray panel or the tray / menu-bar menu: <kbd>Shift</kbd>, <kbd>Shift</kbd> twice, <kbd>Ctrl</kbd> or <kbd>Alt</kbd> (<kbd>⌃ Control</kbd> / <kbd>⌥ Option</kbd> on macOS). The gestures above then use that key.
+
 While dragging over a petal, the caption under the Explorer drag image says what will happen (*Convert to DOCX*, *Crop*…). Convertino always copies — even though <kbd>Shift</kbd> normally means *move*, the source file is never touched.
 
 <div align="center">
@@ -229,6 +231,8 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for developer flags (render the flower to
 **Does it upload anything?** No. Nothing leaves your machine, except a one-time download of the cut-out model if you ask for it.
 
 **Shift-drag already means "move" in Explorer — does Convertino break that?** No. The flower only takes the drop if you release over a petal. Drag away from the flower and it fades after half a second, so a normal Shift-move carries on.
+
+**An app I drop files into uses Shift too (Claude attaches a file on Shift + drop).** Set **Open with** to *Shift twice*. A single Shift then goes to the app, and a quick double-tap during the drag opens the flower. Or pick <kbd>Ctrl</kbd> or <kbd>Alt</kbd>.
 
 **Where are my settings?** `%APPDATA%\Convertino` on Windows, `~/.config/convertino` on Linux, `~/Library/Application Support/Convertino` on macOS (`settings.json`, `convertino.log`, `models/`).
 

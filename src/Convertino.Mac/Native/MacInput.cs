@@ -11,7 +11,8 @@ public sealed class MacInput : IDisposable
     Thread? _thread;
     volatile bool _run = true;
 
-    public event Action<bool, ScreenPoint>? ShiftDown;   // dragging?, where
+    /// <summary>The trigger key (Shift, Control or Option, from the settings) went down. Args: dragging?, where.</summary>
+    public event Action<bool, ScreenPoint>? TriggerDown;
     public event Action<ScreenPoint>? ButtonDown;
     public event Action<ScreenPoint>? ButtonUp;
     public event Action? Escape;
@@ -38,18 +39,24 @@ public sealed class MacInput : IDisposable
 
     void Loop()
     {
-        bool lDown = false, rDown = false, dragging = false, shift = false, esc = false;
+        bool lDown = false, rDown = false, dragging = false, trigger = false, esc = false;
         double downX = 0, downY = 0;
         bool diag = Overlay.OverlayController.Diag;
         while (_run)
         {
-            bool l, r, s, e;
+            bool l, r, t, e;
             CGPoint c;
             try
             {
                 l = Quartz.CGEventSourceButtonState(Quartz.CombinedSessionState, Quartz.LeftButton);
                 r = Quartz.CGEventSourceButtonState(Quartz.CombinedSessionState, Quartz.RightButton);
-                s = (Quartz.CGEventSourceFlagsState(Quartz.CombinedSessionState) & Quartz.ShiftFlag) != 0;
+                ulong flag = Settings.Current.TriggerKey.Modifier() switch
+                {
+                    ModifierKey.Ctrl => Quartz.ControlFlag,
+                    ModifierKey.Alt => Quartz.OptionFlag,
+                    _ => Quartz.ShiftFlag,
+                };
+                t = (Quartz.CGEventSourceFlagsState(Quartz.CombinedSessionState) & flag) != 0;
                 // plain keys may read as "up" without Input Monitoring; Esc is a nicety (dragging away also cancels)
                 e = Quartz.CGEventSourceKeyState(Quartz.CombinedSessionState, Quartz.EscapeKey);
                 c = Quartz.Cursor();
@@ -64,8 +71,8 @@ public sealed class MacInput : IDisposable
             if (l && !dragging && (Math.Abs(c.X - downX) > 6 || Math.Abs(c.Y - downY) > 6)) { dragging = true; if (diag) Log.Info("mac dragging"); }
             lDown = l;
 
-            if (s && !shift) { bool d = dragging && l; _post(() => ShiftDown?.Invoke(d, pt)); if (diag) Log.Info($"mac shift d={d}"); }
-            shift = s;
+            if (t && !trigger) { bool d = dragging && l; _post(() => TriggerDown?.Invoke(d, pt)); if (diag) Log.Info($"mac trigger d={d}"); }
+            trigger = t;
             if (e && !esc) _post(() => Escape?.Invoke());
             esc = e;
 

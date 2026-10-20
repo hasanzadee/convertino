@@ -125,6 +125,8 @@ public static class Win32
     public const int VK_LBUTTON = 0x01;
     public const int VK_LSHIFT = 0xA0;
     public const int VK_RSHIFT = 0xA1;
+    public const int VK_CONTROL = 0x11, VK_LCONTROL = 0xA2, VK_RCONTROL = 0xA3;
+    public const int VK_MENU = 0x12, VK_LMENU = 0xA4, VK_RMENU = 0xA5;
 
     public const int GWL_EXSTYLE = -20;
     public const int WS_EX_TOOLWINDOW = 0x00000080;

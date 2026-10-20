@@ -34,8 +34,8 @@ public sealed class RadialWindow : Window
 }
 
 /// <summary>
-/// Drag a file, tap Shift → the flower blooms under the cursor, drop on a petal → the action runs.
-/// Shift again flips Convert ⇄ Tools. "convertino menu files…" (Finder Quick Action) opens the same flower in click mode.
+/// Drag a file, tap the trigger key (Shift by default, see <see cref="TriggerKey"/>) → the flower blooms under the cursor,
+/// drop on a petal → the action runs. The key again flips Convert ⇄ Tools. "convertino menu files…" (Finder Quick Action) opens the same flower in click mode.
 /// Same state machine as the Linux build; the window and the glass are native AppKit.
 /// </summary>
 public sealed class OverlayController
@@ -76,7 +76,7 @@ public sealed class OverlayController
 
         if (input != null)
         {
-            input.ShiftDown += OnShiftDown;
+            input.TriggerDown += OnTriggerDown;
             input.ButtonUp += _ => { if (_state is State.Seed or State.Drag && !_pinned) _releaseTimer.Start(); };
             input.ButtonDown += p => { if (_state == State.Click && !Contains(p)) Hide(); };
             input.Escape += () => { if (_state is State.Seed or State.Drag or State.Click) Hide(); };
@@ -105,12 +105,14 @@ public sealed class OverlayController
 
     bool Contains(ScreenPoint p) => _rect.Contains(new PixelPoint(p.X, p.Y));
 
-    void OnShiftDown(bool dragging, ScreenPoint pt)
+    readonly TriggerGate _gate = new();
+
+    void OnTriggerDown(bool dragging, ScreenPoint pt)
     {
-        if (Diag) Log.Info($"shift dragging={dragging} state={_state} at {pt}");
+        if (Diag) Log.Info($"trigger dragging={dragging} state={_state} at {pt}");
         if (!Settings.Current.Enabled) return;
         if (Visible) { if (_state != State.Seed) FlipPage(); return; }
-        if (_state == State.Hidden && dragging) ShowAt(pt, State.Seed);
+        if (_state == State.Hidden && dragging && _gate.Opens(Settings.Current.TriggerKey)) ShowAt(pt, State.Seed);
     }
 
     /// <summary>Open the flower for files (Finder Quick Action / CLI).</summary>

@@ -27,6 +27,8 @@ public sealed class App : Application
 
     public override void Initialize()
     {
+        // platform integrations read the application name from here (macOS showed "Avalonia" without it)
+        Name = "Convertino";
         Styles.Add(new FluentTheme());
         RequestedThemeVariant = ThemeVariant.Dark;
     }
@@ -101,10 +103,11 @@ public sealed class App : Application
             Settings.Current.FirstRunDone = true;
             Settings.Current.Save();
             bool wayland = Environment.GetEnvironmentVariable("XDG_SESSION_TYPE") == "wayland";
+            var key = Settings.Current.TriggerKey;
             var t = Toasts.Create(new ScreenPoint(0, 0));
             t.SetDone("Convertino is running",
-                wayland ? "Wayland: drag + Shift works over X11 apps; right-click files → Convertino works everywhere."
-                        : "Drag any file and tap Shift — the flower opens under your cursor.",
+                wayland ? $"Wayland: drag + {key.KeyName()} works over X11 apps; right-click files → Convertino works everywhere."
+                        : $"Drag any file and {key.Tap()} — the flower opens under your cursor.",
                 AppIcon.Render(84), null);
             Toasts.Show(t);
         }
@@ -124,7 +127,7 @@ public sealed class App : Application
             it.Click += (_, _) => { it.IsChecked = !it.IsChecked; set(it.IsChecked); s.Save(); };
             return it;
         }
-        menu.Items.Add(new NativeMenuItem("Convertino — drag a file, tap Shift") { IsEnabled = false });
+        menu.Items.Add(new NativeMenuItem($"Convertino — drag a file, {s.TriggerKey.Tap()}") { IsEnabled = false });
         var open = new NativeMenuItem("Open panel");
         open.Click += (_, _) => _panel?.Open();
         menu.Items.Add(open);
@@ -138,6 +141,14 @@ public sealed class App : Application
             themes.Items.Add(it);
         }
         menu.Items.Add(new NativeMenuItem("Theme") { Menu = themes });
+        var keys = new NativeMenu();
+        foreach (var k in TriggerKeys.All)
+        {
+            var it = new NativeMenuItem(k.Label()) { ToggleType = MenuItemToggleType.Radio, IsChecked = k == s.TriggerKey };
+            it.Click += (_, _) => { s.TriggerKey = k; s.Save(); BuildTray(); };
+            keys.Items.Add(it);
+        }
+        menu.Items.Add(new NativeMenuItem("Open with") { Menu = keys });
         menu.Items.Add(Check("Notifications", s.Notifications, v => s.Notifications = v));
         menu.Items.Add(Check("Start at login", s.LaunchAtStartup, v => { s.LaunchAtStartup = v; Platform.Current.SetAutostart(v); }));
         var recent = s.Recent.Where(r => File.Exists(r.Path) || Directory.Exists(r.Path)).Take(5).ToList();
@@ -163,7 +174,7 @@ public sealed class App : Application
         using var ms = new MemoryStream();
         AppIcon.Render(64).Save(ms, PngBitmapEncoderOptions.Default);
         ms.Position = 0;
-        _tray = new TrayIcon { Icon = new WindowIcon(ms), ToolTipText = "Convertino — drag a file, tap Shift", Menu = menu, IsVisible = true };
+        _tray = new TrayIcon { Icon = new WindowIcon(ms), ToolTipText = $"Convertino — drag a file, {s.TriggerKey.Tap()}", Menu = menu, IsVisible = true };
         // a left click opens the panel where the desktop reports it (KDE, XFCE, GNOME's AppIndicator extension …)
         _tray.Clicked += (_, _) => _panel?.Toggle();
         TrayIcon.SetIcons(this, [_tray]);
@@ -185,7 +196,9 @@ public sealed class App : Application
                 {
                     try
                     {
-                        using var c = _server.Accept();
+                        // async on purpose: on macOS, Dispose() never returns while another thread sits in a blocking Accept(),
+                        // so Quit froze the app; a pending AcceptAsync is cancelled instead
+                        using var c = _server.AcceptAsync().GetAwaiter().GetResult();
                         using var ns = new NetworkStream(c);
                         using var r = new StreamReader(ns, Encoding.UTF8);
                         var cmd = r.ReadLine();
@@ -195,6 +208,7 @@ public sealed class App : Application
                         if (cmd == "menu") Dispatcher.UIThread.Post(() => _overlay?.Menu(files));
                     }
                     catch (ObjectDisposedException) { return; }
+                    catch (SocketException ex) when (ex.SocketErrorCode == SocketError.OperationAborted) { return; }
                     catch (Exception ex) { Log.Error("ipc", ex); }
                 }
             }) { IsBackground = true, Name = "Convertino IPC" }.Start();

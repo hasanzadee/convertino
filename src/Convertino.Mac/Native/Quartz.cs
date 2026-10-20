@@ -14,7 +14,7 @@ public static class Quartz
 
     public const int CombinedSessionState = 0;
     public const uint LeftButton = 0, RightButton = 1;
-    public const ulong ShiftFlag = 0x00020000;
+    public const ulong ShiftFlag = 0x00020000, ControlFlag = 0x00040000, OptionFlag = 0x00080000;
     public const ushort EscapeKey = 0x35;
 
     [DllImport(CG)] [return: MarshalAs(UnmanagedType.I1)] public static extern bool CGEventSourceButtonState(int state, uint button);

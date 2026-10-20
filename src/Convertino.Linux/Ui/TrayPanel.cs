@@ -188,13 +188,14 @@ public sealed class TrayPanel : Window
     void Build()
     {
         var s = Settings.Current;
+        var key = s.TriggerKey;
         var stack = new StackPanel();
 
         // header
         var logo = new Image { Source = AppIcon.Render(68, T), Width = 34, Height = 34 };
         var title = new StackPanel { Margin = new Thickness(12, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
         title.Children.Add(new TextBlock { Text = "Convertino", FontWeight = FontWeight.SemiBold, FontSize = 17, Foreground = B(T.Text) });
-        title.Children.Add(new TextBlock { Text = s.Enabled ? "Drag a file · tap ⇧ Shift" : "Paused", FontSize = 12, Foreground = B(T.SubText) });
+        title.Children.Add(new TextBlock { Text = s.Enabled ? $"Drag a file · {key.Tap()}" : "Paused", FontSize = 12, Foreground = B(T.SubText) });
         var header = new DockPanel { LastChildFill = false };
         var close = IconButton("x", HideAnimated);
         ToolTip.SetTip(close, "Close (Esc)");
@@ -213,8 +214,8 @@ public sealed class TrayPanel : Window
         {
             Children =
             {
-                HowRow("file", "Drag any file, press Shift", "the flower opens under your cursor"),
-                HowRow("flip", "Shift again", "switch Convert ⇄ Tools"),
+                HowRow("file", $"Drag any file, {key.Tap()}", "the flower opens under your cursor"),
+                HowRow("flip", $"{key.KeyName()} again", "switch Convert ⇄ Tools"),
                 OperatingSystem.IsMacOS()
                     ? HowRow("folder", "Right-click → Quick Actions", "Convertino: same menu in Finder")
                     : HowRow("folder", "Right-click → Convertino", "same menu in your file manager"),

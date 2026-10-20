@@ -25,14 +25,15 @@ public sealed class GlobalInput : IDisposable
     int _dragThreshold = 6;
 
     // keyboard state (hook thread only)
+    bool _triggerHeld;
     bool _shiftHeld;
     bool _otherKeyDuringShift;
     uint _shiftDownTime;
     uint _lastTapUpTime;
 
-    /// <summary>Shift went down. Args: whether a left-button drag is in progress, cursor position.</summary>
-    public event Action<bool, POINT>? ShiftDown;
-    /// <summary>Shift was tapped twice quickly with no other key in between (and no mouse drag).</summary>
+    /// <summary>The trigger key (Shift, Ctrl or Alt, from the settings) went down. Args: whether a left-button drag is in progress, cursor position.</summary>
+    public event Action<bool, POINT>? TriggerDown;
+    /// <summary>Shift was tapped twice quickly with no other key in between (and no mouse drag). Always Shift, whatever the trigger key.</summary>
     public event Action<POINT>? ShiftDoubleTap;
     public event Action<POINT>? MouseDown;
     public event Action<POINT>? MouseUp;
@@ -88,6 +89,24 @@ public sealed class GlobalInput : IDisposable
             bool down = msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN;
             bool up = msg == WM_KEYUP || msg == WM_SYSKEYUP;
             bool isShift = k.vkCode is VK_LSHIFT or VK_RSHIFT or VK_SHIFT;
+            bool isTrigger = Settings.Current.TriggerKey.Modifier() switch
+            {
+                ModifierKey.Ctrl => k.vkCode is VK_LCONTROL or VK_RCONTROL or VK_CONTROL,
+                ModifierKey.Alt => k.vkCode is VK_LMENU or VK_RMENU or VK_MENU,
+                _ => isShift,
+            };
+
+            if (isTrigger)
+            {
+                if (down && !_triggerHeld)
+                {
+                    _triggerHeld = true;
+                    bool dragging = _dragging && _lDown;
+                    GetCursorPos(out var pt);
+                    Post(() => TriggerDown?.Invoke(dragging, pt));
+                }
+                else if (up) _triggerHeld = false;
+            }
 
             if (isShift)
             {
@@ -96,9 +115,6 @@ public sealed class GlobalInput : IDisposable
                     _shiftHeld = true;
                     _otherKeyDuringShift = false;
                     _shiftDownTime = k.time;
-                    bool dragging = _dragging && _lDown;
-                    GetCursorPos(out var pt);
-                    Post(() => ShiftDown?.Invoke(dragging, pt));
                 }
                 else if (up && _shiftHeld)
                 {
