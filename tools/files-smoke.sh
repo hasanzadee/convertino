@@ -36,9 +36,16 @@ echo "== split and join"
 head -c 30000000 /dev/urandom > big.bin
 "$C" run split-25mb big.bin
 test -s big.bin.002
+test -s big.bin.sha256
 mv big.bin big.orig
 "$C" run join big.bin.001
 cmp big.bin big.orig
+rm big.bin
+mv big.bin.002 part2.away
+if "$C" run join big.bin.001; then echo "joined with a part missing"; exit 1; fi
+test ! -e big.bin
+mv part2.away big.bin.002
+cp big.orig big.bin
 
 echo "== duplicates"
 "$C" run dupes orig | tee dupes.log

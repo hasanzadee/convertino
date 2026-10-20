@@ -14,8 +14,9 @@ namespace Convertino.Services;
 
 /// <summary>
 /// Unpacks ZIP, 7Z, RAR, TAR (plain, .gz, .bz2, .xz) and single gzip / bzip2 / xz files; packs TAR.GZ and 7Z.
-/// Nothing is ever written outside the new folder: "../" and absolute names are refused, and links are checked
-/// and only made once every file is out, so no later entry can be written through one.
+/// Nothing is ever written outside the new folder: "../", absolute and drive / UNC names are refused, links in
+/// archives are skipped (never made), and a size cap stops archives that would unpack to far more than they hold.
+/// Every output is created new (never adopted), so cleaning up after a failure only ever removes our own files.
 /// </summary>
 public static partial class Archives
 {
@@ -27,13 +28,17 @@ public static partial class Archives
     public static string Stem(string path)
     {
         var name = Path.GetFileName(path);
+        var stem = Path.GetFileNameWithoutExtension(name);
         foreach (var s in Suffixes)
             if (name.Length > s.Length && name.EndsWith(s, StringComparison.OrdinalIgnoreCase))
             {
-                var stem = name[..^s.Length];
-                return s == ".rar" && VolumeSuffix().Match(stem) is { Success: true } v && v.Index > 0 ? stem[..v.Index] : stem;
+                stem = name[..^s.Length];
+                if (s == ".rar" && VolumeSuffix().Match(stem) is { Success: true } v && v.Index > 0) stem = stem[..v.Index];
+                break;
             }
-        return Path.GetFileNameWithoutExtension(name) is { Length: > 0 } st ? st : "archive";
+        // Windows drops trailing dots and spaces, which would make "foo." land on an existing "foo"
+        stem = stem.TrimEnd('.', ' ');
+        return stem.Length > 0 ? stem : "archive";
     }
 
     [GeneratedRegex(@"\.part\d+$", RegexOptions.IgnoreCase)]
@@ -47,7 +52,7 @@ public static partial class Archives
         for (int i = 0; i < job.Inputs.Count; i++)
         {
             int idx = i;
-            await Task.Run(() => ExtractOne(job.Inputs[idx], job, f => job.Report(idx, job.Inputs.Count, f), tally), job.Token);
+            await Task.Run(() => ExtractOne(job.Inputs[idx], job, f => job.Report(idx, job.Inputs.Count, Math.Min(1, f)), tally), job.Token);
         }
         job.Summary = tally.Summary();
         if (job.Outputs.Count == 0) job.Title = "Nothing extracted";
@@ -59,17 +64,16 @@ public static partial class Archives
         if (fmt == Format.Unknown) throw new InvalidDataException($"{Path.GetFileName(src)} isn't an archive Convertino can open");
         var dir = Path.GetDirectoryName(src)!;
         var stem = Stem(src);
+        var cap = Cap.For(src, dir);
 
         if (fmt is Format.Zip or Format.SevenZip or Format.Rar)
         {
-            var root = Paths.UniqueDir(dir, stem);
-            Guard(job, root, () =>
+            IntoFolder(job, dir, stem, tally, cap, t =>
             {
                 try
                 {
                     using var archive = ArchiveFactory.OpenArchive(new FileInfo(src));
                     double total = Math.Max(1, archive.TotalUncompressedSize);
-                    var t = new Target(root, job.Token, tally);
                     t.Tick = () => report(t.Written / total);
                     // solid RAR and every 7z decode front to back; other archives entry by entry
                     if (archive.IsSolid || archive.Type == ArchiveType.SevenZip)
@@ -79,10 +83,8 @@ public static partial class Archives
                     }
                     else
                         foreach (var e in archive.Entries) t.Entry(e, e.OpenEntryStream);
-                    t.Finish();
                 }
-                catch (Exception ex) when (ex is not OperationCanceledException && IsPasswordError(ex)) { throw Locked(); }
-                Collapse(root, stem);
+                catch (Exception ex) when (ex is not (OperationCanceledException or TooBigException) && IsPasswordError(ex)) { throw Locked(); }
             });
             return;
         }
@@ -90,6 +92,8 @@ public static partial class Archives
         // TAR, possibly inside gzip / bzip2 / xz, streamed front to back; or a single compressed file
         using var raw = new FileStream(src, FileMode.Open, FileAccess.Read, FileShare.Read, 1 << 16, FileOptions.SequentialScan);
         double length = Math.Max(1, raw.Length);
+        // gzip keeps the size of its content (mod 4 GB) in its last 4 bytes: progress can follow what's written
+        long expected = fmt == Format.GZip ? GzipSize(raw) : 0;
         using Stream data = fmt switch
         {
             Format.GZip => new GZipStream(raw, CompressionMode.Decompress, leaveOpen: true),
@@ -100,28 +104,98 @@ public static partial class Archives
         var head = new byte[512];
         int n = data.ReadAtLeast(head, head.Length, throwOnEndOfStream: false);
         var all = new PrefixedStream(head.AsMemory(0, n), data);
+        double Progress(Target t) => expected > 0 && t.Written <= expected ? t.Written / (double)expected : raw.Position / length;
 
         if (fmt == Format.Tar || IsTarHeader(head.AsSpan(0, n)))
         {
-            var root = Paths.UniqueDir(dir, stem);
-            Guard(job, root, () =>
+            IntoFolder(job, dir, stem, tally, cap, t =>
             {
-                var t = new Target(root, job.Token, tally) { Tick = () => report(raw.Position / length) };
+                t.Tick = () => report(Progress(t));
                 ExtractTar(all, t);
-                t.Finish();
-                Collapse(root, stem);
             });
+            return;
         }
-        else
+
+        // notes.txt.gz → notes.txt beside it (a folder holding one file would only be in the way)
+        var o = FileTools.CreateUnique(dir, stem, out var dst);
+        job.Outputs.Add(dst);
+        try
         {
-            // notes.txt.gz → notes.txt beside it (a folder holding one file would only be in the way)
-            var dst = FileTools.UniqueFile(dir, stem);
-            Guard(job, dst, () =>
-            {
-                var t = new Target(dir, job.Token, tally) { Tick = () => report(raw.Position / length) };
-                t.WriteFile(dst, all, null, null);
-            });
+            var t = new Target(dir, job.Token, tally, cap);
+            t.Tick = () => report(Progress(t));
+            using (o) t.Pump(all, o);
+            tally.Files++;
         }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            o.Dispose();
+            FileTools.TryDeleteFile(dst);
+            job.Outputs.Remove(dst);
+            throw;
+        }
+    }
+
+    static long GzipSize(FileStream raw)
+    {
+        if (raw.Length < 18) return 0;
+        Span<byte> b = stackalloc byte[4];
+        raw.Seek(-4, SeekOrigin.End);
+        raw.ReadExactly(b);
+        raw.Seek(0, SeekOrigin.Begin);
+        long size = BitConverter.ToUInt32(b);
+        return size >= raw.Length ? size : 0; // smaller than the gzip itself: past 4 GB (wrapped) or several members
+    }
+
+    /// <summary>
+    /// Unpacks into a new hidden working folder (a fresh GUID name, so it's ours alone and a failure can remove it
+    /// wholesale), then renames it to "stem" — or "stem (2)" … — beside the archive. "foo.zip" holding just "foo/"
+    /// gives "foo", not "foo/foo". An archive with nothing left to unpack leaves nothing behind.
+    /// </summary>
+    static void IntoFolder(Job job, string dir, string stem, Tally tally, Cap cap, Action<Target> work)
+    {
+        var temp = Path.Combine(dir, $".convertino-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(temp);
+        job.Outputs.Add(temp);
+        try
+        {
+            if (OperatingSystem.IsWindows()) File.SetAttributes(temp, File.GetAttributes(temp) | FileAttributes.Hidden);
+            work(new Target(temp, job.Token, tally, cap));
+            var items = Directory.GetFileSystemEntries(temp);
+            if (items.Length == 0)
+            {
+                Directory.Delete(temp);
+                job.Outputs.Remove(temp);
+                return;
+            }
+            bool single = items.Length == 1 && Directory.Exists(items[0]) && string.Equals(Path.GetFileName(items[0]), stem, StringComparison.OrdinalIgnoreCase);
+            var final = MoveUnique(single ? items[0] : temp, dir, single ? Path.GetFileName(items[0]) : stem);
+            job.Outputs.Remove(temp);
+            job.Outputs.Add(final);
+            if (single) FileTools.TryDeleteDir(temp);
+            else if (OperatingSystem.IsWindows()) File.SetAttributes(final, File.GetAttributes(final) & ~FileAttributes.Hidden);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            if (job.Outputs.Remove(temp)) FileTools.TryDeleteDir(temp);
+            throw;
+        }
+    }
+
+    /// <summary>Renames a folder to dir/name, or "name (2)" … when taken; a rename never replaces what's there.</summary>
+    static string MoveUnique(string from, string dir, string name)
+    {
+        for (int i = 1; i < 10000; i++)
+        {
+            var dest = Path.Combine(dir, i == 1 ? name : $"{name} ({i})");
+            if (File.Exists(dest) || Directory.Exists(dest)) continue;
+            try
+            {
+                Directory.Move(from, dest);
+                return dest;
+            }
+            catch (IOException) when (File.Exists(dest) || Directory.Exists(dest)) { }
+        }
+        throw new IOException($"No free folder name for {name}");
     }
 
     static bool IsPasswordError(Exception ex) =>
@@ -146,8 +220,7 @@ public static partial class Archives
                     else t.Refuse(e.Name);
                     break;
                 case TarEntryType.SymbolicLink or TarEntryType.HardLink:
-                    if (t.Resolve(e.Name) is { } l) t.Link(l, e.LinkName, e.EntryType == TarEntryType.HardLink);
-                    else t.Refuse(e.Name);
+                    t.SkipLink(e.Name, e.LinkName);
                     break;
                 case TarEntryType.GlobalExtendedAttributes:
                     break;
@@ -155,42 +228,6 @@ public static partial class Archives
                     t.Tally.Skipped++; // devices, pipes, sparse files
                     break;
             }
-        }
-    }
-
-    /// <summary>"foo.zip" holding just "foo/" gives "foo", not "foo/foo".</summary>
-    static void Collapse(string root, string stem)
-    {
-        try
-        {
-            var items = Directory.GetFileSystemEntries(root);
-            if (items.Length != 1 || !Directory.Exists(items[0]) || new DirectoryInfo(items[0]).LinkTarget != null) return;
-            if (!string.Equals(Path.GetFileName(items[0]), stem, StringComparison.OrdinalIgnoreCase)) return;
-            var tmp = $"{root}.{Guid.NewGuid():N}";
-            Directory.Move(items[0], tmp);
-            Directory.Delete(root);
-            Directory.Move(tmp, root);
-        }
-        catch (Exception ex) { Log.Error("extract: collapse", ex); }
-    }
-
-    /// <summary>Runs one output's work; a failure removes what was half-written, and so does an empty result
-    /// (every entry refused). Cancelled jobs are cleaned up by <see cref="Jobs"/>.</summary>
-    static void Guard(Job job, string output, Action work)
-    {
-        job.Outputs.Add(output);
-        try { work(); }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            FileTools.TryDelete(output);
-            job.Outputs.Remove(output);
-            throw;
-        }
-        bool nothing = Directory.Exists(output) ? !Directory.EnumerateFileSystemEntries(output).Any() : !File.Exists(output);
-        if (nothing)
-        {
-            FileTools.TryDelete(output);
-            job.Outputs.Remove(output);
         }
     }
 
@@ -226,38 +263,65 @@ public static partial class Archives
         return sum == stored;
     }
 
+    /// <summary>
+    /// How much one archive may unpack to: 200 × its own size, at least 4 GB, and never so much that less than 1 GB of
+    /// the disk stays free. Past that it's a decompression bomb (or the disk is full), and extracting stops.
+    /// </summary>
+    sealed record Cap(long Bytes, string Why)
+    {
+        const long GB = 1L << 30;
+
+        public static Cap For(string archive, string dir)
+        {
+            long ratio = Math.Max(4 * GB, new FileInfo(archive).Length * 200);
+            long free = long.MaxValue;
+            try
+            {
+                var drive = new DriveInfo(Path.GetPathRoot(Path.GetFullPath(dir))!);
+                if (drive.IsReady) free = drive.AvailableFreeSpace - GB;
+            }
+            catch { }
+            if (free < ratio) return new(Math.Max(0, free), "unpacking it would leave less than 1 GB free on the disk");
+            return new(ratio, $"it unpacks to more than {Paths.HumanSize(ratio)}, which looks like a decompression bomb");
+        }
+    }
+
+    sealed class TooBigException(string message) : IOException(message);
+
     sealed class Tally
     {
-        public int Files, Refused, Skipped;
+        public int Files, Refused, Links, Skipped;
         public long Bytes;
 
         public string Summary()
         {
             var s = $"{Files} file{(Files == 1 ? "" : "s")} · {Paths.HumanSize(Bytes)}";
             if (Refused > 0) s += $" · {Refused} unsafe {(Refused == 1 ? "entry" : "entries")} refused";
+            if (Links > 0) s += $" · {Links} link{(Links == 1 ? "" : "s")} skipped";
             if (Skipped > 0) s += $" · {Skipped} skipped";
             return s;
         }
     }
 
     /// <summary>The new folder an archive is unpacked into, and the rules for what may land in it.</summary>
-    sealed class Target(string root, CancellationToken ct, Tally tally)
+    sealed class Target(string root, CancellationToken ct, Tally tally, Cap cap)
     {
         static readonly StringComparison Cmp = OperatingSystem.IsLinux() ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
         static readonly HashSet<string> Reserved = new(StringComparer.OrdinalIgnoreCase)
         {
-            "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9",
-            "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
+            "CON", "PRN", "AUX", "NUL", "CONIN$", "CONOUT$",
+            "COM0", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9", "COM¹", "COM²", "COM³",
+            "LPT0", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9", "LPT¹", "LPT²", "LPT³",
         };
 
         public readonly string Root = Path.TrimEndingDirectorySeparator(Path.GetFullPath(root));
         public readonly CancellationToken Token = ct;
         public readonly Tally Tally = tally;
+        /// <summary>Bytes written for this archive (what the size cap counts).</summary>
         public long Written;
         public Action? Tick;
         readonly Stopwatch _clock = Stopwatch.StartNew();
         long _lastTick = -1000;
-        readonly List<(string Path, string Target, bool Hard)> _links = [];
 
         /// <summary>Full path for an entry name inside the folder, or null when it would land outside it
         /// ("../x", "/etc/x", "C:\x", "\\server\x"). Names that Windows can't store are tidied, not refused.</summary>
@@ -279,7 +343,6 @@ public static partial class Archives
         }
 
         bool Inside(string full) => full.Length > Root.Length + 1 && full.StartsWith(Root, Cmp) && full[Root.Length] == Path.DirectorySeparatorChar;
-        bool Same(string a, string b) => string.Equals(Path.TrimEndingDirectorySeparator(a), Path.TrimEndingDirectorySeparator(b), Cmp);
 
         static string Clean(string seg)
         {
@@ -297,52 +360,86 @@ public static partial class Archives
             Log.Info($"extract: refused unsafe entry '{name}'");
         }
 
+        /// <summary>Links are never made: where one points can't be judged safely by its name alone.</summary>
+        public void SkipLink(string? name, string? target)
+        {
+            Tally.Links++;
+            Log.Info($"extract: skipped link '{name}' -> '{target}'");
+        }
+
         public void MakeDir(string full)
         {
-            if (!Same(full, Root) && !File.Exists(full)) Directory.CreateDirectory(full);
+            if (string.Equals(full, Root, Cmp)) return;
+            if (!TryMakeDir(full)) Tally.Skipped++;
+        }
+
+        /// <summary>Creates the folder unless a file from an earlier entry is in the way.</summary>
+        bool TryMakeDir(string full)
+        {
+            try
+            {
+                Directory.CreateDirectory(full);
+                return true;
+            }
+            catch (IOException) when (FileOnTheWay(full)) { return false; }
+        }
+
+        bool FileOnTheWay(string full)
+        {
+            for (var p = full; p != null && p.Length > Root.Length; p = Path.GetDirectoryName(p))
+                if (File.Exists(p)) return true;
+            return false;
         }
 
         public void Entry(IEntry e, Func<Stream> open)
         {
             Token.ThrowIfCancellationRequested();
             if (e.IsEncrypted) throw Locked();
+            if (!string.IsNullOrEmpty(e.LinkTarget)) { SkipLink(e.Key, e.LinkTarget); return; }
             var full = Resolve(e.Key, allowRoot: e.IsDirectory);
             if (full == null) { Refuse(e.Key); return; }
             if (e.IsDirectory) { MakeDir(full); return; }
-            if (!string.IsNullOrEmpty(e.LinkTarget)) { Link(full, e.LinkTarget, hard: false); return; }
             using var s = open();
             WriteFile(full, s, e.LastModifiedTime, null);
         }
 
+        /// <summary>Writes a new file; when two entries end up with the same name (case, tidied characters, a
+        /// repeated tar member) the later one becomes "name (2).ext" instead of replacing the first.</summary>
         public void WriteFile(string full, Stream data, DateTime? modified, UnixFileMode? mode)
         {
-            if (Directory.Exists(full)) { Tally.Skipped++; return; }
-            Directory.CreateDirectory(Path.GetDirectoryName(full)!);
+            var dir = Path.GetDirectoryName(full)!;
+            if (!TryMakeDir(dir)) { Tally.Skipped++; return; }
+            var o = FileTools.CreateUnique(dir, Path.GetFileName(full), out var path);
+            using (o) Pump(data, o);
+            Tally.Files++;
+            Progress();
+            try
+            {
+                if (modified is { } m && m.Year > 1980) File.SetLastWriteTime(path, m);
+                // keep "executable" from tarballs, never setuid / setgid / sticky
+                if (mode is { } md && !OperatingSystem.IsWindows())
+                    File.SetUnixFileMode(path, (md & (UnixFileMode)0x1FF) | UnixFileMode.UserRead | UnixFileMode.UserWrite);
+            }
+            catch { }
+        }
+
+        public void Pump(Stream from, Stream to)
+        {
             var buf = ArrayPool<byte>.Shared.Rent(1 << 20);
             try
             {
-                using var o = new FileStream(full, FileMode.Create, FileAccess.Write, FileShare.None, 1 << 16);
                 int n;
-                while ((n = data.Read(buf, 0, buf.Length)) > 0)
+                while ((n = from.Read(buf, 0, buf.Length)) > 0)
                 {
                     Token.ThrowIfCancellationRequested();
-                    o.Write(buf, 0, n);
+                    if (Written + n > cap.Bytes) throw new TooBigException($"Stopped: {cap.Why}");
+                    to.Write(buf, 0, n);
                     Written += n;
                     Tally.Bytes += n;
                     Progress();
                 }
             }
             finally { ArrayPool<byte>.Shared.Return(buf); }
-            Tally.Files++;
-            Progress();
-            try
-            {
-                if (modified is { } m && m.Year > 1980) File.SetLastWriteTime(full, m);
-                // keep "executable" from tarballs, never setuid / setgid / sticky
-                if (mode is { } md && !OperatingSystem.IsWindows())
-                    File.SetUnixFileMode(full, (md & (UnixFileMode)0x1FF) | UnixFileMode.UserRead | UnixFileMode.UserWrite);
-            }
-            catch { }
         }
 
         void Progress()
@@ -351,85 +448,15 @@ public static partial class Archives
             _lastTick = _clock.ElapsedMilliseconds;
             Tick?.Invoke();
         }
-
-        public void Link(string full, string? target, bool hard) => _links.Add((full, target ?? "", hard));
-
-        /// <summary>
-        /// Links go in last, once every file is out, and only when they stay inside the folder without passing
-        /// through another link (whose target can't be judged by name). Hard links become copies, before any
-        /// symbolic link exists; symbolic links Windows won't let us make (no Developer Mode) are skipped.
-        /// </summary>
-        public void Finish()
-        {
-            var linkPaths = new HashSet<string>(_links.Select(l => l.Path), OperatingSystem.IsLinux() ? StringComparer.Ordinal : StringComparer.OrdinalIgnoreCase);
-            bool Through(string path)
-            {
-                for (var p = Path.GetDirectoryName(path); p != null && p.Length > Root.Length; p = Path.GetDirectoryName(p))
-                    if (linkPaths.Contains(p)) return true;
-                return false;
-            }
-
-            foreach (var (path, target, _) in _links.Where(l => l.Hard))
-            {
-                Token.ThrowIfCancellationRequested();
-                var src = Resolve(target);
-                if (src == null || Through(src) || Through(path) || linkPaths.Contains(src)) { Refuse($"{path} => {target}"); continue; }
-                if (!File.Exists(src) || Directory.Exists(path)) { Tally.Skipped++; continue; }
-                Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-                File.Copy(src, path, overwrite: true);
-                Tally.Files++;
-            }
-
-            foreach (var (path, target, _) in _links.Where(l => !l.Hard))
-            {
-                Token.ThrowIfCancellationRequested();
-                var dest = LinkDestination(path, target, linkPaths);
-                if (dest == null || Through(path)) { Refuse($"{path} -> {target}"); continue; }
-                try
-                {
-                    Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-                    var rel = Path.GetRelativePath(Path.GetDirectoryName(path)!, dest);
-                    if (Directory.Exists(dest)) Directory.CreateSymbolicLink(path, rel);
-                    else File.CreateSymbolicLink(path, rel);
-                }
-                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-                {
-                    Tally.Skipped++;
-                    Log.Info($"extract: link {path} -> {target} not created: {ex.Message}");
-                }
-            }
-        }
-
-        /// <summary>Where a symbolic link would point, worked out from its own folder; null if that leaves the folder.</summary>
-        string? LinkDestination(string link, string target, HashSet<string> linkPaths)
-        {
-            var t = target.Replace('\\', '/');
-            if (t.Length == 0 || t.StartsWith('/') || (t.Length > 1 && t[1] == ':')) return null;
-            var cur = Path.GetDirectoryName(link)!;
-            foreach (var seg in t.Split('/'))
-            {
-                if (seg is "" or ".") continue;
-                if (seg == "..")
-                {
-                    if (Same(cur, Root)) return null;
-                    cur = Path.GetDirectoryName(cur)!;
-                    continue;
-                }
-                cur = Path.Combine(cur, Clean(seg));
-                if (linkPaths.Contains(cur)) return null;
-            }
-            return Same(cur, Root) || Inside(cur) ? cur : null;
-        }
     }
 
     // ---------- pack ----------
 
     /// <summary>Files and folders → one .tar.gz beside them (links stay links).</summary>
-    public static Task TarGz(Job job) => Pack(job, "tar.gz", (dst, items, read) =>
+    public static Task TarGz(Job job) => Pack(job, "tar.gz", (fs, items, read) =>
     {
-        using var fs = new FileStream(dst, FileMode.CreateNew, FileAccess.Write, FileShare.None, 1 << 16);
-        using var gz = new GZipStream(fs, CompressionLevel.Optimal);
-        using var tw = new TarWriter(gz, TarEntryFormat.Pax, leaveOpen: false);
+        using var gz = new GZipStream(fs, CompressionLevel.Optimal, leaveOpen: true);
+        using var tw = new TarWriter(gz, TarEntryFormat.Pax, leaveOpen: true);
         foreach (var it in items)
         {
             job.Token.ThrowIfCancellationRequested();
@@ -450,10 +477,9 @@ public static partial class Archives
     });
 
     /// <summary>Files and folders → one .7z beside them (LZMA2; links are left out, 7z has no portable form for them).</summary>
-    public static Task SevenZip(Job job) => Pack(job, "7z", (dst, items, read) =>
+    public static Task SevenZip(Job job) => Pack(job, "7z", (fs, items, read) =>
     {
         int skipped = 0;
-        using var fs = new FileStream(dst, FileMode.CreateNew, FileAccess.ReadWrite, FileShare.None, 1 << 16);
         using var w = new SevenZipWriter(fs, new SevenZipWriterOptions());
         foreach (var it in items)
         {
@@ -469,7 +495,7 @@ public static partial class Archives
 
     sealed record Item(string Full, string Name, bool Dir, string? Link);
 
-    static async Task Pack(Job job, string ext, Func<string, List<Item>, Func<string, Stream>, int> write)
+    static async Task Pack(Job job, string ext, Func<FileStream, List<Item>, Func<string, Stream>, int> write)
     {
         // same naming as Zip: "photos/" → photos.7z, one file → its name, several → the folder they're in
         var inputs = job.Inputs.Select(Path.TrimEndingDirectorySeparator).ToList();
@@ -478,8 +504,8 @@ public static partial class Archives
         string name = inputs.Count == 1
             ? (Directory.Exists(first) ? Path.GetFileName(first) : Path.GetFileNameWithoutExtension(first))
             : (Path.GetFileName(dir) is { Length: > 0 } d ? d : "Archive");
-        var dst = Paths.Unique(dir, name, ext);
         int skipped = 0;
+        string dst = "";
         await Task.Run(() =>
         {
             var items = new List<Item>();
@@ -487,7 +513,18 @@ public static partial class Archives
             double total = Math.Max(1, items.Where(i => !i.Dir && i.Link == null).Sum(i => Paths.SizeOf(i.Full)));
             long done = 0;
             Stream Read(string path) => new CountingStream(File.OpenRead(path), n => { done += n; job.Report(done / total); }, job.Token);
-            Guard(job, dst, () => skipped = write(dst, items, Read));
+            var fs = FileTools.CreateUnique(dir, name, "." + ext, out dst);
+            job.Outputs.Add(dst);
+            try
+            {
+                using (fs) skipped = write(fs, items, Read);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                FileTools.TryDeleteFile(dst);
+                job.Outputs.Remove(dst);
+                throw;
+            }
         }, job.Token);
         long before = job.Inputs.Sum(Paths.SizeOf), after = Paths.SizeOf(dst);
         job.Summary = $"{Paths.HumanSize(before)} → {Paths.HumanSize(after)}" + (skipped > 0 ? $" · {skipped} link{(skipped == 1 ? "" : "s")} left out" : "");

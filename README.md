@@ -46,7 +46,7 @@ Converting a file usually means opening an app, finding *Export…*, picking a f
 | 🗜 **Compress** | Smart image compression with the savings shown: `1.2 MB → 340 KB (−72%)` |
 | 📑 **PDF tools** | Merge, split, rotate, page numbers, cover image, extract every image at original quality, compress (with Ghostscript) |
 | 📥 **Watch folders** | New files in a folder convert by themselves into its `Converted` subfolder (panel, or `convertino watch`) |
-| 🗃 **Archives** | Extract ZIP · 7Z · RAR · TAR · TAR.GZ / BZ2 / XZ · GZ · BZ2 · XZ into a new folder, refusing `../`, absolute paths and links that point outside it; pack folders as ZIP · 7Z · TAR.GZ |
+| 🗃 **Archives** | Extract ZIP · 7Z · RAR · TAR · TAR.GZ / BZ2 / XZ · GZ · BZ2 · XZ into a new folder, refusing `../` and absolute paths, skipping links and stopping decompression bombs; pack folders as ZIP · 7Z · TAR.GZ |
 | 🧰 **File tools** | Split big files into 25 / 50 / 100 MB… parts and join the `.001` back; find duplicates (an HTML report, nothing is deleted); verify a `.sha256` / `SHA256SUMS` (*Matches ✓*); copy MD5 · SHA-1 · SHA-256 · SHA-512 |
 | 🧰 **Image tools** | One tap, no questions: **Messenger** (≤ 2560 px JPEG, GPS gone), **Square** (blurred fill), **Rounded** (corners + shadow), **Palette**, **Favicon** set, **Copy** the picture itself, **Read QR** / make a **QR** from a text or link file; for several images **Contact sheet**, **Slideshow** (GIF + WEBP) and **Compare** |
 | 📦 **Everything else** | Copy path, data URI |
