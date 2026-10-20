@@ -41,7 +41,9 @@ Converting a file usually means opening an app, finding *Export…*, picking a f
 | 🔤 **Text** | Copy text from images and scanned PDFs (Windows OCR / Apple Vision / Tesseract) |
 | 🧹 **Clean** | Strip EXIF & GPS — losslessly for JPEGs; strip PDF metadata |
 | 🗜 **Compress** | Smart image compression with the savings shown: `1.2 MB → 340 KB (−72%)` |
-| 📦 **Everything else** | Zip/unzip, merge/split/rotate PDFs, copy path, SHA-256, data URI |
+| 📑 **PDF tools** | Merge, split, rotate, page numbers, cover image, extract every image at original quality, compress (with Ghostscript) |
+| 📥 **Watch folders** | New files in a folder convert by themselves into its `Converted` subfolder (panel, or `convertino watch`) |
+| 📦 **Everything else** | Zip/unzip, copy path, SHA-256, data URI |
 | 🎨 **Themes** | Catppuccin **Mocha** & **Latte**, **Sunset**, **Graphite** |
 | 📊 **Activity** | The tray / menu-bar panel charts your last two weeks: files handled, space saved, day streak, favourite actions |
 | ⌨️ **CLI** | `convertino convert IMG_0042.HEIC --to jpg` — the same engine without the UI |
@@ -62,7 +64,7 @@ Converting a file usually means opening an app, finding *Export…*, picking a f
    powershell -ExecutionPolicy Bypass -File install.ps1
    ```
 
-Convertino installs per-user to `%LOCALAPPDATA%\Programs\Convertino` (no admin rights), adds a Start-menu entry and **Send to → Convertino**, starts in the tray and launches with Windows (toggle it in the tray panel). Click the tray icon for the panel (theme, options, recent files; closes on Esc or a click outside); right-click it for a quick menu with **Quit Convertino**. For video and audio petals install ffmpeg: `winget install Gyan.FFmpeg`.
+Convertino installs per-user to `%LOCALAPPDATA%\Programs\Convertino` (no admin rights), adds a Start-menu entry and **Send to → Convertino**, starts in the tray and launches with Windows (toggle it in the tray panel). Click the tray icon for the panel (theme, options, recent files; closes on Esc or a click outside); right-click it for a quick menu with **Quit Convertino**. For video and audio petals install ffmpeg: `winget install Gyan.FFmpeg`; for PDF compression, Ghostscript: `winget install ArtifexSoftware.GhostScript`.
 
 <div align="center">
 <img src="docs/panel.png" width="320" alt="The tray panel: two weeks of activity, themes and options" />
@@ -80,7 +82,7 @@ Convertino installs per-user to `%LOCALAPPDATA%\Programs\Convertino` (no admin r
 The installer adds the `convertino` command, a desktop entry, autostart, and a **Convertino** entry in the right-click menu of Nautilus, Nemo, Dolphin and Caja. Click the tray icon (or **Open panel**, the first item of its menu) for the panel: activity, theme, options, recent files. Optional helpers it will offer to install:
 
 ```bash
-sudo apt install ffmpeg poppler-utils tesseract-ocr libreoffice   # Debian / Ubuntu
+sudo apt install ffmpeg poppler-utils tesseract-ocr libreoffice ghostscript   # Debian / Ubuntu
 sudo dnf install ffmpeg poppler-utils tesseract libreoffice       # Fedora
 sudo pacman -S ffmpeg poppler tesseract tesseract-data-eng libreoffice-fresh   # Arch
 ```
@@ -104,6 +106,7 @@ The installer copies `Convertino.app` to `~/Applications`, adds the `convertino`
 
 ```bash
 brew install ffmpeg                  # video & audio petals
+brew install ghostscript             # PDF compression
 brew install --cask libreoffice      # Word / Excel / PowerPoint petals
 ```
 
@@ -176,6 +179,8 @@ convertino run ocr scan.pdf                       # text → clipboard
 convertino actions report.pdf                     # what's possible for these files
 convertino menu photo.png notes.md                # open the flower for them (used by file-manager menus)
 convertino model install | status | remove        # the AI cut-out model
+convertino watch ~/Inbox --to pdf                 # convert every new file there, until Ctrl+C
+convertino watch add ~/Inbox --to webp            # same, run by the desktop app (also: watch list | remove)
 ```
 
 On Windows the executable is `Convertino.exe` (in `%LOCALAPPDATA%\Programs\Convertino`); on macOS the installer puts a `convertino` wrapper for `~/Applications/Convertino.app` in `~/.local/bin`.

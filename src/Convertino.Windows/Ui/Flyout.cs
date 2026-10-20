@@ -215,6 +215,10 @@ public sealed class Flyout : Window
             },
         }, new Thickness(0)));
 
+        // folders whose new files convert by themselves
+        stack.Children.Add(Label("Watch folders"));
+        stack.Children.Add(WatchCard());
+
         // recent
         var recent = s.Recent.Where(r => File.Exists(r.Path) || Directory.Exists(r.Path)).Take(4).ToList();
         if (recent.Count > 0)
@@ -534,6 +538,92 @@ public sealed class Flyout : Window
         if (d.TotalHours < 1) return $"{(int)d.TotalMinutes} min ago";
         if (d.TotalDays < 1) return $"{(int)d.TotalHours} h ago";
         return t.ToString("d MMM");
+    }
+
+    // ---------- watch folders ----------
+
+    string? _pendingWatch; // picked, waiting for "new files become …"
+
+    UIElement WatchCard()
+    {
+        var list = new StackPanel();
+        foreach (var wf in Watches.Load())
+        {
+            var path = wf.Path;
+            var icon = new Border
+            {
+                Width = 30, Height = 30, CornerRadius = new CornerRadius(6), Margin = new Thickness(0, 0, 10, 0),
+                Background = B(A(T.SubText, .14)),
+                Child = new TextBlock { Text = Ui.Icons.Glyph("folder"), FontFamily = Icons, FontSize = 13, Foreground = B(T.SubText), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center },
+            };
+            var text = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+            text.Children.Add(new TextBlock { Text = System.IO.Path.GetFileName(path.TrimEnd('\\', '/')), FontFamily = TextF, FontSize = 12.5, Foreground = B(T.Text), TextTrimming = TextTrimming.CharacterEllipsis, MaxWidth = 210 });
+            text.Children.Add(new TextBlock { Text = $"new files → {Watches.LabelOf(wf.Action)} · in {wf.Out}" + (Directory.Exists(path) ? "" : " · missing"), FontFamily = TextF, FontSize = 11, Foreground = B(T.SubText) });
+            var remove = (FrameworkElement)FooterButton("", "", () => { Watches.Remove(path); Build(); });
+            remove.ToolTip = "Stop watching";
+            remove.VerticalAlignment = VerticalAlignment.Center;
+            var main = new Border
+            {
+                Background = Brushes.Transparent, Cursor = Cursors.Hand, ToolTip = path,
+                Child = new StackPanel { Orientation = Orientation.Horizontal, Children = { icon, text } },
+            };
+            main.MouseLeftButtonUp += (_, _) => { if (Directory.Exists(path)) { Shell.Open(path); HideAnimated(); } };
+            var row = new DockPanel { Margin = new Thickness(0, 4, 0, 4) };
+            DockPanel.SetDock(remove, Dock.Right);
+            row.Children.Add(remove);
+            row.Children.Add(main);
+            list.Children.Add(row);
+        }
+
+        if (_pendingWatch is { } dir)
+        {
+            list.Children.Add(new TextBlock
+            {
+                Text = $"New files in {System.IO.Path.GetFileName(dir.TrimEnd('\\', '/'))} become:", FontFamily = TextF, FontSize = 12.5,
+                Foreground = B(T.Text), Margin = new Thickness(0, 6, 0, 0), TextTrimming = TextTrimming.CharacterEllipsis,
+            });
+            var pills = new System.Windows.Controls.Primitives.UniformGrid { Columns = 3, Margin = new Thickness(-2, 6, -2, 2) };
+            foreach (var (id, label) in Watches.Presets)
+            {
+                var pill = new Border
+                {
+                    CornerRadius = new CornerRadius(8), Padding = new Thickness(4, 4, 4, 5), Margin = new Thickness(2), Cursor = Cursors.Hand,
+                    Background = B(A(T.SubText, .12)),
+                    Child = new TextBlock { Text = label, FontFamily = TextF, FontSize = 11.5, Foreground = B(T.Text), HorizontalAlignment = HorizontalAlignment.Center },
+                };
+                pill.MouseEnter += (_, _) => pill.Background = new LinearGradientBrush(T.AccentA, T.AccentB, 0);
+                pill.MouseLeave += (_, _) => pill.Background = B(A(T.SubText, .12));
+                pill.MouseLeftButtonUp += (_, e) =>
+                {
+                    Watches.Add(new WatchFolder { Path = dir, Action = id });
+                    _pendingWatch = null;
+                    Build();
+                    e.Handled = true;
+                };
+                pills.Children.Add(pill);
+            }
+            list.Children.Add(pills);
+            list.Children.Add(new TextBlock { Text = "Results go to a Converted folder inside it.", FontFamily = TextF, FontSize = 11, Foreground = B(T.SubText), Margin = new Thickness(2, 2, 0, 4) });
+            list.Children.Add(FooterButton("", "Cancel", () => { _pendingWatch = null; Build(); }));
+        }
+        else list.Children.Add(FooterButton(Ui.Icons.Glyph("folder") ?? "", "Watch a folder…", PickWatchFolder));
+        return Card(list, new Thickness(0));
+    }
+
+    void PickWatchFolder()
+    {
+        // the panel is topmost: step aside for the dialog, come back with the choice of what new files become
+        HideAnimated();
+        string? path = null;
+        try
+        {
+            using var dlg = new System.Windows.Forms.FolderBrowserDialog { Description = "New files in this folder will be converted automatically", UseDescriptionForTitle = true, ShowNewFolderButton = true };
+            if (dlg.ShowDialog() == System.Windows.Forms.DialogResult.OK) path = dlg.SelectedPath;
+        }
+        catch (Exception ex) { Log.Error("folder picker", ex); }
+        if (path != null) _pendingWatch = path;
+        _hiddenAt = DateTime.MinValue;
+        Dispatcher.BeginInvoke(() => { if (!IsVisible || _hiding) { _hideTimer.Stop(); FinishHide(); Toggle(); } }, System.Windows.Threading.DispatcherPriority.Background);
     }
 
     UIElement FooterButton(string glyph, string text, Action click)

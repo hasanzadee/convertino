@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- PDF tools ring: **Compress** (re-distilled with Ghostscript when it's installed; the result is kept only if it's smaller), **Images** (every embedded picture at its original quality, duplicates skipped), **Numbers** ("3 / 12" at the bottom of each page, upright on rotated pages, no font files needed) and **Cover** (the first page as PNG).
+- Watch folders: pick a folder in the panel ("Watch a folder…") and what new files become (PDF, JPG, PNG, WEBP, Compress, Clean); everything that lands there is converted into its `Converted` subfolder, with a result card. Partial downloads (`.part`, `.crdownload`, …) are waited out. Also from the command line: `convertino watch <folder> --to pdf` in the foreground, or `convertino watch add | list | remove` for the desktop app, which picks up changes immediately.
+- Fixed: images → PDF failed with "Unsupported image format" for JPEGs that don't start with a JFIF/Exif segment (Windows' own wallpapers, many camera exports).
+
 ## 1.2.0 — 2026-10-20
 
 Thanks again to [@AliverdiSultanli](https://github.com/AliverdiSultanli) for the trigger keys, the update check and the macOS Quit fix, all tested on his Mac.
