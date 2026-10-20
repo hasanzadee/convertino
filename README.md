@@ -150,7 +150,7 @@ convertino model install
 
 <kbd>Shift</kbd> is the default. To use another key, pick it under **Open with** in the tray panel or the tray / menu-bar menu: <kbd>Shift</kbd>, <kbd>Shift</kbd> twice, <kbd>Ctrl</kbd> or <kbd>Alt</kbd> (<kbd>⌃ Control</kbd> / <kbd>⌥ Option</kbd> on macOS). The gestures above then use that key.
 
-The wheel flips the rings while the pointer is over the flower; a touchpad swipe or a quick spin counts as one flip. On Windows, Tab and the wheel don't reach the window behind the flower while it's open. On macOS, Tab during a drag needs Input Monitoring (like <kbd>Esc</kbd>, see *Permissions* above); in the Quick Action's flower it always works.
+The wheel flips the rings while the pointer is over the flower; a touchpad swipe or a quick spin counts as one flip. On Windows, Tab and the wheel don't reach the window behind the flower while it's open; <kbd>Alt</kbd>+<kbd>Tab</kbd>, <kbd>Win</kbd>+<kbd>Tab</kbd> and <kbd>Ctrl</kbd>+<kbd>Tab</kbd> stay the system's (unless that modifier is your trigger key). On Linux and macOS Convertino only watches them, so they reach the app behind as well: in Linux click mode, Tab also moves the focus in the file manager. On macOS, Tab during a drag needs Input Monitoring (like <kbd>Esc</kbd>, see *Permissions* above); in the Quick Action's flower it always works.
 
 While dragging over a petal, the caption under the Explorer drag image says what will happen (*Convert to DOCX*, *Crop*…). Convertino always copies — even though <kbd>Shift</kbd> normally means *move*, the source file is never touched.
 

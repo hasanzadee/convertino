@@ -63,6 +63,7 @@ public sealed class RingPager
     public int Wheel(double delta)
     {
         if (delta == 0) return 0;
+        _triggerPending = false; // trigger held while turning the wheel: one flip, not two
         long now = Environment.TickCount64;
         bool burst = now - _wheelAt < WheelGapMs;
         _wheelAt = now;
