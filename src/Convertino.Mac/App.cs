@@ -70,6 +70,18 @@ public sealed class App : Application
             input.ButtonDown += p => _panel.ClickAt(p);
             input.Escape += () => _panel.HideAnimated();
             BuildTray();
+            // a click on the menu-bar item opens the panel (right-click / Ctrl-click: the menu), like on Windows
+            StatusItem.OnClick(() =>
+            {
+                if (OverlayController.Diag) Log.Info("status item clicked");
+                _panel.Toggle();
+            });
+            _panel.PropertyChanged += (_, e) =>
+            {
+                if (e.Property != Visual.IsVisibleProperty) return;
+                StatusItem.Highlight(_panel.IsVisible);
+                if (OverlayController.Diag) Log.Info($"panel visible={_panel.IsVisible}");
+            };
             platform.SetAutostart(Settings.Current.LaunchAtStartup);
             StartIpc();
         }
@@ -153,7 +165,7 @@ public sealed class App : Application
             it.Click += (_, _) => { it.IsChecked = !it.IsChecked; set(it.IsChecked); s.Save(); };
             return it;
         }
-        // the status item always opens this menu (no click event on macOS), so the panel comes first
+        // right-click / Ctrl-click (and VoiceOver, which presses the item) open this menu; the panel stays first
         var open = new NativeMenuItem("Open panel");
         open.Click += (_, _) => _panel?.Open();
         menu.Items.Add(open);
@@ -192,6 +204,7 @@ public sealed class App : Application
         var quit = new NativeMenuItem("Quit Convertino");
         quit.Click += (_, _) => (ApplicationLifetime as IClassicDesktopStyleApplicationLifetime)?.Shutdown();
         menu.Items.Add(quit);
+        if (OverlayController.Diag) menu.Opening += (_, _) => Log.Info("tray menu opening");
 
         if (_tray == null)
         {

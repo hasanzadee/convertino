@@ -2,7 +2,8 @@
 # Smoke test for the macOS build (used by CI; works on any Mac):
 #   tools/mac-smoke.sh dist/Convertino.app          command line: conversions, CoreGraphics PDF, Vision OCR (CUTOUT=1: Cut out)
 #   tools/mac-smoke.sh dist/Convertino.app --gui    + editors, pinned flower, "convertino menu" over IPC, the menu-bar panel (theme click,
-#                                                 Open panel from the menu), a synthetic drag + Shift
+#                                                 Open panel from the menu, a click on the menu-bar item; right-click and
+#                                                 Ctrl-click for the menu), a synthetic drag + Shift
 #                                                 + drop; in CI also install.sh and the Finder Quick Action
 # Screenshots and the log land in ./mac-smoke/.
 set -euo pipefail
@@ -163,6 +164,48 @@ after=$(grep -c "panel window=" "$LOG" || true)
 case "$items" in "Open panel"*) echo "Open panel is the first item" ;; *) echo "::warning::Open panel isn't the first menu item" ;; esac
 if [ "$after" -gt "$before" ]; then echo "Open panel opened the panel"
 else echo "::warning::Open panel from the menu didn't open the panel (System Events: $items)"; fi
+pkill -f "Convertino.app/Contents/MacOS/convertino" || true
+sleep 1
+
+step "app: click the menu-bar item (panel), right-click / Ctrl-click it (menu)"
+CONVERTINO_DEBUG=1 "$D" >> "$OUT/app-stdout.txt" 2>&1 &
+sleep 6
+pid=$(pgrep -f "Convertino.app/Contents/MacOS/convertino" | head -1 || true)
+# System Events knows where the item is: points, top-left origin, like CGEvent
+item=$(limit 30 osascript \
+  -e "tell application \"System Events\" to tell (first process whose unix id is $pid)" \
+  -e "set {x, y} to position of menu bar item 1 of last menu bar" \
+  -e "set {w, h} to size of menu bar item 1 of last menu bar" \
+  -e "return (x as text) & \" \" & (y as text) & \" \" & (w as text) & \" \" & (h as text)" -e "end tell" 2>&1) || true
+echo "menu-bar item (x y w h): $item"
+read -r ix iy iw ih _ <<< "$item"
+centre=$(awk -v x="$ix" -v y="$iy" -v w="$iw" -v h="$ih" 'BEGIN { if (w > 0 && h > 0) printf "%d %d", x + w / 2, y + h / 2 }')
+[ -n "$centre" ] || { echo "System Events gave no position for the menu-bar item"; exit 1; }
+read -r cx cy <<< "$centre"
+count() { grep -c "$1" "$LOG" || true; }
+before=$(count "panel window=")
+limit 20 "$WORK/click" "$cx" "$cy"
+sleep 2
+shot 2e-panel-from-click
+grep -E "status item|panel visible" "$LOG" | tail -2 || true
+if [ "$(count "panel window=")" -gt "$before" ]; then echo "a click on the menu-bar item opened the panel"
+else echo "a click on the menu-bar item didn't open the panel"; grep -E "panel|status|tray|button" "$LOG" | tail -10; exit 1; fi
+# a second click closes it again
+limit 20 "$WORK/click" "$cx" "$cy"
+sleep 1.5
+case "$(grep "panel visible=" "$LOG" | tail -1)" in *False) echo "a second click closed it" ;;
+  *) echo "::warning::a second click on the menu-bar item didn't close the panel" ;; esac
+for how in right ctrl; do
+  opened=$(count "tray menu opening")
+  limit 20 "$WORK/click" "$cx" "$cy" "$how"
+  sleep 1.5
+  shot "2f-menu-from-$how-click"
+  limit 10 osascript -e 'tell application "System Events" to key code 53' || true   # Esc closes the menu
+  sleep 1
+  if [ "$(count "tray menu opening")" -gt "$opened" ]; then echo "$how-click opened the menu"
+  else echo "::warning::$how-click on the menu-bar item didn't open the menu"; fi
+done
+grep -E "status item|tray menu|panel visible" "$LOG" | tail -6 || true
 pkill -f "Convertino.app/Contents/MacOS/convertino" || true
 sleep 1
 

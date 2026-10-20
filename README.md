@@ -100,7 +100,7 @@ sudo pacman -S ffmpeg poppler tesseract tesseract-data-eng libreoffice-fresh   #
    cd ~/Downloads/convertino && ./install.sh
    ```
 
-The installer copies `Convertino.app` to `~/Applications`, adds the `convertino` command (`~/.local/bin`) and a **Quick Actions → Convertino** entry to Finder's right-click menu, and starts Convertino in the menu bar; it opens at login (toggle it in the panel). Click the menu-bar icon and choose **Open panel**, the first item, for the panel: activity, theme, options, recent files. `./install.sh --uninstall` removes it again. Optional helpers:
+The installer copies `Convertino.app` to `~/Applications`, adds the `convertino` command (`~/.local/bin`) and a **Quick Actions → Convertino** entry to Finder's right-click menu, and starts Convertino in the menu bar; it opens at login (toggle it in the panel). Click the menu-bar icon for the panel: activity, theme, options, recent files; right-click (or Control-click) it for the menu. `./install.sh --uninstall` removes it again. Optional helpers:
 
 ```bash
 brew install ffmpeg                  # video & audio petals
@@ -109,7 +109,7 @@ brew install --cask libreoffice      # Word / Excel / PowerPoint petals
 
 PDF rendering and OCR use what's built into macOS (CoreGraphics, the Vision framework), so they need nothing extra.
 
-**Permissions.** Convertino watches the mouse buttons and <kbd>Shift</kbd> by polling their state (no keyboard tap). In CI that works without any permission (macOS 26), and no Accessibility or Screen Recording access is needed either: the frosted glass is the system's own blur. If the flower doesn't open on your Mac, macOS may be holding back the Shift key: click the first-start card (or *Input Monitoring…* in the menu-bar menu), switch Convertino on in *System Settings → Privacy & Security → Input Monitoring*, then quit and reopen Convertino.
+**Permissions.** Convertino watches the mouse buttons and <kbd>Shift</kbd> by polling their state (no keyboard tap). In CI that works without any permission (macOS 26), and no Accessibility or Screen Recording access is needed either: the frosted glass is the system's own blur. If the flower doesn't open on your Mac, macOS may be holding back the Shift key: click the first-start card (or *Input Monitoring…* in the menu you get by right-clicking the menu-bar icon), switch Convertino on in *System Settings → Privacy & Security → Input Monitoring*, then quit and reopen Convertino.
 
 **Gatekeeper.** Convertino isn't signed with an Apple Developer ID or notarized. `install.sh` clears the download quarantine for the copy it installs, so it opens normally. If you move `Convertino.app` somewhere yourself instead, macOS says it *can't verify* the app: click *Done*, open *System Settings → Privacy & Security*, scroll down to *"Convertino" was blocked…* and click **Open Anyway** (once). Or, in Terminal: `xattr -dr com.apple.quarantine /path/to/Convertino.app`.
 
