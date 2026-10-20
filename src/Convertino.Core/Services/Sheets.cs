@@ -15,7 +15,7 @@ public static partial class Sheets
     /// One sheet as rows of cells. Cells are strings when read from CSV (<see cref="Typed"/> false: numbers are
     /// recognised on the way out), and string, double, bool or DateTime from XLSX, or <see cref="Num"/> from JSON.
     /// </summary>
-    public sealed record Grid(string Name, List<object?[]> Rows, bool Typed);
+    public sealed record Grid(string Name, List<object?[]> Rows, bool Typed, bool DecimalComma = false);
 
     /// <summary>A JSON number kept as its source text, so 1.50 or a 20-digit id isn't rounded on the way through.</summary>
     public readonly record struct Num(string Raw);
@@ -69,7 +69,14 @@ public static partial class Sheets
     static Grid ReadCsv(string path)
     {
         var text = ReadText(path);
-        return new Grid(Path.GetFileNameWithoutExtension(path), ParseCsv(text, Delimiter(text)), Typed: false);
+        char sep = Delimiter(text);
+        var rows = ParseCsv(text, sep);
+        // undo the ' that WriteCsv puts before text Excel would run as a formula
+        foreach (var r in rows)
+            for (int c = 0; c < r.Length; c++)
+                if (r[c] is string { Length: >= 2 } s && s[0] == '\'' && Formulaic(s[1])) r[c] = s[1..];
+        // a semicolon CSV comes from Excel in a locale with decimal commas (de, fr, ru, az …): 1,5 is a number there
+        return new Grid(Path.GetFileNameWithoutExtension(path), TrimEdges(rows), Typed: false, DecimalComma: sep == ';');
     }
 
     /// <summary>UTF-8 (or UTF-16 with a BOM); a file that isn't valid UTF-8 is read in the system's ANSI code page, like Excel's legacy "CSV (comma delimited)".</summary>
@@ -151,6 +158,9 @@ public static partial class Sheets
             {
                 if (c > 0) sb.Append(',');
                 var s = Text(row[c]);
+                // text that Excel would run as a formula (=SUM(…), +, -, @, a tab or CR first) gets a leading ' ;
+                // numbers (-5) stay as they are
+                if (row[c] is string && s.Length > 0 && Formulaic(s[0]) && !Numeric().IsMatch(s)) s = "'" + s;
                 if (s.AsSpan().IndexOfAny("\",\r\n") >= 0 || s.Length > 0 && (s[0] == ' ' || s[^1] == ' '))
                     sb.Append('"').Append(s.Replace("\"", "\"\"")).Append('"');
                 else sb.Append(s);
@@ -159,6 +169,8 @@ public static partial class Sheets
         }
         File.WriteAllText(dst, sb.ToString(), new UTF8Encoding(true));
     }
+
+    static bool Formulaic(char c) => c is '=' or '+' or '-' or '@' or '\t' or '\r';
 
     /// <summary>A cell as CSV text: numbers as Excel shows them (15 significant digits), dates as ISO 8601, booleans as true / false.</summary>
     public static string Text(object? v) => v switch
@@ -169,6 +181,7 @@ public static partial class Sheets
         bool b => b ? "true" : "false",
         double d => Number(d),
         DateTime t => Stamp(t, ' '),
+        TimeSpan t => Clock(t),
         IFormattable f => f.ToString(null, Inv),
         _ => v.ToString() ?? "",
     };
@@ -176,9 +189,21 @@ public static partial class Sheets
     static string Number(double d) =>
         d == Math.Floor(d) && Math.Abs(d) < 1e15 ? ((long)d).ToString(Inv) : d.ToString("G15", Inv);
 
-    static string Stamp(DateTime t, char sep) =>
-        t.TimeOfDay == TimeSpan.Zero ? t.ToString("yyyy-MM-dd", Inv)
-        : t.ToString(t.Millisecond == 0 ? $"yyyy-MM-dd'{sep}'HH:mm:ss" : $"yyyy-MM-dd'{sep}'HH:mm:ss.fff", Inv);
+    // Excel stores times as fractions of a day, so 14:30 can come back as 14:29:59.9999999: round to the millisecond
+    static string Stamp(DateTime t, char sep)
+    {
+        t = new DateTime((t.Ticks + TimeSpan.TicksPerMillisecond / 2) / TimeSpan.TicksPerMillisecond * TimeSpan.TicksPerMillisecond, t.Kind);
+        return t.TimeOfDay == TimeSpan.Zero ? t.ToString("yyyy-MM-dd", Inv)
+            : t.ToString(t.Millisecond == 0 ? $"yyyy-MM-dd'{sep}'HH:mm:ss" : $"yyyy-MM-dd'{sep}'HH:mm:ss.fff", Inv);
+    }
+
+    static string Clock(TimeSpan t)
+    {
+        t = TimeSpan.FromMilliseconds(Math.Round(t.TotalMilliseconds));
+        var a = t.Duration();
+        var s = $"{(t < TimeSpan.Zero ? "-" : "")}{(int)a.TotalHours:00}:{a.Minutes:00}:{a.Seconds:00}";
+        return a.Milliseconds == 0 ? s : s + $".{a.Milliseconds:000}";
+    }
 
     // ---------- Markdown / HTML tables ----------
 
@@ -297,7 +322,7 @@ public static partial class Sheets
         {
             var v = c < row.Length ? row[c] : null;
             if (Blank(v)) continue;
-            if (!(v is double or Num || v is string s && Numeric().IsMatch(s))) return false;
+            if (!(v is double or Num || v is string s && Numeric().IsMatch(Point(g, s)))) return false;
             any = true;
         }
         return any;
@@ -313,8 +338,7 @@ public static partial class Sheets
             var rows = new List<object?[]>();
             foreach (IDictionary<string, object?> r in MiniExcel.Query(path, useHeaderRow: false, sheetName: name))
                 rows.Add(r.Values.ToArray());
-            while (rows.Count > 0 && rows[^1].All(Blank)) rows.RemoveAt(rows.Count - 1);
-            grids.Add(new Grid(name, rows, Typed: true));
+            grids.Add(new Grid(name, TrimEdges(rows), Typed: true));
         }
         return grids;
     }
@@ -336,7 +360,7 @@ public static partial class Sheets
                 for (int c = 0; c < width; c++)
                 {
                     var v = c < g.Rows[r].Length ? g.Rows[r][c] : null;
-                    d[keys[c]] = r == 0 ? (v is string ? v : Cell(v, g.Typed)) : Cell(v, g.Typed);   // header text stays text
+                    d[keys[c]] = r == 0 ? (v is string ? v : Cell(v, g)) : Cell(v, g);   // header text stays text
                 }
                 rows.Add(d);
             }
@@ -371,14 +395,14 @@ public static partial class Sheets
     /// (42, 3.14, 49.90 — not 007, +1 or a 16-digit id), true / false a boolean; a yyyy-mm-dd date (from CSV or JSON) becomes
     /// a date; everything else stays text.
     /// </summary>
-    static object? Cell(object? v, bool typed)
+    static object? Cell(object? v, Grid g)
     {
         switch (v)
         {
-            case string s when !typed:
+            case string s when !g.Typed:
                 if (s.Length == 0) return null;
                 if (s is "true" or "false") return s == "true";
-                return AsNumber(s) ?? AsDate(s) ?? (object)s;
+                return AsNumber(Point(g, s)) ?? AsDate(s) ?? (object)s;
             case string s:
                 return AsDate(s) ?? (object)s;
             case Num n:
@@ -411,6 +435,21 @@ public static partial class Sheets
         }
         return unique;
     }
+
+    /// <summary>Drops blank rows and columns before the data (a table that starts at C3) and blank rows after it.</summary>
+    static List<object?[]> TrimEdges(List<object?[]> rows)
+    {
+        int top = rows.FindIndex(r => !r.All(Blank));
+        if (top < 0) return [];
+        rows = rows.GetRange(top, rows.FindLastIndex(r => !r.All(Blank)) - top + 1);
+        int left = rows.Where(r => !r.All(Blank)).Min(r => Array.FindIndex(r, v => !Blank(v)));
+        return left == 0 ? rows : rows.Select(r => r.Length > left ? r[left..] : []).ToList();
+    }
+
+    /// <summary>1,5 → 1.5 in a grid from a semicolon CSV; anything else as it is.</summary>
+    static string Point(Grid g, string s) => g.DecimalComma && DecimalComma().IsMatch(s) ? s.Replace(',', '.') : s;
+
+    [GeneratedRegex(@"^-?(0|[1-9][0-9]*),[0-9]+$")] private static partial Regex DecimalComma();
 
     static bool Blank(object? v) => v is null || v is string { Length: 0 };
 
@@ -511,22 +550,22 @@ public static partial class Sheets
         }
         // CSV text is typed per column: numbers or true / false only when every filled cell of the column is one,
         // so a zip-code column with 01234 and 10001 stays text throughout
-        var infer = cols.Select(c => g.Rows.Skip(1).All(r => At(r, c) is not string { Length: > 0 } s || Data.Infer(s).GetValueKind() != JsonValueKind.String)).ToList();
+        var infer = cols.Select(c => g.Rows.Skip(1).All(r => At(r, c) is not string { Length: > 0 } s || Data.Infer(Point(g, s)).GetValueKind() != JsonValueKind.String)).ToList();
         foreach (var row in g.Rows.Skip(1))
         {
             if (row.All(Blank)) continue;
             var o = new JsonObject();
-            for (int i = 0; i < cols.Count; i++) o[names[i]] = TreeCell(At(row, cols[i]), g.Typed, infer[i]);
+            for (int i = 0; i < cols.Count; i++) o[names[i]] = TreeCell(At(row, cols[i]), g, infer[i]);
             list.Add(o);
         }
         return list;
     }
 
-    static JsonNode? TreeCell(object? v, bool typed, bool infer) => v switch
+    static JsonNode? TreeCell(object? v, Grid g, bool infer) => v switch
     {
         null => null,
-        string { Length: 0 } when !typed => null,
-        string s when !typed => infer ? Data.Infer(s) : s,
+        string { Length: 0 } when !g.Typed => null,
+        string s when !g.Typed => infer ? Data.Infer(Point(g, s)) : s,
         string s => s,
         bool b => b,
         double d => Data.NumberNode(Number(d)),

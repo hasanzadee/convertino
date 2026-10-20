@@ -157,8 +157,8 @@ While dragging over a petal, the caption under the Explorer drag image says what
 | **PDF** | DOCX · JPG · TXT · PNG | Text (OCR) · Split · Rotate · Clean · Merge · Zip |
 | **Word / RTF / ODT** | PDF · DOCX · TXT · PNG pages · RTF · ODT · HTML | Zip · Path · SHA-256 |
 | **Excel / CSV / ODS** | PDF · XLSX · CSV · ODS · HTML · JSON · MD *(CSV ⇄ XLSX, JSON and the HTML / Markdown tables without an office suite)* | Zip · Path · SHA-256 |
-| **JSON / YAML / TOML / XML** | JSON · YAML · TOML · XML · CSV · XLSX *(+ JSONL for JSON)* | Pretty · Minify *(JSON, XML)* · Copy · Zip · Path · SHA-256 |
-| **CSS** | Pretty · Minify · Copy | Zip · Path · SHA-256 |
+| **JSON / YAML / TOML / XML** | JSON · YAML · TOML · XML · CSV · XLSX *(+ JSONL for JSON)* | Pretty · Minify *(JSON, XML)* · Copy · Zip · Path · SHA-256 · Base64 |
+| **CSS** | Pretty · Minify · Copy | Zip · Path · SHA-256 · Base64 |
 | **PowerPoint / ODP** | PDF · PNG slides · PPTX · ODP | Zip · Path · SHA-256 |
 | **Markdown** | HTML · PDF · DOCX · Copy | Zip · Path · SHA-256 |
 | **Text** | PDF · DOCX · Copy | Zip · Path · SHA-256 · Base64 |

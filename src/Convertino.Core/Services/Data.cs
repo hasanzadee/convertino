@@ -94,12 +94,15 @@ public static partial class Data
         return s;
     }
 
+    /// <summary>Nesting limit for every tree reader (JSON, YAML, XML): the walkers recurse, and a stack overflow can't be caught.</summary>
+    const int MaxDepth = 512;
+
     static InvalidDataException Bad(string format, long? line, long? column, string message) =>
         new(line is { } l ? $"Not valid {format} (line {l}, column {column ?? 1}): {message}" : $"Not valid {format}: {message}");
 
     // ---------- JSON ----------
 
-    static readonly JsonDocumentOptions JsonIn = new() { AllowTrailingCommas = true, CommentHandling = JsonCommentHandling.Skip, MaxDepth = 1024 };
+    static readonly JsonDocumentOptions JsonIn = new() { AllowTrailingCommas = true, CommentHandling = JsonCommentHandling.Skip, MaxDepth = MaxDepth };
 
     static JsonNode? ParseJson(string text)
     {
@@ -271,10 +274,23 @@ public static partial class Data
 
     const string YamlTag = "tag:yaml.org,2002:";
 
+    sealed class YamlBudget(int values) { public int Left = values; public readonly int Total = values; }
+
     static JsonNode? ParseYaml(string text)
     {
         var stream = new YamlStream();
-        try { stream.Load(new StringReader(text)); }
+        try
+        {
+            // YamlDotNet builds its node tree recursively: refuse deep nesting first, with its (iterative) event parser
+            var parser = new Parser(new StringReader(text));
+            for (int depth = 0; parser.MoveNext();)
+            {
+                if (parser.Current is YamlDotNet.Core.Events.MappingStart or YamlDotNet.Core.Events.SequenceStart && ++depth > MaxDepth)
+                    throw new InvalidDataException($"The YAML nests more than {MaxDepth} levels deep");
+                if (parser.Current is YamlDotNet.Core.Events.MappingEnd or YamlDotNet.Core.Events.SequenceEnd) depth--;
+            }
+            stream.Load(new StringReader(text));
+        }
         catch (YamlException ex)
         {
             var msg = (ex.InnerException as YamlException ?? ex).Message;
@@ -283,14 +299,18 @@ public static partial class Data
         }
         // YamlDotNet's scanner throws this on some broken input, e.g. an unclosed [ list
         catch (InvalidOperationException) { throw Bad("YAML", null, null, "check the brackets and the indentation"); }
+        // aliases repeat whole subtrees, so a few hundred bytes can stand for billions of values ("billion laughs"):
+        // allow what a file without aliases could hold, and at least 2 million values
+        var budget = new YamlBudget(Math.Max(2_000_000, text.Length / 2));
         // several documents (---) become a list
-        var docs = stream.Documents.Select(d => FromYaml(d.RootNode, 0)).ToArray();
+        var docs = stream.Documents.Select(d => FromYaml(d.RootNode, 0, budget)).ToArray();
         return docs.Length switch { 0 => null, 1 => docs[0], _ => new JsonArray(docs) };
     }
 
-    static JsonNode? FromYaml(YamlNode node, int depth)
+    static JsonNode? FromYaml(YamlNode node, int depth, YamlBudget budget)
     {
-        if (depth > 512) throw new InvalidDataException("The YAML nests too deeply (or an alias contains itself)");
+        if (depth > MaxDepth) throw new InvalidDataException("The YAML nests too deeply (or an alias contains itself)");
+        if (--budget.Left < 0) throw new InvalidDataException($"The YAML's aliases expand to more than {budget.Total:N0} values (an alias bomb?)");
         switch (node)
         {
             case YamlScalarNode s:
@@ -303,21 +323,21 @@ public static partial class Data
                 return v;   // quoted, block or custom-tagged (!Ref, !!binary …): text
             }
             case YamlSequenceNode q:
-                return new JsonArray(q.Children.Select(c => FromYaml(c, depth + 1)).ToArray());
+                return new JsonArray(q.Children.Select(c => FromYaml(c, depth + 1, budget)).ToArray());
             case YamlMappingNode m:
             {
                 var o = new JsonObject();
-                var stated = m.Children.Keys.Where(k => !IsMergeKey(k)).Select(KeyText).ToHashSet();
+                var stated = m.Children.Keys.Where(k => !IsMergeKey(k)).Select(k => KeyText(k, budget)).ToHashSet();
                 foreach (var (k, v) in m.Children)
                 {
                     if (!IsMergeKey(k))
                     {
-                        o[KeyText(k)] = FromYaml(v, depth + 1);
+                        o[KeyText(k, budget)] = FromYaml(v, depth + 1, budget);
                         continue;
                     }
                     // "<<: *defaults" — keys stated in this mapping win, then the earlier merged mapping
                     foreach (var source in v is YamlSequenceNode list ? list.Children : [v])
-                        if (FromYaml(source, depth + 1) is JsonObject merged)
+                        if (FromYaml(source, depth + 1, budget) is JsonObject merged)
                             foreach (var (mk, mv) in merged.ToList())
                                 if (!stated.Contains(mk) && !o.ContainsKey(mk))
                                 {
@@ -334,7 +354,7 @@ public static partial class Data
 
     static bool IsMergeKey(YamlNode k) => k is YamlScalarNode { Value: "<<", Style: ScalarStyle.Plain };
 
-    static string KeyText(YamlNode k) => k is YamlScalarNode s ? s.Value ?? "" : Json(FromYaml(k, 1), indent: false);
+    static string KeyText(YamlNode k, YamlBudget budget) => k is YamlScalarNode s ? s.Value ?? "" : Json(FromYaml(k, 1, budget), indent: false);
 
     [GeneratedRegex(@"^[-+]?[0-9]+$")] private static partial Regex YamlInt();
     [GeneratedRegex(@"^0o[0-7]+$")] private static partial Regex YamlOct();
@@ -438,9 +458,20 @@ public static partial class Data
             case JsonValueKind.True: sb.Append("true"); break;
             case JsonValueKind.False: sb.Append("false"); break;
             case JsonValueKind.Null: sb.Append("null"); break;
-            default: sb.Append(value.ToJsonString()); break;
+            default: sb.Append(YamlNumber(value.ToJsonString())); break;
         }
         sb.Append('\n');
+    }
+
+    /// <summary>1e5 → 1.0e+5: a YAML 1.1 reader (PyYAML) only sees a float when the mantissa has a dot and the exponent a sign.</summary>
+    static string YamlNumber(string raw)
+    {
+        int e = raw.IndexOfAny(['e', 'E']);
+        if (e < 0) return raw;
+        string mantissa = raw[..e], exponent = raw[(e + 1)..];
+        if (!mantissa.Contains('.')) mantissa += ".0";
+        if (exponent[0] is not ('+' or '-')) exponent = "+" + exponent;
+        return mantissa + "e" + exponent;
     }
 
     // text that a YAML 1.1 reader (PyYAML, js-yaml, Psych) would take for something else: bool words, 1_000, 1:20, dates …
@@ -559,7 +590,8 @@ public static partial class Data
     {
         // TOML is always a table at the top: a list goes under "items", a single value under "value"
         var root = tree as JsonObject ?? new JsonObject { [tree is JsonArray ? "items" : "value"] = tree?.DeepClone() };
-        return TomlSerializer.Serialize(TomlTableOf(root, inline: false));
+        try { return TomlSerializer.Serialize(TomlTableOf(root, inline: false)); }
+        catch (TomlException ex) when (ex.Message.Contains("depth")) { throw new InvalidDataException("TOML can't nest more than 64 levels deep"); }
     }
 
     static TomlTable TomlTableOf(JsonObject o, bool inline)
@@ -635,21 +667,21 @@ public static partial class Data
     //   <a/>                → null, <a></a> → ""     values are typed like CSV cells (numbers, true / false)
     //   prefixes            → "p:name", and xmlns declarations → "@xmlns" / "@xmlns:p", so namespaces survive the trip back
 
-    static XmlReaderSettings XmlIn(bool keepComments) => new()
+    static XmlReaderSettings XmlIn(bool keepComments, bool keepWhitespace) => new()
     {
         DtdProcessing = DtdProcessing.Parse,   // internal entities only: no resolver, and a cap against entity bombs
         XmlResolver = null,
         MaxCharactersFromEntities = 10_000_000,
-        IgnoreWhitespace = true,   // layout between elements; xml:space="preserve" content is kept
+        IgnoreWhitespace = !keepWhitespace,   // layout between elements; xml:space="preserve" content is kept either way
         IgnoreComments = !keepComments,
         IgnoreProcessingInstructions = !keepComments,
     };
 
-    static XDocument LoadXml(string path, bool keepComments)
+    static XDocument LoadXml(string path, bool keepComments, bool keepWhitespace = false)
     {
         try
         {
-            using var reader = XmlReader.Create(path, XmlIn(keepComments));
+            using var reader = XmlReader.Create(path, XmlIn(keepComments, keepWhitespace));
             return XDocument.Load(reader);
         }
         catch (XmlException ex) { throw Bad("XML", ex.LineNumber, ex.LinePosition, FirstXmlSentence(ex.Message)); }
@@ -664,7 +696,7 @@ public static partial class Data
     static JsonNode? ParseXml(string path)
     {
         var root = LoadXml(path, keepComments: false).Root ?? throw new InvalidDataException("The XML has no root element");
-        return new JsonObject { [XmlKey(root, root.Name)] = FromXml(root) };
+        return new JsonObject { [XmlKey(root, root.Name)] = FromXml(root, 0) };
     }
 
     static string XmlKey(XElement scope, XName name)
@@ -675,8 +707,9 @@ public static partial class Data
         return string.IsNullOrEmpty(prefix) ? local : prefix + ":" + local;
     }
 
-    static JsonNode? FromXml(XElement e)
+    static JsonNode? FromXml(XElement e, int depth)
     {
+        if (depth > MaxDepth) throw new InvalidDataException($"The XML nests more than {MaxDepth} levels deep");
         var text = string.Concat(e.Nodes().OfType<XText>().Select(t => t.Value));
         if (!e.HasAttributes && !e.HasElements) return e.IsEmpty ? null : Infer(text);
         var o = new JsonObject();
@@ -686,7 +719,7 @@ public static partial class Data
             else o["@" + XmlKey(e, a.Name)] = Infer(a.Value);
         }
         foreach (var group in e.Elements().GroupBy(c => XmlKey(c, c.Name)))   // groups come in order of first appearance
-            o[group.Key] = group.Count() == 1 ? FromXml(group.First()) : new JsonArray(group.Select(FromXml).ToArray());
+            o[group.Key] = group.Count() == 1 ? FromXml(group.First(), depth + 1) : new JsonArray(group.Select(c => FromXml(c, depth + 1)).ToArray());
         if (!string.IsNullOrWhiteSpace(text)) o["#text"] = Infer(e.HasElements ? text.Trim() : text);
         return o;
     }
@@ -815,7 +848,7 @@ public static partial class Data
             var ext = Kinds.Ext(src);
             var bytes = await Task.Run(() => ext switch
             {
-                "xml" => SaveXml(LoadXml(src, keepComments: true), pretty),
+                "xml" => ReformatXml(src, pretty),
                 "css" => Utf8.GetBytes(ReformatCss(File.ReadAllText(src), pretty)),
                 _ => Utf8.GetBytes(ReformatJson(File.ReadAllBytes(src), pretty)),
             }, job.Token);
@@ -824,6 +857,46 @@ public static partial class Data
             job.Outputs.Add(dst);
         }
         job.Summary = Images.SizeSummary(job);
+    }
+
+    static byte[] ReformatXml(string path, bool pretty)
+    {
+        var doc = LoadXml(path, keepComments: true, keepWhitespace: true);
+        int deepest = StripLayout(doc);
+        if (pretty && deepest > MaxDepth) throw new InvalidDataException($"The XML nests {deepest:N0} levels deep, too deep to indent (Minify still works)");
+        return SaveXml(doc, pretty);
+    }
+
+    /// <summary>
+    /// Drops layout whitespace (line breaks and indentation in elements that hold only child elements) and keeps everything
+    /// else: mixed content (&lt;b&gt;big&lt;/b&gt; &lt;i&gt;world&lt;/i&gt;) and xml:space="preserve", where an empty
+    /// text node also stops XmlWriter from indenting. Returns the deepest nesting level.
+    /// </summary>
+    static int StripLayout(XDocument doc)
+    {
+        foreach (var t in doc.Nodes().OfType<XText>().ToList()) t.Remove();
+        if (doc.Root == null) return 0;
+        int deepest = 0;
+        var stack = new Stack<(XElement El, bool Preserve, int Depth)>();
+        stack.Push((doc.Root, false, 1));
+        while (stack.Count > 0)
+        {
+            var (el, inherited, depth) = stack.Pop();
+            deepest = Math.Max(deepest, depth);
+            var space = (string?)el.Attribute(XNamespace.Xml + "space");
+            bool preserve = space == "preserve" || space != "default" && inherited;
+            if (el.HasElements)
+            {
+                var texts = el.Nodes().OfType<XText>().ToList();
+                // layout is whitespace with a line break; a lone space between elements (<i>x</i> <u>y</u>) is kept
+                bool layout = !preserve && texts.All(t => t is not XCData && string.IsNullOrWhiteSpace(t.Value) && t.Value.AsSpan().IndexOfAny('\n', '\r') >= 0);
+                if (layout) foreach (var t in texts) t.Remove();
+                // XmlWriter only notices mixed content at its first text and would indent before a leading child: say so up front
+                else if (el.FirstNode is not XText) el.AddFirst(new XText(""));
+            }
+            foreach (var child in el.Elements()) stack.Push((child, preserve, depth + 1));
+        }
+        return deepest;
     }
 
     /// <summary>Re-lays out JSON token by token: keys, duplicates, escapes and number text stay exactly as written; comments and trailing commas go.</summary>
@@ -905,7 +978,7 @@ public static partial class Data
         void NewLine()
         {
             TrimEnd();
-            if (sb.Length > 0) sb.Append('\n').Append(' ', depth * 2);
+            if (sb.Length > 0) sb.Append('\n').Append(' ', Math.Min(depth, 32) * 2);   // capped: "{{{{…" mustn't blow up the output
             fresh = true;
             space = false;
         }
@@ -965,7 +1038,7 @@ public static partial class Data
                 if (!pretty && !comment.StartsWith("/*!", StringComparison.Ordinal))
                 {
                     // dropping it must not glue two words into one token: a/**/b
-                    if (!space && sb.Length > 0 && Word(sb[^1]) && i < n && Word(css[i])) sb.Append("/**/");
+                    if (!space && sb.Length > 0 && Word(sb[^1]) && i < n && (Word(css[i]) || css[i] is '.' or '%')) sb.Append("/**/");   // also 0/**/.5em
                     continue;
                 }
                 if (pretty && fresh) { sb.Append(comment); NewLine(); }
@@ -1029,7 +1102,7 @@ public static partial class Data
                     if (pretty)
                     {
                         TrimEnd();
-                        sb.Append('\n').Append(' ', depth * 2).Append('}');
+                        sb.Append('\n').Append(' ', Math.Min(depth, 32) * 2).Append('}');
                         NewLine();
                         if (depth == 0) sb.Append('\n');   // a blank line between top-level rules
                     }

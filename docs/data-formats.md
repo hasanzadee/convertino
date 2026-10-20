@@ -4,12 +4,12 @@ Convertino converts **JSON**, **JSON Lines** (`.jsonl`, `.ndjson`), **YAML** (`.
 
 | Files | Convert ring | Tools ring |
 |---|---|---|
-| JSON | YAML · TOML · XML · CSV · XLSX · JSONL | Pretty · Minify · Copy · Zip · Path · SHA-256 |
-| JSON Lines | JSON · YAML · TOML · XML · CSV · XLSX | Copy · Zip · Path · SHA-256 |
-| YAML / TOML | the other tree formats · CSV · XLSX | Copy · Zip · Path · SHA-256 |
-| XML | JSON · YAML · TOML · CSV · XLSX | Pretty · Minify · Copy · Zip · Path · SHA-256 |
+| JSON | YAML · TOML · XML · CSV · XLSX · JSONL | Pretty · Minify · Copy · Zip · Path · SHA-256 · Base64 |
+| JSON Lines | JSON · YAML · TOML · XML · CSV · XLSX | Copy · Zip · Path · SHA-256 · Base64 |
+| YAML / TOML | the other tree formats · CSV · XLSX | Copy · Zip · Path · SHA-256 · Base64 |
+| XML | JSON · YAML · TOML · CSV · XLSX | Pretty · Minify · Copy · Zip · Path · SHA-256 · Base64 |
 | CSV / XLSX | XLSX or CSV · HTML table · JSON · Markdown table (plus PDF and ODS with an office suite) | Zip · Path · SHA-256 |
-| CSS | Pretty · Minify · Copy | Zip · Path · SHA-256 |
+| CSS | Pretty · Minify · Copy | Zip · Path · SHA-256 · Base64 |
 
 ```bash
 convertino convert config.yaml --to toml
@@ -26,6 +26,7 @@ Everything goes through one in-memory JSON tree, so any format converts to any o
 ## JSON and JSON Lines
 
 - Comments (`//`, `/* */`) and trailing commas are accepted when reading. A key that appears twice keeps its last value, like `JSON.parse`.
+- Trees nest at most 512 levels deep (JSON, YAML and XML alike). Deeper files are refused with a message rather than crashing the app.
 - A `.json` file that actually holds one value per line (NDJSON) is read as a list.
 - Output is indented with two spaces. Non-ASCII text, emoji included, is written as is, not as `\u` escapes.
 - Numbers keep the way they were written (`1.50` stays `1.50`, a 20-digit id isn't rounded).
@@ -37,9 +38,10 @@ Everything goes through one in-memory JSON tree, so any format converts to any o
 
 - YAML is read with the **YAML 1.2 core schema**: `yes`, `no`, `on` and `off` stay text, and `2024-05-17` stays text. `0x1F`, `0o17` and `.5` are numbers.
 - Anchors and aliases are expanded, and merge keys (`<<: *defaults`) are applied (keys stated in the mapping win).
+- Expansion is capped at 2 million values, or more for very large files: as many as a file of that size could hold without aliases. An "alias bomb", a few hundred bytes of aliases repeating aliases, is refused in about a second.
 - A file with several documents (`---`) becomes a list of documents.
 - Tags: `!!str`, `!!int` and so on are honoured. Custom tags (`!Ref`, `!!binary` …) keep the value as text.
-- When writing, text that a YAML 1.1 reader (PyYAML, js-yaml, Ruby) would take for something else is quoted: `"yes"`, `"NO"`, `"00123"`, `"1.10"`, `"2024-03-01"`, `"12:30"`. Multi-line text is written as a literal block (`|`, `|-` or `|+`). Lists under a key are indented.
+- When writing, text that a YAML 1.1 reader (PyYAML, js-yaml, Ruby) would take for something else is quoted: `"yes"`, `"NO"`, `"00123"`, `"1.10"`, `"2024-03-01"`, `"12:30"`. Numbers with an exponent get the form YAML 1.1 needs (`1e5` → `1.0e+5`). Multi-line text is written as a literal block (`|`, `|-` or `|+`). Lists under a key are indented.
 
 ## TOML
 
@@ -67,12 +69,16 @@ These rules follow the common "Badgerfish-lite" convention (as in Newtonsoft.Jso
 - Going to XML, a JSON object with a single key that isn't a list becomes the root element. Anything else is wrapped in `<root>`, and list items without a name become `<item>`. Names that XML can't hold (spaces, a leading digit) are escaped as `_x0020_` and unescaped when read back.
 - What XML can't express: the order of differently named siblings (they are grouped by name), a list with one item (it reads back as a single value), an empty list (it disappears), and comments and processing instructions (dropped when converting; **Pretty** and **Minify** keep them).
 - DOCTYPEs with internal entities are fine. External entities are never fetched, and entity expansion is capped, so "billion laughs" files are refused.
+- **Pretty** and **Minify** remove only layout: whitespace that contains a line break, inside elements that hold nothing but child elements.
+  - Text with words in it, a lone space between elements (`<b>big</b> <i>world</i>`), whitespace-only content (`<b>   </b>`) and anything under `xml:space="preserve"` stay as written.
+  - Such mixed-content elements are never indented.
+  - Pretty refuses documents nested more than 512 levels deep, since the indentation alone would run to hundreds of megabytes. Minify handles any depth.
 
 ## CSV and XLSX
 
-**Reading CSV.** The CSV can be UTF-8 (with or without a BOM) or UTF-16. A file that isn't valid UTF-8 is read in the system's ANSI code page, like Excel's legacy "CSV (comma delimited)". The separator (comma, semicolon, tab or pipe) is detected from the first record. Quoted fields may contain separators, `""` quotes and line breaks.
+**Reading CSV.** The CSV can be UTF-8 (with or without a BOM) or UTF-16. A file that isn't valid UTF-8 is read in the system's ANSI code page, like Excel's legacy "CSV (comma delimited)". The separator (comma, semicolon, tab or pipe) is detected from the first record. Quoted fields may contain separators, `""` quotes and line breaks. A semicolon CSV comes from Excel in a locale with decimal commas, so there `1,5` counts as the number 1.5. Blank rows and columns before the data are skipped (a table that starts at C3 still gets its header). This applies to XLSX too.
 
-**Writing CSV.** Output is RFC 4180: comma-separated, CRLF line endings, UTF-8 with a BOM so Excel opens it as UTF-8. Fields are quoted only when they need it.
+**Writing CSV.** Output is RFC 4180: comma-separated, CRLF line endings, UTF-8 with a BOM so Excel opens it as UTF-8. Fields are quoted only when they need it. Text that a spreadsheet would run as a formula gets a leading `'`, so it opens as text (CSV injection). That means text starting with `=`, `+`, `-`, `@`, a tab or a carriage return, as in `=HYPERLINK(…)` or `+994…`. Numbers such as `-5` are left alone. Convertino's own CSV reader removes that `'` again.
 
 **XLSX** is read and written with MiniExcel, without an office suite.
 
@@ -86,7 +92,7 @@ These rules follow the common "Badgerfish-lite" convention (as in Newtonsoft.Jso
   - Plain numbers become numbers when Excel can hold them exactly (at most 15 significant digits). `007`, `+1` and 16-digit ids stay text. XLSX keeps the number, not its spelling: `49.90` comes back as `49.9`.
   - `true` and `false` become booleans, and `yyyy-mm-dd` becomes a date. Everything else stays text, formulas too (`=1+2` is stored as text and never evaluated).
 - **Typing CSV text for JSON.** Text is typed per column: a column becomes numbers (or booleans) only when every filled cell in it is one. A zip-code column holding `01234` and `10001` therefore stays text throughout. Empty cells become `null`.
-- **XLSX cell values out.** Numbers are written as Excel shows them (15 significant digits). Dates become ISO 8601 (`2024-02-01`, or `2024-02-03 14:30:00` in CSV and `2024-02-03T14:30:00` in JSON). Booleans become `true` / `false`. Formula cells give their last calculated value.
+- **XLSX cell values out.** Numbers are written as Excel shows them (15 significant digits). Dates become ISO 8601 (`2024-02-01`, or `2024-02-03 14:30:00` in CSV and `2024-02-03T14:30:00` in JSON), and time-only cells become `14:30:00`, rounded to the millisecond (Excel stores times as fractions of a day). Booleans become `true` / `false`. Formula cells give their last calculated value.
 - **JSON → CSV / XLSX.**
   - The JSON should be a list of objects, but wrappers such as `{"data": {"users": […]}}` are looked through.
   - An object that holds lists of objects next to other fields gives one table per such list, without the other fields. Examples: an API response `{"total": 2, "results": […]}`, or an XML root with attributes and repeated children.
@@ -116,6 +122,6 @@ Both tools change **only whitespace and comments**. Selectors, values, strings, 
 - **Minify** removes comments, but keeps `/*! … */` licence comments. It also removes the whitespace around `{ } ; , )` and after `:` and `(`.
   - It never removes whitespace before `:`: `a :hover` (any hovered element inside `a`) is not `a:hover`. The one exception is a declaration's own colon (`margin : 0` → `margin:0`).
   - It never removes whitespace before `(` (`and (min-width…)`), or around `+ - > ~` (`calc(1px + 2px)` needs it).
-  - When removing a comment would glue two words into one token, as in `a/**/b`, it leaves `/**/`.
+  - When removing a comment would glue two tokens together, it leaves `/**/`: `a/**/b`, or a number followed by `.`, `%` or a digit as in `0/**/.5em`.
 - **Pretty** puts each declaration on its own line, indents nested blocks (`@media`, `@supports`, CSS nesting), separates top-level rules with a blank line, and adds a space after `prop:` and after commas. Comments stay where they were.
 
