@@ -27,6 +27,8 @@ public sealed class App : Application
 
     public override void Initialize()
     {
+        // Avalonia renames the process through LaunchServices; without a name Activity Monitor shows "Avalonia"
+        Name = "Convertino";
         Styles.Add(new FluentTheme());
         RequestedThemeVariant = ThemeVariant.Dark;
     }
