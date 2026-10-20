@@ -12,7 +12,10 @@
   <ItemGroup>
     <PackageReference Include="Magick.NET-Q8-x64" Version="15.0.0" />
     <PackageReference Include="Markdig" Version="1.4.1" />
+    <PackageReference Include="MiniExcel" Version="1.46.0" />
     <PackageReference Include="PdfPig" Version="0.1.16" />
+    <PackageReference Include="Tomlyn" Version="2.10.1" />
+    <PackageReference Include="YamlDotNet" Version="18.1.0" />
     <!-- API only; each app brings the native runtime (DirectML on Windows, CPU on Linux) -->
     <PackageReference Include="Microsoft.ML.OnnxRuntime.Managed" Version="1.24.4" />
     <!-- 6.2.x is the last MIT release; 6.5 moved to AGPL/commercial with a runtime license check -->

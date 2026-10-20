@@ -35,6 +35,7 @@ Converting a file usually means opening an app, finding *Export…*, picking a f
 | ✿ **Two rings** | **Convert** (formats) and **Tools** (editors & actions). Tap the key again mid-drag to flip between them. |
 | 🖼 **Images** | PNG · JPG · WEBP · AVIF · PDF · ICO · TIFF, from anything ImageMagick reads (HEIC, PSD, RAW, SVG…) |
 | 📄 **Documents** | PDF ⇄ DOCX, DOCX/XLSX/PPTX → PDF, slides → PNG, Markdown → HTML/PDF/DOCX (Microsoft Office or LibreOffice) |
+| 🧾 **Data** | JSON ⇄ YAML ⇄ TOML ⇄ XML, JSON / CSV ⇄ XLSX (every sheet), JSON Lines, Pretty / Minify for JSON and XML; no office suite needed ([rules](docs/data-formats.md)) |
 | 🎞 **Video & audio** | MP4 · WEBM · GIF · MOV · MKV · MP3 · WAV · FLAC · OGG · OPUS · M4A, plus compress, 720p, mute, grab frame, loudness, trim silence |
 | ✂️ **Editors** | **Crop**, **Add BG** (screenshot beautifier), **Annotate** (arrows, text, numbered steps, highlighter), **Redact** (pixelate / blur / black, *find text automatically*), **Adjust** (light, colour, sharpen, vignette, rotate, resize) |
 | 🤖 **Cut out** | AI background removal (BiRefNet-lite), fully offline, GPU-accelerated on Windows |
@@ -155,7 +156,8 @@ While dragging over a petal, the caption under the Explorer drag image says what
 | **Images + PDFs** | Merge into one PDF · Zip · Path | |
 | **PDF** | DOCX · JPG · TXT · PNG | Text (OCR) · Split · Rotate · Clean · Merge · Zip |
 | **Word / RTF / ODT** | PDF · DOCX · TXT · PNG pages · RTF · ODT · HTML | Zip · Path · SHA-256 |
-| **Excel / CSV / ODS** | PDF · XLSX · CSV · ODS · HTML | Zip · Path · SHA-256 |
+| **Excel / CSV / ODS** | PDF · XLSX · CSV · ODS · HTML · JSON *(CSV ⇄ XLSX and JSON without an office suite)* | Zip · Path · SHA-256 |
+| **JSON / YAML / TOML / XML** | JSON · YAML · TOML · XML · CSV · XLSX *(+ JSONL for JSON)* | Pretty · Minify *(JSON, XML)* · Copy · Zip · Path · SHA-256 |
 | **PowerPoint / ODP** | PDF · PNG slides · PPTX · ODP | Zip · Path · SHA-256 |
 | **Markdown** | HTML · PDF · DOCX · Copy | Zip · Path · SHA-256 |
 | **Text** | PDF · DOCX · Copy | Zip · Path · SHA-256 · Base64 |
@@ -171,6 +173,7 @@ Petals only appear when the engine behind them is available (e.g. office formats
 ```bash
 convertino convert IMG_0042.HEIC --to jpg        # → IMG_0042.jpg
 convertino convert slides.pptx --to pdf
+convertino convert config.yaml --to json        # JSON · YAML · TOML · XML · CSV · XLSX
 convertino run compress *.png                     # any petal id
 convertino run ocr scan.pdf                       # text → clipboard
 convertino actions report.pdf                     # what's possible for these files
@@ -188,6 +191,7 @@ On Windows the executable is `Convertino.exe` (in `%LOCALAPPDATA%\Programs\Conve
 | PDF render | Windows.Data.Pdf | poppler `pdftoppm` (or Ghostscript) | CoreGraphics (poppler / Ghostscript fallback) |
 | PDF text / merge / split | PdfPig · PDFsharp | PdfPig · PDFsharp | PdfPig · PDFsharp |
 | Office documents | Microsoft Office (COM), else LibreOffice | LibreOffice (headless) | LibreOffice (headless) |
+| Data (JSON, YAML, TOML, XML, CSV, XLSX) | System.Text.Json · YamlDotNet · Tomlyn · LINQ to XML · MiniExcel | same | same |
 | OCR | Windows OCR (installed language packs), else Tesseract | Tesseract | Vision framework, else Tesseract |
 | Video / audio | ffmpeg | ffmpeg | ffmpeg (Homebrew) |
 | Cut out | ONNX Runtime + DirectML (GPU), CPU fallback | ONNX Runtime (CPU) | ONNX Runtime (CPU, Apple silicon) |

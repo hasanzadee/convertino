@@ -35,7 +35,10 @@
     <PackageReference Include="Avalonia.Fonts.Inter" Version="12.1.4" />
     <!-- same as Convertino.Core.csproj -->
     <PackageReference Include="Markdig" Version="1.4.1" />
+    <PackageReference Include="MiniExcel" Version="1.46.0" />
     <PackageReference Include="PdfPig" Version="0.1.16" />
+    <PackageReference Include="Tomlyn" Version="2.10.1" />
+    <PackageReference Include="YamlDotNet" Version="18.1.0" />
     <PackageReference Include="PDFsharp" Version="6.2.4" />
     <PackageReference Include="System.Security.Cryptography.Pkcs" Version="10.0.13" />
   </ItemGroup>

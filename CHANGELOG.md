@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Data files get their own rings: **JSON, JSON Lines, YAML, TOML and XML** convert into one another and to **CSV** and **XLSX**, and JSON and XML get **Pretty** and **Minify**. Round trips keep the data: YAML is read as YAML 1.2 (`yes` / `no` stay text) and written so YAML 1.1 readers agree, TOML dates stay dates, numbers keep their spelling, and XML attributes, repeated elements and namespaces map to `@name`, lists and `p:name`. The rules are in [docs/data-formats.md](docs/data-formats.md).
+- **CSV ⇄ XLSX** and **CSV / XLSX → JSON** now work without Microsoft Office or LibreOffice, on every platform. They keep UTF-8 (Excel reads a CSV without a BOM in the ANSI code page) and every sheet: one CSV per sheet, or `{"Sheet1": […], "Sheet2": […]}` in JSON. Office still handles PDF, ODS and HTML.
+
 ## 1.2.0 — 2026-10-20
 
 Thanks again to [@AliverdiSultanli](https://github.com/AliverdiSultanli) for the trigger keys, the update check and the macOS Quit fix, all tested on his Mac.

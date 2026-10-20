@@ -7,7 +7,7 @@ public readonly record struct RectD(double X, double Y, double Width, double Hei
     public bool IsEmpty => Width <= 0 || Height <= 0;
 }
 
-public enum Kind { Image, Pdf, Word, Excel, Slides, Text, Markdown, Video, Audio, Archive, Folder, Other }
+public enum Kind { Image, Pdf, Word, Excel, Slides, Text, Markdown, Video, Audio, Archive, Folder, Data, Other }
 
 /// <summary>One petal of the flower: a conversion ("PNG") or a tool ("Crop").</summary>
 public sealed class PetalAction
@@ -64,6 +64,7 @@ public static class Kinds
         [".pptx"] = Kind.Slides, [".ppt"] = Kind.Slides, [".odp"] = Kind.Slides, [".pps"] = Kind.Slides, [".ppsx"] = Kind.Slides,
         [".txt"] = Kind.Text, [".log"] = Kind.Text,
         [".md"] = Kind.Markdown, [".markdown"] = Kind.Markdown,
+        [".json"] = Kind.Data, [".jsonl"] = Kind.Data, [".ndjson"] = Kind.Data, [".yaml"] = Kind.Data, [".yml"] = Kind.Data, [".toml"] = Kind.Data, [".xml"] = Kind.Data,
         [".mp4"] = Kind.Video, [".mov"] = Kind.Video, [".mkv"] = Kind.Video, [".webm"] = Kind.Video, [".avi"] = Kind.Video,
         [".m4v"] = Kind.Video, [".wmv"] = Kind.Video, [".flv"] = Kind.Video, [".mpg"] = Kind.Video, [".mpeg"] = Kind.Video,
         [".ts"] = Kind.Video, [".3gp"] = Kind.Video, [".mts"] = Kind.Video,

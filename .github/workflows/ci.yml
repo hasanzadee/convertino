@@ -39,6 +39,11 @@ jobs:
           ./dist/linux-x64/convertino convert smoke.png --to webp
           ./dist/linux-x64/convertino run compress smoke.png
           test -f smoke.webp
+          printf '[{"id":1,"name":"Şəki, \\"AZ\\"","tags":["a","b"]},{"id":2,"name":"Bakı"}]' > data.json
+          ./dist/linux-x64/convertino convert data.json --to yaml
+          ./dist/linux-x64/convertino convert data.yaml --to xlsx
+          ./dist/linux-x64/convertino convert data.xlsx --to csv
+          grep -q 'Şəki, ""AZ""' data.csv
 
   macos:
     strategy:
