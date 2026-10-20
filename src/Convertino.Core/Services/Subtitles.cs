@@ -56,7 +56,7 @@ public static class Subtitles
         {
             int idx = i;
             var src = job.Inputs[i];
-            var (tracks, startTime) = Tracks(src);
+            var (tracks, startTime) = await Tracks(src, job.Token);
             var track = tracks?.FirstOrDefault(t => !Pictures.ContainsKey(t.Codec));
             if (tracks != null && track == null)
             {
@@ -112,8 +112,8 @@ public static class Subtitles
 
     sealed record Track(int Index, string Codec, string? Language, string? Title);
 
-    /// <summary>The video's subtitle streams (null when ffprobe isn't there to ask) and the file's start time in seconds.</summary>
-    static (List<Track>? Tracks, double Start) Tracks(string path)
+    /// <summary>The video's subtitle streams (null when ffprobe isn't there to ask, or takes over 15 s) and the file's start time in seconds.</summary>
+    static async Task<(List<Track>? Tracks, double Start)> Tracks(string path, CancellationToken ct)
     {
         if (Media.FFprobe is not { } probe) return (null, 0);
         try
@@ -126,10 +126,21 @@ public static class Subtitles
             foreach (var a in new[] { "-v", "error", "-select_streams", "s", "-show_entries", "stream=index,codec_name:stream_tags=language,title:format=start_time", "-of", "json", path })
                 psi.ArgumentList.Add(a);
             using var p = Process.Start(psi)!;
-            _ = p.StandardError.ReadToEndAsync();
-            var json = p.StandardOutput.ReadToEnd();
-            p.WaitForExit(15000);
-            using var doc = JsonDocument.Parse(json);
+            var output = p.StandardOutput.ReadToEndAsync(CancellationToken.None);
+            _ = p.StandardError.ReadToEndAsync(CancellationToken.None);
+            using (var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct))
+            {
+                timeout.CancelAfter(15000);
+                try { await p.WaitForExitAsync(timeout.Token); }
+                catch (OperationCanceledException)
+                {
+                    try { p.Kill(true); } catch { }
+                    ct.ThrowIfCancellationRequested();
+                    Log.Info($"ffprobe gave no answer in 15 s: {path}");
+                    return (null, 0);
+                }
+            }
+            using var doc = JsonDocument.Parse(await output);
             var list = new List<Track>();
             if (doc.RootElement.TryGetProperty("streams", out var streams))
                 foreach (var s in streams.EnumerateArray())
@@ -142,6 +153,7 @@ public static class Subtitles
                 double.TryParse(st.GetString(), NumberStyles.Float, CultureInfo.InvariantCulture, out start);
             return (list, start);
         }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
         catch (Exception ex)
         {
             Log.Error("ffprobe subtitle tracks", ex);
@@ -191,8 +203,10 @@ public static class Subtitles
             var m = Timing.Match(line);
             if (m.Success)
             {
-                // in SubRip the line above a timing line is the next cue's number
-                if (!vtt && body is { Count: > 0 } && body[^1].Trim().All(char.IsAsciiDigit)) body.RemoveAt(body.Count - 1);
+                // in SubRip the line above a timing line is the next cue's number, after a blank line; without the blank
+                // line it is text ("1984") of a file that numbers no cues
+                if (!vtt && body is [.., var before, var last] && before.Trim().Length == 0 && last.Trim() is { Length: > 0 } num && num.All(char.IsAsciiDigit))
+                    body.RemoveAt(body.Count - 1);
                 Flush();
                 start = ParseTime(m.Groups[1].Value);
                 end = ParseTime(m.Groups[2].Value);
@@ -201,8 +215,9 @@ public static class Subtitles
             }
             else if (body != null)
             {
-                // a WebVTT cue ends at its first blank line (NOTE / STYLE blocks follow one); SubRip players read on to the next number
-                if (line.Trim().Length == 0) { if (vtt) Flush(); }
+                // a WebVTT cue ends at its first blank line (NOTE / STYLE blocks follow one); SubRip players read on to the
+                // next number, and the blank lines (dropped later) tell a cue number from text
+                if (line.Trim().Length == 0 && vtt) Flush();
                 else body.Add(line);
             }
         }
@@ -318,6 +333,14 @@ public static class Subtitles
         for (int k = 0; k < s.Length; k++)
         {
             char c = s[k];
+            // \N, \n, \h; libass's \{ \} for literal braces; and "\⁠" (a word joiner after it), how WriteAss keeps a
+            // literal backslash from forming one of those
+            if (c == '\\' && k + 1 < s.Length && s[k + 1] is 'N' or 'n' or 'h' or '{' or '}' or '⁠')
+            {
+                char e = s[++k];
+                if (!drawing) sb.Append(e switch { 'N' => "\n", 'n' => wrap2 ? "\n" : " ", 'h' => " ", '⁠' => "\\", _ => e.ToString() });
+                continue;
+            }
             if (c == '{' && s.IndexOf('}', k + 1) is var close and > 0)
             {
                 // \t(…) animates other tags over time; what it switches on isn't the line's own state.
@@ -342,11 +365,6 @@ public static class Subtitles
                 continue;
             }
             if (drawing) continue;
-            if (c == '\\' && k + 1 < s.Length && s[k + 1] is 'N' or 'n' or 'h')
-            {
-                sb.Append(s[++k] switch { 'N' => '\n', 'n' => wrap2 ? '\n' : ' ', _ => '\u00A0' });
-                continue;
-            }
             sb.Append(c);
         }
         return (sb.ToString(), top);
@@ -407,9 +425,11 @@ public static class Subtitles
         for (int i = 0; i < marks.Count; i++)
         {
             if (marks[i].Text.Length == 0) continue;
-            // a positive offset shows the lyrics earlier
+            // a positive offset shows the lyrics earlier; lines sharing a timestamp all last until the next later one
             long start = Math.Max(0, marks[i].At - offset);
-            long end = i + 1 < marks.Count ? Math.Max(0, marks[i + 1].At - offset) : start + 5000;
+            int next = i + 1;
+            while (next < marks.Count && marks[next].At <= marks[i].At) next++;
+            long end = next < marks.Count ? Math.Max(0, marks[next].At - offset) : start + 5000;
             cues.Add(new Cue(start, Math.Max(start, end), marks[i].Text));
         }
         return cues;
@@ -441,30 +461,37 @@ public static class Subtitles
 
     // ── markup ──────────────────────────────────────────────────────────────
 
-    static readonly Regex AnyTag = new(@"<(/?)([a-zA-Z]+)\b[^>]*>|<\d[\d:.]*>", RegexOptions.Compiled);
+    // formatting is exactly <i> <b> <u> (WebVTT may add classes: <i.loud>); known tags that carry no text of their own
+    // are dropped (SRT's <font>, WebVTT's <c.yellow> <v Bob> <lang en>, ruby, karaoke times); anything else in angle
+    // brackets ("a<b and c>d", "<Narrator>") is text
+    static readonly Regex Tags = new(
+        @"<(?<close>/?)(?<fmt>[ibu])(?:\.[\w.-]+)?>" +
+        @"|</?(?<known>font|c|v|lang|ruby|rt|rb|s|span|br)(?=[\s./>])[^>]*>" +
+        @"|<(?:\d+:)+\d+\.\d+>",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase);
     static readonly Regex Basic = new(@"</?[ibu]>", RegexOptions.Compiled);
     static readonly Regex Empty = new(@"<([ibu])>(\s*)</\1>|</([ibu])><\3>", RegexOptions.Compiled);
     static readonly Regex OpenAtEol = new(@"((?:<[ibu]>)+)([ \t\u00A0]*\n)", RegexOptions.Compiled);
     static readonly Regex CloseAtBol = new(@"(\n[ \t\u00A0]*)((?:</[ibu]>)+)", RegexOptions.Compiled);
 
     /// <summary>
-    /// Our markup from anything tag-like: only &lt;i&gt; &lt;b&gt; &lt;u&gt; survive (lower-case, balanced, nested),
-    /// others (&lt;font&gt;, &lt;c.yellow&gt;, &lt;v Bob&gt;, &lt;00:01.000&gt;) go; lines are trimmed and blank ones dropped.
+    /// Our markup: &lt;i&gt; &lt;b&gt; &lt;u&gt; made lower-case, balanced and nested; known non-text tags
+    /// (&lt;font&gt;, &lt;c.yellow&gt;, &lt;v Bob&gt;, &lt;00:01.000&gt;) dropped, other angle brackets kept as text;
+    /// lines trimmed and blank ones dropped.
     /// </summary>
     static string Clean(string s)
     {
         var sb = new StringBuilder();
         var open = new List<char>();
         int last = 0;
-        foreach (Match m in AnyTag.Matches(s))
+        foreach (Match m in Tags.Matches(s))
         {
             sb.Append(s, last, m.Index - last);
             last = m.Index + m.Length;
-            var name = m.Groups[2].Value.ToLowerInvariant();
-            if (name == "br") sb.Append('\n');
-            if (name is not ("i" or "b" or "u")) continue;
-            char c = name[0];
-            bool closing = m.Groups[1].Length > 0;
+            if (m.Groups["known"].Value.Equals("br", StringComparison.OrdinalIgnoreCase)) sb.Append('\n');
+            if (!m.Groups["fmt"].Success) continue;
+            char c = char.ToLowerInvariant(m.Groups["fmt"].Value[0]);
+            bool closing = m.Groups["close"].Length > 0;
             if (!closing && !open.Contains(c)) { open.Add(c); sb.Append('<').Append(c).Append('>'); }
             else if (closing && open.LastIndexOf(c) is var k and >= 0)
             {
@@ -556,12 +583,17 @@ public static class Subtitles
         return string.Create(CultureInfo.InvariantCulture, $"{cs / 360_000}:{cs / 6000 % 60:00}:{cs / 100 % 60:00}.{cs % 100:00}");
     }
 
+    // a literal backslash before N, n, h or a brace would turn into a line break, a space or an escape: a word joiner
+    // (invisible) after it keeps it a backslash; braces themselves use libass's \{ \}
+    static readonly Regex AssBackslash = new(@"\\(?=[Nnh{}])", RegexOptions.Compiled);
+
     static string WriteAss(IReadOnlyList<Cue> cues)
     {
         var sb = new StringBuilder(AssHeader);
         foreach (var c in cues)
         {
-            var text = c.Text.Replace("<i>", @"{\i1}").Replace("</i>", @"{\i0}").Replace("<b>", @"{\b1}").Replace("</b>", @"{\b0}")
+            var text = AssBackslash.Replace(c.Text, "\\⁠").Replace("{", @"\{").Replace("}", @"\}")
+                .Replace("<i>", @"{\i1}").Replace("</i>", @"{\i0}").Replace("<b>", @"{\b1}").Replace("</b>", @"{\b0}")
                 .Replace("<u>", @"{\u1}").Replace("</u>", @"{\u0}").Replace("\n", @"\N");
             sb.Append("Dialogue: 0,").Append(AssTs(c.Start)).Append(',').Append(AssTs(c.End)).Append(",Default,,0,0,0,,")
               .Append(c.Top ? @"{\an8}" : "").Append(text).Append("\r\n");
