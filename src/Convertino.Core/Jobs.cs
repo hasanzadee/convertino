@@ -93,6 +93,7 @@ public static class Jobs
         if (e is UnauthorizedAccessException) return "No permission to write next to the file";
         if (e is IOException && msg.Contains("being used")) return "The file is open in another app";
         if (msg.Contains("NoDecodeDelegate") || msg.Contains("no decode delegate")) return "This image format isn't supported";
+        if (msg.Contains("CLIPBRD_E_CANT_OPEN")) return "The clipboard is locked (another app, or the screen is locked)";
         return msg.Length > 140 ? msg[..140] + "…" : msg;
     }
 

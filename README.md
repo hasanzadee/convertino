@@ -48,6 +48,7 @@ Converting a file usually means opening an app, finding *Export…*, picking a f
 | 📥 **Watch folders** | New files in a folder convert by themselves into its `Converted` subfolder (panel, or `convertino watch`) |
 | 🗃 **Archives** | Extract ZIP · 7Z · RAR · TAR · TAR.GZ / BZ2 / XZ · GZ · BZ2 · XZ into a new folder, refusing `../`, absolute paths and links that point outside it; pack folders as ZIP · 7Z · TAR.GZ |
 | 🧰 **File tools** | Split big files into 25 / 50 / 100 MB… parts and join the `.001` back; find duplicates (an HTML report, nothing is deleted); verify a `.sha256` / `SHA256SUMS` (*Matches ✓*); copy MD5 · SHA-1 · SHA-256 · SHA-512 |
+| 🧰 **Image tools** | One tap, no questions: **Messenger** (≤ 2560 px JPEG, GPS gone), **Square** (blurred fill), **Rounded** (corners + shadow), **Palette**, **Favicon** set, **Copy** the picture itself, **Read QR** / make a **QR** from a text or link file; for several images **Contact sheet**, **Slideshow** (GIF + WEBP) and **Compare** |
 | 📦 **Everything else** | Copy path, data URI |
 | 🎨 **Themes** | Catppuccin **Mocha** & **Latte**, **Sunset**, **Graphite** |
 | 📊 **Activity** | The tray / menu-bar panel charts your last two weeks: files handled, space saved, day streak, favourite actions |
@@ -91,6 +92,8 @@ sudo apt install ffmpeg poppler-utils tesseract-ocr libreoffice ghostscript   # 
 sudo dnf install ffmpeg poppler-utils tesseract libreoffice       # Fedora
 sudo pacman -S ffmpeg poppler tesseract tesseract-data-eng libreoffice-fresh   # Arch
 ```
+
+**Copy image** hands the picture to `wl-copy` on Wayland (package `wl-clipboard`) or `xclip` on X11; the card tells you which one is missing.
 
 <img src="docs/linux-tools.png" width="300" align="right" alt="The Tools ring on Linux (Avalonia build) over a file manager" />
 
@@ -221,6 +224,8 @@ On Windows the executable is `Convertino.exe` (in `%LOCALAPPDATA%\Programs\Conve
 | Office documents | Microsoft Office (COM), else LibreOffice | LibreOffice (headless) | LibreOffice (headless) |
 | Data (JSON, YAML, TOML, XML, CSV, XLSX) | System.Text.Json · YamlDotNet · Tomlyn · LINQ to XML · MiniExcel | same | same |
 | OCR | Windows OCR (installed language packs), else Tesseract | Tesseract | Vision framework, else Tesseract |
+| QR codes | ZXing.Net (read) · QRCoder (make) | ZXing.Net · QRCoder | ZXing.Net · QRCoder |
+| Picture on the clipboard | WPF clipboard (PNG + bitmap) | `wl-copy` (Wayland) or `xclip` (X11) | NSPasteboard (PNG + TIFF) |
 | Video / audio | ffmpeg | ffmpeg | ffmpeg (Homebrew) |
 | Subtitles | built in (ffmpeg for a video's track) | built in | built in |
 | Cut out | ONNX Runtime + DirectML (GPU), CPU fallback | ONNX Runtime (CPU) | ONNX Runtime (CPU, Apple silicon) |

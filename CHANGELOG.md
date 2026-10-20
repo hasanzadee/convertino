@@ -22,6 +22,17 @@
 - **Pretty** and **Minify** for **CSS**. They touch only whitespace and comments (licence `/*! */` comments stay), so `a :hover`, `calc(1px + 2px)`, strings and `url(…)` keep their meaning.
 - Data files get their own rings: **JSON, JSON Lines, YAML, TOML and XML** convert into one another and to **CSV** and **XLSX**, and JSON and XML get **Pretty** and **Minify**. Round trips keep the data: YAML is read as YAML 1.2 (`yes` / `no` stay text) and written so YAML 1.1 readers agree, TOML dates stay dates, numbers keep their spelling, and XML attributes, repeated elements and namespaces map to `@name`, lists and `p:name`. The rules are in [docs/data-formats.md](docs/data-formats.md).
 - **CSV ⇄ XLSX** and **CSV / XLSX → JSON** now work without Microsoft Office or LibreOffice, on every platform. They keep UTF-8 (Excel reads a CSV without a BOM in the ANSI code page) and every sheet: one CSV per sheet, or `{"Sheet1": […], "Sheet2": […]}` in JSON. Office still handles PDF, ODS and HTML.
+- **Image tools**, one tap each, no questions asked, results saved beside the source:
+  - **Messenger**: long side at most 2560 px, JPEG quality 85, turned upright from EXIF, colours baked into sRGB, every tag removed including the GPS location (the card says so).
+  - **Square**: a 1:1 canvas with the photo centred over a blurred, enlarged copy of itself.
+  - **Rounded**: rounded corners and a soft drop shadow on a transparent PNG, for screenshots in docs and READMEs. A window capture with a transparent margin is trimmed first, so the shadow follows the window.
+  - **Palette**: the 5–8 dominant colours as HEX on the clipboard, one per line, plus a swatch strip PNG. A flat logo gives just its own colours, not the blends along its edges.
+  - **Favicon**: a folder with `favicon.ico` (16/32/48), `apple-touch-icon.png` (180, on white since iOS paints transparency black), `icon-192.png`, `icon-512.png`, `site.webmanifest` and `snippet.html` with the `<link>` tags. SVG logos are rendered sharp at every size.
+  - **Copy** (image): puts the picture itself on the clipboard, not the file, so it pastes straight into chats and documents. Windows offers PNG (keeps transparency) plus a plain bitmap, macOS PNG plus TIFF; Linux hands it to `wl-copy` (Wayland) or `xclip` (X11).
+  - **Read QR**: copies the text of the QR code(s) in an image, also small, inverted (dark mode) or photographed ones; Data Matrix and Aztec codes too. **QR** on a `.txt`, `.url` or `.webloc` makes a QR code PNG of its text or link (UTF-8, so non-Latin text scans correctly).
+  - For several images: **Contact sheet** (one JPG grid of thumbnails with file names), **Slideshow** (a GIF and an animated WEBP, sorted by name, 1 s per frame, letterboxed to one size) and, for exactly two, **Compare** (the changes in red and boxed, and *N% of pixels differ* on the card).
+- 1-bit images (QR codes, line-art scans) reached the editors and tools bit-packed; they're read as normal 8-bit pixels now.
+- Windows: when the clipboard can't be opened (another app holds it, or the screen is locked) the card now says so instead of claiming the text was copied.
 
 ## 1.2.0 — 2026-10-20
 

@@ -146,6 +146,7 @@ public static class Catalog
                 more.Add(Tool("half", "Half", "half", "Half the size", Images.Half));
                 more.Add(Tool("fithd", "Full HD", "fithd", "Fit in 1920×1080", Images.FitFullHd));
                 more.Add(Tool("gray", "B&W", "gray", "Black & white", Images.Grayscale));
+                more.AddRange(ImageTools.Petals(files)); // Messenger, Square, Rounded, Palette, Favicon, Copy, QR; Compare/Contact/Slideshow for several
 
                 // AI background removal only when its model is installed (convertino model install)
                 var cutout = Cutout.Available ? Tool("cutout", "Cut out", "cutout", "Remove background", Cutout.Run) : null;
@@ -230,6 +231,7 @@ public static class Catalog
                 }
                 conv.Add(Tool("copytext", "Copy", "copy", "Copy contents", CopyText, quick: true));
                 tools.AddRange([ZipA, PathA, HashA, B64A]);
+                tools.AddRange(ImageTools.Petals(files)); // QR code of the text
                 break;
             case Kind.Markdown:
                 conv.Add(Fmt("html", "web page", Misc.MarkdownHtml));
@@ -319,6 +321,7 @@ public static class Catalog
             default:
                 conv.AddRange([ZipA, PathA, HashA, B64A]);
                 tools.AddRange(FileToolsFor(files));
+                tools.AddRange(ImageTools.Petals(files)); // QR code of a .url / .webloc link
                 if (!single) conv.InsertRange(1, [SevenZA, TarGzA]);
                 break;
         }

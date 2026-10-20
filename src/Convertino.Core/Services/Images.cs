@@ -58,6 +58,7 @@ public static class Images
     {
         using var copy = (MagickImage)img.Clone();
         copy.ColorSpace = ColorSpace.sRGB;
+        copy.Depth = 8;   // 1-bit PNGs (QR codes, scans) would otherwise come out bit-packed
         return (copy.ToByteArray(MagickFormat.Bgra), (int)copy.Width, (int)copy.Height);
     }
 

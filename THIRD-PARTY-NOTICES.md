@@ -12,6 +12,8 @@ Convertino is MIT-licensed. It builds on these projects (all used unmodified, vi
 | [YamlDotNet](https://github.com/aaubry/YamlDotNet) 18.1.0 | MIT | reading YAML |
 | [Tomlyn](https://github.com/xoofx/Tomlyn) 2.10.1 | BSD-2-Clause | reading and writing TOML |
 | [MiniExcel](https://github.com/mini-software/MiniExcel) 1.46.0 | Apache-2.0 | reading and writing XLSX without an office suite |
+| [ZXing.Net](https://github.com/micjahn/ZXing.Net) 0.16.11 | Apache-2.0 | reading QR / Data Matrix / Aztec codes |
+| [QRCoder](https://github.com/Shane32/QRCoder) 1.6.0 | MIT | making QR codes (PNG written by QRCoder itself, no System.Drawing) |
 | [ONNX Runtime](https://github.com/microsoft/onnxruntime) (+ DirectML) | MIT | running the cut-out model |
 | [BiRefNet](https://github.com/ZhengPeng7/BiRefNet) — `BiRefNet_lite` ONNX export by [onnx-community](https://huggingface.co/onnx-community/BiRefNet_lite-ONNX) | MIT | background removal model (downloaded on request, not redistributed) |
 | [Avalonia](https://github.com/AvaloniaUI/Avalonia) | MIT | Linux and macOS user interface |

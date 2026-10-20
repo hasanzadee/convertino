@@ -13,6 +13,9 @@ public static class Icons
         ["half"] = "", ["fithd"] = "", ["gray"] = "",
         ["picture"] = "",
         ["subtitles"] = "", ["encoding"] = "", ["eol"] = "",
+        // image tools
+        ["send"] = "", ["image"] = "", ["squareimg"] = "", ["rounded"] = "", ["palette"] = "",
+        ["globe"] = "", ["qr"] = "", ["grid"] = "", ["slideshow"] = "", ["compare"] = "",
     };
 
     public static string? Glyph(string? key) => key != null && Map.TryGetValue(key, out var g) ? g : null;
