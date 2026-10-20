@@ -234,6 +234,26 @@ public sealed class GlobalInput : IDisposable
         return CallNextHookEx(IntPtr.Zero, nCode, wParam, lParam);
     }
 
+    // ---- dev (Convertino.exe --paging-selftest): the same data Windows hands the hooks, without installing them ----
+
+    /// <summary>One key event through the keyboard hook callback; returns its result (≠ 0 = kept from other apps).</summary>
+    internal IntPtr DevKey(int vk, bool up)
+    {
+        var k = new KBDLLHOOKSTRUCT { vkCode = (uint)vk, time = (uint)Environment.TickCount };
+        var p = Marshal.AllocHGlobal(Marshal.SizeOf<KBDLLHOOKSTRUCT>());
+        try { Marshal.StructureToPtr(k, p, false); return KeyboardProc(0, up ? WM_KEYUP : WM_KEYDOWN, p); }
+        finally { Marshal.FreeHGlobal(p); }
+    }
+
+    /// <summary>One WM_MOUSEWHEEL notch through the mouse hook callback (delta in WHEEL_DELTA units, &gt; 0 = up).</summary>
+    internal IntPtr DevWheel(POINT at, int delta)
+    {
+        var m = new MSLLHOOKSTRUCT { pt = at, mouseData = (uint)(delta << 16), time = (uint)Environment.TickCount };
+        var p = Marshal.AllocHGlobal(Marshal.SizeOf<MSLLHOOKSTRUCT>());
+        try { Marshal.StructureToPtr(m, p, false); return MouseProc(0, WM_MOUSEWHEEL, p); }
+        finally { Marshal.FreeHGlobal(p); }
+    }
+
     public void Dispose()
     {
         if (_threadId != 0) PostThreadMessage(_threadId, WM_QUIT, IntPtr.Zero, IntPtr.Zero);

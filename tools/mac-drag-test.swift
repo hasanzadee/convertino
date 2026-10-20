@@ -79,15 +79,18 @@ DispatchQueue.global().async {
     drag(from: start, to: held, steps: 30)
     usleep(400_000)
     shift(down: true); usleep(120_000)
-    shift(down: false); usleep(900_000)
-    // Convertino logs "ring 2/3 (wheel)" etc. with CONVERTINO_DEBUG=1; nothing here depends on it
+    shift(down: false); usleep(500_000)
+    // move a little so the drag enters the flower and it blooms (a seed that sees no drag closes after 1.6 s)
+    let near = CGPoint(x: held.x, y: held.y - 30)
+    drag(from: held, to: near, steps: 6); usleep(500_000)
+    // Convertino logs "ring 2/4 Tools (wheel)" etc. with CONVERTINO_DEBUG=1; nothing here depends on it
     scroll(-3); usleep(500_000)          // next ring
     scroll(3); usleep(500_000)           // back to Convert
-    for _ in 0..<3 { tab(); usleep(400_000) } // an image has three rings: three Tabs come back round (Tab needs Input Monitoring)
+    for _ in 0..<4 { tab(); usleep(400_000) } // an image has four rings: four Tabs come back round (Tab needs Input Monitoring)
     print("paged with the wheel and Tab")
     // the first Convert petal sits straight above the centre, halfway across the ring (R1 64 … R2 170)
     let petal = CGPoint(x: held.x, y: held.y - 117)
-    drag(from: held, to: petal, steps: 20)
+    drag(from: near, to: petal, steps: 20)
     usleep(800_000)
     if let shot {
         let p = Process()
