@@ -71,8 +71,10 @@ public static class Catalog
 
         if (kinds.Count == 1) return ForKind(kinds[0], files, title, badge);
 
-        // a .sha256 / SHA256SUMS dropped together with what it covers
-        if (kinds.Contains(Kind.Checksum)) return new([VerifyA, ZipA, PathA], [], title, badge);
+        // one .sha256 / SHA256SUMS dropped together with the files it lists
+        var lists = files.Where(f => Kinds.Of(f) == Kind.Checksum).ToList();
+        if (lists.Count == 1 && FileTools.Covers(lists[0], files.Where(f => f != lists[0]).ToList()))
+            return new([VerifyA, ZipA, PathA], [], title, badge);
 
         // mixed: images + PDFs can still become one PDF
         if (kinds.All(k => k is Kind.Image or Kind.Pdf))

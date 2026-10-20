@@ -41,7 +41,7 @@ Converting a file usually means opening an app, finding *Export…*, picking a f
 | 🔤 **Text** | Copy text from images and scanned PDFs (Windows OCR / Apple Vision / Tesseract) |
 | 🧹 **Clean** | Strip EXIF & GPS — losslessly for JPEGs; strip PDF metadata |
 | 🗜 **Compress** | Smart image compression with the savings shown: `1.2 MB → 340 KB (−72%)` |
-| 🗃 **Archives** | Extract ZIP · 7Z · RAR · TAR · TAR.GZ / BZ2 / XZ · GZ · BZ2 · XZ into a new folder, refusing `../`, absolute paths and links that point outside it; pack folders as ZIP · 7Z · TAR.GZ |
+| 🗃 **Archives** | Extract ZIP · 7Z · RAR · TAR · TAR.GZ / BZ2 / XZ · GZ · BZ2 · XZ into a new folder, refusing `../` and absolute paths, skipping links and stopping decompression bombs; pack folders as ZIP · 7Z · TAR.GZ |
 | 🧰 **File tools** | Split big files into 25 / 50 / 100 MB… parts and join the `.001` back; find duplicates (an HTML report, nothing is deleted); verify a `.sha256` / `SHA256SUMS` (*Matches ✓*); copy MD5 · SHA-1 · SHA-256 · SHA-512 |
 | 📦 **Everything else** | Merge/split/rotate PDFs, copy path, data URI |
 | 🎨 **Themes** | Catppuccin **Mocha** & **Latte**, **Sunset**, **Graphite** |
