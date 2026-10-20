@@ -32,6 +32,9 @@ cp "$ROOT/packaging/linux/icons/convertino-256.png" smoke.png
 "$D" run compress smoke.png
 "$D" actions smoke.png
 
+step "archives and file tools"
+bash "$ROOT/tools/files-smoke.sh" "$D"
+
 step "PDF: PDFsharp writes, CoreGraphics renders"
 "$D" convert smoke.png --to pdf && test -s smoke.pdf
 "$D" convert smoke.pdf --to jpg && test -s smoke.jpg

@@ -39,6 +39,8 @@ jobs:
           ./dist/linux-x64/convertino convert smoke.png --to webp
           ./dist/linux-x64/convertino run compress smoke.png
           test -f smoke.webp
+      - name: Archives and file tools
+        run: bash tools/files-smoke.sh dist/linux-x64/convertino
 
   macos:
     strategy:

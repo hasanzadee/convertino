@@ -98,7 +98,7 @@ public static class Cli
         foreach (var f in job.Outputs) o.WriteLine(f);
         if (!string.IsNullOrEmpty(job.Title)) o.WriteLine(job.Title);
         if (!string.IsNullOrEmpty(job.Summary)) o.WriteLine(job.Summary);
-        return 0;
+        return job.Failed ? 1 : 0;
     }
 
     static List<string>? Files(IEnumerable<string> paths, TextWriter o)

@@ -47,17 +47,6 @@ public static class Misc
         job.Summary = $"{Paths.HumanSize(before)} → {Paths.HumanSize(after)}";
     }
 
-    public static async Task Extract(Job job)
-    {
-        foreach (var src in job.Inputs)
-        {
-            var dst = Paths.UniqueDir(Path.GetDirectoryName(src)!, Path.GetFileNameWithoutExtension(src));
-            await Task.Run(() => ZipFile.ExtractToDirectory(src, dst), job.Token);
-            job.Outputs.Add(dst);
-        }
-        job.Summary = "Extracted";
-    }
-
     public static Task CopyPath(Job job)
     {
         Platform.Current.SetClipboardText(string.Join(Environment.NewLine, job.Inputs));

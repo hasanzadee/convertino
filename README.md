@@ -41,7 +41,9 @@ Converting a file usually means opening an app, finding *Export…*, picking a f
 | 🔤 **Text** | Copy text from images and scanned PDFs (Windows OCR / Apple Vision / Tesseract) |
 | 🧹 **Clean** | Strip EXIF & GPS — losslessly for JPEGs; strip PDF metadata |
 | 🗜 **Compress** | Smart image compression with the savings shown: `1.2 MB → 340 KB (−72%)` |
-| 📦 **Everything else** | Zip/unzip, merge/split/rotate PDFs, copy path, SHA-256, data URI |
+| 🗃 **Archives** | Extract ZIP · 7Z · RAR · TAR · TAR.GZ / BZ2 / XZ · GZ · BZ2 · XZ into a new folder, refusing `../`, absolute paths and links that point outside it; pack folders as ZIP · 7Z · TAR.GZ |
+| 🧰 **File tools** | Split big files into 25 / 50 / 100 MB… parts and join the `.001` back; find duplicates (an HTML report, nothing is deleted); verify a `.sha256` / `SHA256SUMS` (*Matches ✓*); copy MD5 · SHA-1 · SHA-256 · SHA-512 |
+| 📦 **Everything else** | Merge/split/rotate PDFs, copy path, data URI |
 | 🎨 **Themes** | Catppuccin **Mocha** & **Latte**, **Sunset**, **Graphite** |
 | 📊 **Activity** | The tray / menu-bar panel charts your last two weeks: files handled, space saved, day streak, favourite actions |
 | ⌨️ **CLI** | `convertino convert IMG_0042.HEIC --to jpg` — the same engine without the UI |
@@ -161,8 +163,13 @@ While dragging over a petal, the caption under the Explorer drag image says what
 | **Text** | PDF · DOCX · Copy | Zip · Path · SHA-256 · Base64 |
 | **Video** | MP4 · WEBM · GIF · MP3 · MOV · MKV · WAV | Compress · 720p · Mute · Frame |
 | **Audio** | MP3 · M4A · WAV · FLAC · OGG · OPUS | Loudness · Trim silence · Zip · Path |
-| **ZIP** | Extract · Path · SHA-256 | |
-| **Folder / anything else** | Zip · Path · Copy / SHA-256 · Base64 | |
+| **Archive** (ZIP, 7Z, RAR, TAR, TAR.GZ…) | Extract · Path · SHA-256 | Split · MD5 · SHA-1 · SHA-512 |
+| **Split part** (`.001`) | Join · Path · SHA-256 | |
+| **Checksum** (`.sha256`, `.md5`, `SHA256SUMS`…) | Verify · Copy · Path | |
+| **File + its checksum** | Verify · Zip · Path | |
+| **Folder** | Zip · 7Z · TAR.GZ · Duplicates · Path · Copy | |
+| **Anything else** | Zip · Path · SHA-256 · Base64 | Split into 25 / 50 / 100 MB… *(files over 10 MB)* · MD5 · SHA-1 · SHA-512 |
+| **Several files** | the ring for their kind, plus Duplicates; mixed kinds: Zip · 7Z · TAR.GZ · Duplicates · Path · Copy | |
 
 Petals only appear when the engine behind them is available (e.g. office formats need Microsoft Office or LibreOffice).
 
@@ -173,6 +180,9 @@ convertino convert IMG_0042.HEIC --to jpg        # → IMG_0042.jpg
 convertino convert slides.pptx --to pdf
 convertino run compress *.png                     # any petal id
 convertino run ocr scan.pdf                       # text → clipboard
+convertino run extract backup.tar.xz              # → backup/
+convertino run split-100mb video.mkv              # → video.mkv.001, .002 …  (join: convertino run join video.mkv.001)
+convertino run verify ubuntu.iso SHA256SUMS       # Matches ✓ / Doesn't match ✗ (exit code 1)
 convertino actions report.pdf                     # what's possible for these files
 convertino menu photo.png notes.md                # open the flower for them (used by file-manager menus)
 convertino model install | status | remove        # the AI cut-out model
