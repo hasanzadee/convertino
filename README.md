@@ -36,7 +36,8 @@ Converting a file usually means opening an app, finding *Export…*, picking a f
 | 🖼 **Images** | PNG · JPG · WEBP · AVIF · PDF · ICO · TIFF, from anything ImageMagick reads (HEIC, PSD, RAW, SVG…) |
 | 📄 **Documents** | PDF ⇄ DOCX, DOCX/XLSX/PPTX → PDF, slides → PNG, Markdown → HTML/PDF/DOCX (Microsoft Office or LibreOffice) |
 | 🎞 **Video & audio** | MP4 · WEBM · GIF · MOV · MKV · MP3 · WAV · FLAC · OGG · OPUS · M4A, plus compress, 720p, mute, grab frame, loudness, trim silence |
-| 💬 **Subtitles** | SRT ⇄ VTT ⇄ ASS/SSA (and LRC) with exact timings and italics, legacy encodings → UTF-8, a video's subtitle track → SRT |
+| 💬 **Subtitles** | SRT ⇄ VTT ⇄ ASS/SSA (and LRC) with exact timings and italics, a video's subtitle track → SRT |
+| 🔡 **Encodings** | Any text file (TXT, MD, CSV, JSON, SRT…) → UTF-8 from Windows-1251/1252/1254, KOI8-R, DOS 866 or UTF-16; LF ⇄ CRLF |
 | ✂️ **Editors** | **Crop**, **Add BG** (screenshot beautifier), **Annotate** (arrows, text, numbered steps, highlighter), **Redact** (pixelate / blur / black, *find text automatically*), **Adjust** (light, colour, sharpen, vignette, rotate, resize) |
 | 🤖 **Cut out** | AI background removal (BiRefNet-lite), fully offline, GPU-accelerated on Windows |
 | 🔤 **Text** | Copy text from images and scanned PDFs (Windows OCR / Apple Vision / Tesseract) |
@@ -158,15 +159,16 @@ While dragging over a petal, the caption under the Explorer drag image says what
 | **Word / RTF / ODT** | PDF · DOCX · TXT · PNG pages · RTF · ODT · HTML | Zip · Path · SHA-256 |
 | **Excel / CSV / ODS** | PDF · XLSX · CSV · ODS · HTML | Zip · Path · SHA-256 |
 | **PowerPoint / ODP** | PDF · PNG slides · PPTX · ODP | Zip · Path · SHA-256 |
-| **Markdown** | HTML · PDF · DOCX · Copy | Zip · Path · SHA-256 |
-| **Text** | PDF · DOCX · Copy | Zip · Path · SHA-256 · Base64 |
+| **Markdown** | HTML · PDF · DOCX · Copy | UTF-8 · LF/CRLF · Zip · Path · SHA-256 |
+| **Text** | PDF · DOCX · Copy | UTF-8 · LF/CRLF · Zip · Path · SHA-256 · Base64 |
 | **Video** | MP4 · WEBM · GIF · MP3 · MOV · MKV · WAV | Compress · 720p · Mute · Frame · Subtitles |
 | **Audio** | MP3 · M4A · WAV · FLAC · OGG · OPUS | Loudness · Trim silence · Zip · Path |
-| **Subtitles** (SRT / VTT / ASS / SSA / LRC) | SRT · VTT · ASS · TXT | UTF-8 · Zip · Path · SHA-256 |
+| **Subtitles** (SRT / VTT / ASS / SSA / LRC) | SRT · VTT · ASS · TXT | UTF-8 · LF/CRLF · Zip · Path · SHA-256 |
 | **ZIP** | Extract · Path · SHA-256 | |
 | **Folder / anything else** | Zip · Path · Copy / SHA-256 · Base64 | |
 
 Petals only appear when the engine behind them is available (e.g. office formats need Microsoft Office or LibreOffice).
+Plain-text files of any kind (TXT, Markdown, CSV/TSV, JSON, YAML, XML, INI, HTML, scripts, subtitles…) also get **UTF-8** and **LF** or **CRLF** (whichever the file doesn't use) at the front of their tools; files with NUL bytes are treated as binary and never get them.
 
 ## Command line
 
@@ -176,7 +178,8 @@ convertino convert slides.pptx --to pdf
 convertino run compress *.png                     # any petal id
 convertino run ocr scan.pdf                       # text → clipboard
 convertino convert movie.srt --to vtt             # also ass, srt, txt
-convertino run utf8 old-cyrillic.srt              # → old-cyrillic (UTF-8).srt
+convertino run utf8 old-cyrillic.txt              # → old-cyrillic (UTF-8).txt (any text file)
+convertino run lf deploy.sh                       # → deploy (LF).sh; crlf the other way
 convertino run subtitles movie.mkv                # first subtitle track → movie.eng.srt
 convertino actions report.pdf                     # what's possible for these files
 convertino menu photo.png notes.md                # open the flower for them (used by file-manager menus)

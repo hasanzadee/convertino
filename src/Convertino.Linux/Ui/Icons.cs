@@ -32,6 +32,7 @@ public static class Icons
         ["cutout"] = "M12 3a4 4 0 1 0 0 8a4 4 0 1 0 0-8z M4 21v-1a8 8 0 0 1 16 0v1 M2 2l3 3 M22 2l-3 3",
         ["subtitles"] = "M5 5h14a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2z M7 15h4 M15 15h2 M7 11h2 M13 11h4",
         ["encoding"] = "M5 8l6 6 M4 14l6-6 2-3 M2 5h12 M7 2h1 M22 22l-5-10-5 10 M14 18h6",
+        ["eol"] = "M20 4v7a4 4 0 0 1-4 4H4 M9 10l-5 5 5 5",
         ["check"] = "M20 6L9 17l-5-5",
         ["update"] = "M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4 M7 10l5 5 5-5 M12 15V3",
         ["x"] = "M18 6L6 18 M6 6l12 12",

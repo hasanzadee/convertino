@@ -206,7 +206,6 @@ public static class Catalog
                 bool same = files.All(f => Kinds.Ext(f) == ext);
                 foreach (var (e, h) in new[] { ("srt", "universal"), ("vtt", "web"), ("ass", "advanced"), ("txt", "text only") })
                     if (!same || (e != ext && !(e == "ass" && ext == "ssa"))) conv.Add(Fmt(e, h, j => Subtitles.Convert(j, e)));
-                tools.Add(Tool("utf8", "UTF-8", "encoding", "Re-encode as UTF-8", Subtitles.ToUtf8));
                 tools.AddRange([ZipA, PathA, HashA]);
                 break;
             }
@@ -222,6 +221,14 @@ public static class Catalog
                 if (ring.Count >= 8) ring.Insert(Math.Min(ring.Count - 1, 7), extra); else ring.Add(extra);
                 if (ring.Count > 8) ring.RemoveAt(ring.Count - 1);
             }
+
+        // UTF-8 and LF / CRLF for anything that is plain text, whatever its kind: decided by extension and a sniff
+        if (TextFiles.Petals(files) is { Count: > 0 } text)
+        {
+            var ring = tools.Count > 0 ? tools : conv;
+            ring.InsertRange(0, text);
+            while (ring.Count > 8) ring.RemoveAt(ring.Count - 1);
+        }
 
         if (conv.Count == 0) conv.AddRange([ZipA, PathA, HashA]);
         return new(conv, tools, title, badge);
@@ -246,7 +253,7 @@ public static class Catalog
     static async Task CopyText(Job job)
     {
         var parts = new List<string>();
-        foreach (var f in job.Inputs) parts.Add(await File.ReadAllTextAsync(f, job.Token));
+        foreach (var f in job.Inputs) parts.Add(TextFiles.Decode(await File.ReadAllBytesAsync(f, job.Token)));
         var text = string.Join(Environment.NewLine + Environment.NewLine, parts);
         Platform.Current.SetClipboardText(text);
         job.Title = "Text copied";

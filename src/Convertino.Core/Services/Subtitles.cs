@@ -1,25 +1,21 @@
 using System.Diagnostics;
 using System.Globalization;
 using System.Net;
-using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
-using System.Text.Unicode;
 
 namespace Convertino.Services;
 
 /// <summary>
-/// Subtitles: SubRip, WebVTT, ASS/SSA and LRC lyrics turned into each other, legacy code pages re-encoded
-/// as UTF-8, and a video's subtitle track saved as SRT (the only part that needs ffmpeg).
+/// Subtitles: SubRip, WebVTT, ASS/SSA and LRC lyrics turned into each other (read in whatever encoding
+/// <see cref="TextFiles"/> detects), and a video's subtitle track saved as SRT (the only part that needs ffmpeg).
 /// </summary>
 public static class Subtitles
 {
     /// <summary>One cue. Times in ms; lines joined by '\n', the only markup is balanced &lt;i&gt; &lt;b&gt; &lt;u&gt;.
     /// <paramref name="Top"/>: shown at the top of the picture ({\an8} in SRT and ASS, line:0 in WebVTT).</summary>
     public sealed record Cue(long Start, long End, string Text, bool Top = false);
-
-    static Subtitles() => Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
 
     // ── petals ──────────────────────────────────────────────────────────────
 
@@ -35,7 +31,7 @@ public static class Subtitles
             job.Report(i, n);
             var src = job.Inputs[i];
             var bytes = await File.ReadAllBytesAsync(src, job.Token);
-            var enc = Detect(bytes, out int bom);
+            var enc = TextFiles.Detect(bytes, out int bom);
             var cues = Parse(enc.GetString(bytes, bom, bytes.Length - bom), Kinds.Ext(src));
             if (cues.Count == 0) throw new InvalidDataException($"No subtitles found in {Path.GetFileName(src)}");
             var dst = Paths.Beside(src, ext);
@@ -43,42 +39,12 @@ public static class Subtitles
             job.Outputs.Add(dst);
             total += cues.Count;
             rounded |= ext == "ass" && cues.Any(c => c.Start % 10 != 0 || c.End % 10 != 0);
-            if (enc.CodePage != 65001) legacy.Add(Name(enc));
+            if (enc.CodePage != 65001) legacy.Add(TextFiles.Name(enc));
         }
         var parts = new List<string> { total == 1 ? "1 cue" : $"{total} cues" };
         if (legacy.Count > 0) parts.Add("read as " + string.Join(", ", legacy));
         if (rounded) parts.Add("ASS keeps 1/100 s");
         job.Summary = string.Join(" · ", parts);
-    }
-
-    /// <summary>"UTF-8": legacy code pages and UTF-16 re-encoded as UTF-8, mixed line endings made consistent.</summary>
-    public static async Task ToUtf8(Job job)
-    {
-        int n = job.Inputs.Count;
-        var from = new SortedSet<string>();
-        for (int i = 0; i < n; i++)
-        {
-            job.Token.ThrowIfCancellationRequested();
-            job.Report(i, n);
-            var src = job.Inputs[i];
-            var bytes = await File.ReadAllBytesAsync(src, job.Token);
-            var enc = Detect(bytes, out int bom);
-            var text = enc.GetString(bytes, bom, bytes.Length - bom);
-            if (enc.CodePage == 65001 && !MixedLineEndings(text)) continue;
-            var ext = Kinds.Ext(src);
-            // WebVTT is UTF-8 by definition and LF by habit; players want a BOM on the others to spot UTF-8
-            var dst = Paths.Beside(src, ext, "(UTF-8)");
-            await File.WriteAllTextAsync(dst, string.Join(ext == "vtt" ? "\n" : "\r\n", Lines(text)), new UTF8Encoding(ext != "vtt"), job.Token);
-            job.Outputs.Add(dst);
-            if (enc.CodePage != 65001) from.Add(Name(enc));
-        }
-        if (job.Outputs.Count == 0)
-        {
-            job.Title = n == 1 ? "Already UTF-8" : "All already UTF-8";
-            job.Summary = "Nothing to change";
-            return;
-        }
-        job.Summary = from.Count > 0 ? $"{string.Join(", ", from)} → UTF-8" : "Line endings fixed";
     }
 
     /// <summary>"Subtitles" on a video: its first text subtitle track, saved beside it as SRT (movie.eng.srt).</summary>
@@ -220,7 +186,7 @@ public static class Subtitles
             body = null;
         }
 
-        foreach (var line in Lines(text))
+        foreach (var line in TextFiles.Lines(text))
         {
             var m = Timing.Match(line);
             if (m.Success)
@@ -291,7 +257,7 @@ public static class Subtitles
 
         static string[] Names(string v) => v.Split(',').Select(x => x.Trim().ToLowerInvariant()).ToArray();
 
-        foreach (var raw in Lines(text))
+        foreach (var raw in TextFiles.Lines(text))
         {
             var line = raw.Trim();
             if (line.StartsWith('[') && line.EndsWith(']')) { section = line.ToLowerInvariant(); continue; }
@@ -419,7 +385,7 @@ public static class Subtitles
     {
         long offset = 0;
         var marks = new List<(long At, string Text)>();
-        foreach (var raw in Lines(text))
+        foreach (var raw in TextFiles.Lines(text))
         {
             var line = raw.Trim();
             var times = new List<long>();
@@ -471,19 +437,6 @@ public static class Subtitles
         digits = digits.Trim();
         if (digits.Length == 0 || !long.TryParse(digits.Length > 3 ? digits[..3] : digits, NumberStyles.None, CultureInfo.InvariantCulture, out var v)) return 0;
         return digits.Length >= 3 ? v : v * unit;
-    }
-
-    static string[] Lines(string text) => text.Split(["\r\n", "\r", "\n"], StringSplitOptions.None);
-
-    static bool MixedLineEndings(string text)
-    {
-        int crlf = 0, lf = 0, cr = 0;
-        for (int k = 0; k < text.Length; k++)
-        {
-            if (text[k] == '\r') { if (k + 1 < text.Length && text[k + 1] == '\n') { crlf++; k++; } else cr++; }
-            else if (text[k] == '\n') lf++;
-        }
-        return cr > 0 || (crlf > 0 && lf > 0);
     }
 
     // ── markup ──────────────────────────────────────────────────────────────
@@ -628,109 +581,4 @@ public static class Subtitles
             }
         return string.Join(Environment.NewLine, lines) + Environment.NewLine;
     }
-
-    // ── encodings ───────────────────────────────────────────────────────────
-
-    /// <summary>
-    /// The text's encoding and the length of its BOM. A BOM decides; then UTF-16 by its zero bytes; then strict UTF-8
-    /// (plain ASCII included); otherwise the most plausible reading among the system code page, Windows-1252 (Western),
-    /// Windows-1251 (Cyrillic), Windows-1254 (Turkish) and KOI8-R.
-    /// </summary>
-    public static Encoding Detect(ReadOnlySpan<byte> b, out int bom)
-    {
-        bom = 0;
-        if (b is [0xEF, 0xBB, 0xBF, ..]) { bom = 3; return new UTF8Encoding(false); }
-        if (b is [0xFF, 0xFE, 0, 0, ..]) { bom = 4; return new UTF32Encoding(false, false); }
-        if (b is [0xFF, 0xFE, ..]) { bom = 2; return new UnicodeEncoding(false, false); }
-        if (b is [0xFE, 0xFF, ..]) { bom = 2; return new UnicodeEncoding(true, false); }
-
-        // timestamps and spaces make every other byte zero in UTF-16
-        int len = Math.Min(b.Length, 8192) & ~1, evenZero = 0, oddZero = 0;
-        for (int k = 0; k < len; k += 2) { if (b[k] == 0) evenZero++; if (b[k + 1] == 0) oddZero++; }
-        int pairs = len / 2;
-        if (pairs >= 8 && oddZero > pairs * 0.3 && evenZero < pairs * 0.05) return new UnicodeEncoding(false, false);
-        if (pairs >= 8 && evenZero > pairs * 0.3 && oddZero < pairs * 0.05) return new UnicodeEncoding(true, false);
-
-        if (Utf8.IsValid(b)) return new UTF8Encoding(false);
-
-        Encoding? best = null;
-        double bestScore = double.MinValue;
-        foreach (var cp in CodePages())
-        {
-            Encoding enc;
-            try { enc = Encoding.GetEncoding(cp, EncoderFallback.ReplacementFallback, new DecoderReplacementFallback("\uFFFD")); }
-            catch { continue; }
-            // ties go to the earlier code page: the system's own first
-            var score = Plausibility(enc.GetString(b));
-            if (score > bestScore) { best = enc; bestScore = score; }
-        }
-        return best ?? Encoding.Latin1;
-    }
-
-    static List<int> CodePages()
-    {
-        var list = new List<int>();
-        void Add(int cp) { if (cp is > 0 and not 65001 and not 1200 and not 1201 && !list.Contains(cp)) list.Add(cp); }
-        if (OperatingSystem.IsWindows()) { try { Add(GetACP()); } catch { } }
-        Add(CultureInfo.CurrentCulture.TextInfo.ANSICodePage);
-        foreach (var cp in new[] { 1252, 1251, 1254, 20866 }) Add(cp);
-        return list;
-    }
-
-    [DllImport("kernel32.dll")]
-    static extern int GetACP();
-
-    const string Punctuation = "\u00A0«»‘’‚“”„–—…•·°№€£¥©®™§¶±¹²³½¼¾¿¡\u200E\u200F";
-    const string RareLetters = "ðþýÐÞÝÿ";
-
-    /// <summary>
-    /// How natural a decoding reads. Real words stick to one script, don't capitalise mid-word (KOI8-R read as 1251 does),
-    /// aren't made only of accented letters (Cyrillic read as 1252 is), and avoid control codes, stray symbols
-    /// and the Icelandic letters that Turkish ğ ı ş become in 1252.
-    /// </summary>
-    static double Plausibility(string s)
-    {
-        double score = 0;
-        int k = 0;
-        while (k < s.Length)
-        {
-            char c = s[k];
-            if (c == '\uFFFD' || c is >= '\u0080' and <= '\u009F') { score -= 20; k++; continue; }
-            if (!char.IsLetter(c))
-            {
-                if (c >= 0x80 && !char.IsWhiteSpace(c) && !Punctuation.Contains(c))
-                    score -= k > 0 && k + 1 < s.Length && char.IsLetter(s[k - 1]) && char.IsLetter(s[k + 1]) ? 3 : 1;
-                k++;
-                continue;
-            }
-            int ascii = 0, latin = 0, cyrillic = 0, flips = 0;
-            bool lower = false;
-            for (; k < s.Length && char.IsLetter(s[k]); k++)
-            {
-                char w = s[k];
-                if (w < 0x80) ascii++;
-                else if (w is >= '\u0400' and <= '\u04FF') cyrillic++;
-                else if (w < 0x0250) latin++;
-                if (RareLetters.Contains(w)) score -= 2;
-                if (lower && char.IsUpper(w)) flips++;
-                lower = char.IsLower(w);
-            }
-            if (cyrillic > 0 && ascii + latin > 0) score -= 5;
-            if (latin >= 2 && ascii == 0 && cyrillic == 0) score -= 2 * latin;
-            score -= 3 * flips;
-        }
-        return score;
-    }
-
-    /// <summary>"Windows-1251", "KOI8-R", "UTF-16 LE"…</summary>
-    public static string Name(Encoding enc) => enc.CodePage switch
-    {
-        65001 => "UTF-8",
-        1200 => "UTF-16 LE",
-        1201 => "UTF-16 BE",
-        12000 => "UTF-32",
-        20866 => "KOI8-R",
-        >= 1250 and <= 1258 => $"Windows-{enc.CodePage}",
-        _ => enc.WebName.ToUpperInvariant(),
-    };
 }
