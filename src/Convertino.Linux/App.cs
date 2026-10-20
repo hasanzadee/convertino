@@ -22,6 +22,8 @@ public sealed class App : Application
     X11Input? _input;
     OverlayController? _overlay;
     TrayIcon? _tray;
+    // one menu for the app's lifetime, refilled by BuildTray (the macOS exporter refuses a second one; keep them alike)
+    readonly NativeMenu _menu = new();
     TrayPanel? _panel;
     Socket? _server;
 
@@ -122,7 +124,8 @@ public sealed class App : Application
     void BuildTray()
     {
         var s = Settings.Current;
-        var menu = new NativeMenu();
+        var menu = _menu;
+        menu.Items.Clear();
         NativeMenuItem Check(string header, bool value, Action<bool> set)
         {
             var it = new NativeMenuItem(header) { ToggleType = MenuItemToggleType.CheckBox, IsChecked = value };
@@ -191,7 +194,6 @@ public sealed class App : Application
         }
         // later calls refresh the same icon (re-registering it could move it around the tray)
         _tray.ToolTipText = tip;
-        _tray.Menu = menu;
     }
 
     // ---------- single instance ----------

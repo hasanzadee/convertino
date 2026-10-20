@@ -23,6 +23,8 @@ public sealed class App : Application
     MacInput? _input;
     OverlayController? _overlay;
     TrayIcon? _tray;
+    // one menu for the app's lifetime, refilled by BuildTray: Avalonia.Native throws if a live status item gets another
+    readonly NativeMenu _menu = new();
     TrayPanel? _panel;
     Socket? _server;
 
@@ -162,7 +164,8 @@ public sealed class App : Application
     void BuildTray()
     {
         var s = Settings.Current;
-        var menu = new NativeMenu();
+        var menu = _menu;
+        menu.Items.Clear();
         NativeMenuItem Check(string header, bool value, Action<bool> set)
         {
             var it = new NativeMenuItem(header) { ToggleType = MenuItemToggleType.CheckBox, IsChecked = value };
@@ -220,7 +223,6 @@ public sealed class App : Application
         var quit = new NativeMenuItem("Quit Convertino");
         quit.Click += (_, _) => (ApplicationLifetime as IClassicDesktopStyleApplicationLifetime)?.Shutdown();
         menu.Items.Add(quit);
-        if (OverlayController.Diag) menu.Opening += (_, _) => Log.Info("tray menu opening");
 
         var tip = $"Convertino — drag a file, {s.TriggerKey.Tap()}";
         if (_tray == null)
@@ -231,11 +233,11 @@ public sealed class App : Application
             // Avalonia.Native hands the tooltip to the status item as it attaches: a null one crashes
             _tray = new TrayIcon { Icon = new WindowIcon(ms), ToolTipText = tip, Menu = menu, IsVisible = true };
             TrayIcon.SetIcons(this, [_tray]);
+            if (OverlayController.Diag) menu.Opening += (_, _) => Log.Info("tray menu opening");
             return;
         }
         // later calls refresh the same status item (a new one could land somewhere else in the menu bar)
         _tray.ToolTipText = tip;
-        _tray.Menu = menu;
     }
 
     // ---------- single instance ----------

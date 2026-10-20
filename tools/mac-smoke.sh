@@ -124,6 +124,7 @@ sleep 1
 
 step "app: menu-bar panel (demo activity), pick a theme in it"
 SETTINGS="$HOME/Library/Application Support/Convertino/settings.json"
+from=$(($(wc -l < "$LOG") + 1))
 CONVERTINO_DEBUG=1 CONVERTINO_PANEL=demo "$D" >> "$OUT/app-stdout.txt" 2>&1 &
 sleep 6
 shot 2b-panel
@@ -134,22 +135,28 @@ if [ -n "$pwid" ]; then
 else
   echo "::warning::the panel didn't open (no 'panel window=' in the log)"
 fi
-# the panel logs where its swatches are; click Latte the way a person would
+# the panel logs where its swatches are; click Latte, then Graphite, the way a person would. Each pick also
+# refills the menu-bar menu, so the app has to survive both (the swatches stay put while the panel restyles).
 swiftc -O "$ROOT/tools/mac-click.swift" -o "$WORK/click"
-latte=$(grep -o "Latte=-*[0-9]*,-*[0-9]*" "$LOG" | tail -1 | cut -d= -f2 || true)
-[ -n "$latte" ] || { echo "the panel logged no swatch positions"; grep "panel" "$LOG" | tail -5; exit 1; }
-limit 20 "$WORK/click" "${latte%,*}" "${latte#*,}"
-sleep 1.5
-shot 2c-panel-latte
-[ -n "$pwid" ] && screencapture -x -o -l "$pwid" "$OUT/2c-panel-latte-window.png" 2>/dev/null || true
-if grep -q "panel theme Latte" "$LOG" && grep -q '"Theme": "Latte"' "$SETTINGS"; then
-  echo "Latte picked in the panel: restyled and saved"
-else
-  echo "clicking the Latte swatch didn't switch the theme"; grep -E "panel|button" "$LOG" | tail -10; exit 1
-fi
+for theme in Latte Graphite; do
+  at=$(grep -o "$theme=-*[0-9]*,-*[0-9]*" "$LOG" | tail -1 | cut -d= -f2 || true)
+  [ -n "$at" ] || { echo "the panel logged no swatch positions"; grep "panel" "$LOG" | tail -5; exit 1; }
+  limit 20 "$WORK/click" "${at%,*}" "${at#*,}"
+  sleep 1.5
+  shot "2c-panel-$(echo "$theme" | tr 'A-Z' 'a-z')"
+  if ! running || tail -n +"$from" "$LOG" | grep -q "ERR fatal"; then
+    echo "the app died after picking $theme in the panel"; tail -n +"$from" "$LOG" | grep -A12 "ERR" | head -30; exit 1
+  fi
+  if grep -q "panel theme $theme" "$LOG" && grep -q "\"Theme\": \"$theme\"" "$SETTINGS"; then
+    echo "$theme picked in the panel: restyled, saved, app still running"
+  else
+    echo "clicking the $theme swatch didn't switch the theme"; grep -E "panel|button" "$LOG" | tail -10; exit 1
+  fi
+done
+[ -n "$pwid" ] && screencapture -x -o -l "$pwid" "$OUT/2c-panel-graphite-window.png" 2>/dev/null || true
 pkill -f "Convertino.app/Contents/MacOS/convertino" || true
 sleep 1
-sed -i '' 's/"Theme": "Latte"/"Theme": "Mocha"/' "$SETTINGS"
+sed -i '' 's/"Theme": "Graphite"/"Theme": "Mocha"/' "$SETTINGS"
 
 step "app: Open panel from the menu-bar menu"
 CONVERTINO_DEBUG=1 "$D" >> "$OUT/app-stdout.txt" 2>&1 &
