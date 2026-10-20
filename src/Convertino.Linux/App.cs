@@ -95,6 +95,7 @@ public sealed class App : Application
                 AppIcon.Render(84), null);
             Toasts.Show(t);
         }
+        UpdateCards.Start();
         base.OnFrameworkInitializationCompleted();
     }
 
@@ -131,6 +132,7 @@ public sealed class App : Application
         }
         menu.Items.Add(new NativeMenuItem("Open with") { Menu = keys });
         menu.Items.Add(Check("Notifications", s.Notifications, v => s.Notifications = v));
+        menu.Items.Add(Check("Tell me about new versions", s.CheckForUpdates == true, Updates.Answer));
         menu.Items.Add(Check("Start at login", s.LaunchAtStartup, v => { s.LaunchAtStartup = v; Platform.Current.SetAutostart(v); }));
         var recent = s.Recent.Where(r => File.Exists(r.Path) || Directory.Exists(r.Path)).Take(5).ToList();
         if (recent.Count > 0)
@@ -145,6 +147,9 @@ public sealed class App : Application
             menu.Items.Add(new NativeMenuItem("Recent") { Menu = rm });
         }
         menu.Items.Add(new NativeMenuItemSeparator());
+        var updates = new NativeMenuItem("Check for updates…");
+        updates.Click += (_, _) => UpdateCards.CheckNow();
+        menu.Items.Add(updates);
         var log = new NativeMenuItem("Open log");
         log.Click += (_, _) => Platform.Current.Open(Paths.LogFile);
         menu.Items.Add(log);

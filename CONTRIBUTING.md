@@ -98,7 +98,7 @@ What CI can't show is a real Finder drag with Shift (its synthetic drag starts f
 
 - Match the surrounding code: file-scoped namespaces, `var`, small static service classes, comments only where the *why* isn't obvious.
 - Keep the core UI-free and cross-platform.
-- No telemetry, no network calls except explicit user actions (model download).
+- No telemetry, no network calls except explicit user actions (model download, *Check for updates…*) and, if the user said yes on the one-time card, a daily check of the latest release on GitHub.
 
 ## Pull requests
 

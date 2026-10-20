@@ -228,7 +228,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for developer flags (render the flower to
 
 ## FAQ
 
-**Does it upload anything?** No. Nothing leaves your machine, except a one-time download of the cut-out model if you ask for it.
+**Does it upload anything?** No. Nothing leaves your machine, except a one-time download of the cut-out model if you ask for it and, if you say yes when Convertino asks, a daily check of the latest release on GitHub. That check is one anonymous request, with no ID or usage data, and it only shows a card when a new version is out. Turn it off any time with *Tell me about new versions* in the tray panel or menu, or check by hand with *Check for updates…*.
 
 **Shift-drag already means "move" in Explorer — does Convertino break that?** No. The flower only takes the drop if you release over a petal. Drag away from the flower and it fades after half a second, so a normal Shift-move carries on.
 
