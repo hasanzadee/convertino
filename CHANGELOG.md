@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Images get a third ring, **More**, after Tools: **Half**, **Full HD** (shrinks to fit 1920 × 1080, or 1080 × 1920 for portrait; never enlarges) and **B&W** in one tap, plus the rarer formats **HEIC** (where the codec allows), **TIFF**, **ICO**, **BMP**, **JPEG XL** and **QOI**. Half, Full HD and B&W keep the source's format (PNG for SVG/PSD/TGA, JPG for camera RAW), keep animated GIF / WebP animated, and write beside it as `photo (2016x1512).jpg` / `photo (grayscale).jpg`. The Convert ring now holds the everyday formats: PNG · JPG · WEBP · AVIF · PDF · **GIF**. `.qoi` files are recognised as images.
+- Flip the rings with **Tab** / **Shift+Tab** and the **mouse wheel** (down = next, up = previous) as well as the trigger key, on all three platforms, mid-drag and in click mode. The rings wrap around (Convert → Tools → More → Convert); a touchpad swipe or a fast spin counts as one flip. The trigger key now flips when it comes back up, so Shift+Tab goes back instead of also counting the Shift. Windows: Tab and the wheel over the flower don't reach the window behind it. Linux: the wheel is read through XInput2 raw events, so it works while the file manager holds the drag. macOS: Tab during a drag needs Input Monitoring (like Esc); the flower's own window always sees it in click mode.
+- `convertino actions` lists the More ring (`more:`); `Convertino.exe --snapshot out.png <theme> more` renders it.
+
 ## 1.2.0 — 2026-10-20
 
 Thanks again to [@AliverdiSultanli](https://github.com/AliverdiSultanli) for the trigger keys, the update check and the macOS Quit fix, all tested on his Mac.

@@ -122,6 +122,7 @@ public static class Win32
 
     public const int VK_SHIFT = 0x10;
     public const int VK_ESCAPE = 0x1B;
+    public const int VK_TAB = 0x09;
     public const int VK_LBUTTON = 0x01;
     public const int VK_LSHIFT = 0xA0;
     public const int VK_RSHIFT = 0xA1;

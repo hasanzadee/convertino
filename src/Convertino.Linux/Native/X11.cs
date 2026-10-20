@@ -27,6 +27,44 @@ public static unsafe class X11
 
     [DllImport(Lib)] public static extern int XFree(IntPtr data);
 
+    // events (only the XInput2 raw events Convertino selects)
+    [DllImport(Lib)] public static extern int XPending(IntPtr dpy);
+    [DllImport(Lib)] public static extern int XNextEvent(IntPtr dpy, byte* ev);
+    [DllImport(Lib)] public static extern bool XGetEventData(IntPtr dpy, byte* cookie);
+    [DllImport(Lib)] public static extern void XFreeEventData(IntPtr dpy, byte* cookie);
+    [DllImport(Lib)] public static extern bool XQueryExtension(IntPtr dpy, string name, out int opcode, out int firstEvent, out int firstError);
+
+    // XInput2 (libXi): raw events reach every client that selects them on the root window, even while another
+    // client holds a pointer grab (XI 2.1+) — which is how the wheel can be seen during a file manager's drag
+    const string Xi = "libXi.so.6";
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct XIEventMask { public int deviceid, mask_len; public byte* mask; }
+
+    [DllImport(Xi)] public static extern int XIQueryVersion(IntPtr dpy, ref int major, ref int minor);
+    [DllImport(Xi)] public static extern int XISelectEvents(IntPtr dpy, IntPtr window, XIEventMask* masks, int n);
+
+    public const int GenericEvent = 35, XIAllMasterDevices = 1, XI_RawButtonPress = 15;
+
+    /// <summary>Ask for raw button presses on the root window. False if the server or libXi can't (no XI 2.1).</summary>
+    public static bool SelectRawButtons(IntPtr dpy, out int xiOpcode)
+    {
+        xiOpcode = 0;
+        try
+        {
+            if (!XQueryExtension(dpy, "XInputExtension", out xiOpcode, out _, out _)) return false;
+            int major = 2, minor = 2;
+            if (XIQueryVersion(dpy, ref major, ref minor) != 0 || major < 2 || (major == 2 && minor < 1)) return false;
+            byte* bits = stackalloc byte[4];
+            bits[XI_RawButtonPress >> 3] = (byte)(1 << (XI_RawButtonPress & 7));
+            var m = new XIEventMask { deviceid = XIAllMasterDevices, mask_len = 4, mask = bits };
+            XISelectEvents(dpy, XDefaultRootWindow(dpy), &m, 1);
+            XFlush(dpy);
+            return true;
+        }
+        catch (Exception ex) when (ex is DllNotFoundException or EntryPointNotFoundException) { return false; }
+    }
+
     [StructLayout(LayoutKind.Sequential)]
     public struct XSetWindowAttributes
     {
@@ -69,7 +107,7 @@ public static unsafe class X11
     public const int ZPixmap = 2;
     public const uint Button1Mask = 1 << 8, Button3Mask = 1 << 10, ShiftMask = 1;
 
-    public const int XK_Shift_L = 0xffe1, XK_Shift_R = 0xffe2, XK_Escape = 0xff1b;
+    public const int XK_Shift_L = 0xffe1, XK_Shift_R = 0xffe2, XK_Escape = 0xff1b, XK_Tab = 0xff09;
     public const int XK_Control_L = 0xffe3, XK_Control_R = 0xffe4, XK_Alt_L = 0xffe9, XK_Alt_R = 0xffea;
 
     [StructLayout(LayoutKind.Sequential)]
@@ -151,10 +189,20 @@ public sealed unsafe class X11Input : IDisposable
     Thread? _thread;
     volatile bool _run = true;
     public IntPtr Display { get; private set; }
-    byte _shiftL, _shiftR, _ctrlL, _ctrlR, _altL, _altR, _esc;
+    byte _shiftL, _shiftR, _ctrlL, _ctrlR, _altL, _altR, _esc, _tab;
+    int _xiOpcode;
 
     /// <summary>The trigger key (Shift, Ctrl or Alt, from the settings) went down. Args: dragging?, where.</summary>
     public event Action<bool, ScreenPoint>? TriggerDown;
+    /// <summary>The trigger key came back up.</summary>
+    public event Action? TriggerUp;
+    /// <summary>Tab went down (arg: Shift held → previous).</summary>
+    public event Action<bool>? Tab;
+    /// <summary>A wheel notch anywhere on screen (XInput2 raw button 4/5; arg &gt; 0 = down), and where the pointer was.</summary>
+    public event Action<int, ScreenPoint>? Wheel;
+
+    /// <summary>The server reports the wheel through XInput2 (otherwise only windows under the pointer see it).</summary>
+    public bool RawWheel { get; private set; }
     public event Action<ScreenPoint>? ButtonDown;
     public event Action<ScreenPoint>? ButtonUp;
     public event Action? Escape;
@@ -176,6 +224,9 @@ public sealed unsafe class X11Input : IDisposable
         _altL = X11.XKeysymToKeycode(Display, X11.XK_Alt_L);
         _altR = X11.XKeysymToKeycode(Display, X11.XK_Alt_R);
         _esc = X11.XKeysymToKeycode(Display, X11.XK_Escape);
+        _tab = X11.XKeysymToKeycode(Display, X11.XK_Tab);
+        RawWheel = X11.SelectRawButtons(Display, out _xiOpcode);
+        Log.Info($"x11 input: xinput2 wheel={RawWheel}");
         _thread = new Thread(Loop) { IsBackground = true, Name = "Convertino X11 input" };
         _thread.Start();
         return true;
@@ -196,15 +247,18 @@ public sealed unsafe class X11Input : IDisposable
     void Loop()
     {
         var keys = stackalloc byte[32];
-        bool lDown = false, rDown = false, dragging = false, trigger = false, esc = false;
+        var ev = stackalloc byte[192]; // sizeof(XEvent)
+        bool lDown = false, rDown = false, dragging = false, trigger = false, esc = false, tab = false;
         int downX = 0, downY = 0;
         while (_run)
         {
             int x, y; uint mask;
+            int wheel = 0;
             lock (this)
             {
                 X11.XQueryPointer(Display, X11.XDefaultRootWindow(Display), out _, out _, out x, out y, out _, out _, out mask);
                 X11.XQueryKeymap(Display, keys);
+                if (RawWheel) wheel = DrainWheel(ev);
             }
             bool l = (mask & X11.Button1Mask) != 0;
             bool r = (mask & X11.Button3Mask) != 0;
@@ -216,6 +270,8 @@ public sealed unsafe class X11Input : IDisposable
             };
             bool t = Key(keys, k1) || Key(keys, k2);
             bool e = Key(keys, _esc);
+            bool tb = Key(keys, _tab);
+            bool shift = Key(keys, _shiftL) || Key(keys, _shiftR);
             var pt = new ScreenPoint(x, y);
 
             if (l && !lDown) { downX = x; downY = y; dragging = false; _post(() => ButtonDown?.Invoke(pt)); if (Overlay.OverlayController.Diag) Log.Info($"x11 button down {pt}"); }
@@ -226,12 +282,36 @@ public sealed unsafe class X11Input : IDisposable
             lDown = l;
 
             if (t && !trigger) { bool d = dragging && l; _post(() => TriggerDown?.Invoke(d, pt)); if (Overlay.OverlayController.Diag) Log.Info($"x11 trigger d={d}"); }
+            if (!t && trigger) _post(() => TriggerUp?.Invoke());
             trigger = t;
             if (e && !esc) _post(() => Escape?.Invoke());
             esc = e;
+            if (tb && !tab) _post(() => Tab?.Invoke(shift));
+            tab = tb;
+            if (wheel != 0) { int w = wheel; _post(() => Wheel?.Invoke(w, pt)); if (Overlay.OverlayController.Diag) Log.Info($"x11 wheel {w}"); }
 
             Thread.Sleep(l || Hot ? 12 : 40);
         }
+    }
+
+    /// <summary>Read the queued raw button presses; wheel down (button 5) counts +1, up (4) −1.</summary>
+    int DrainWheel(byte* ev)
+    {
+        int sum = 0;
+        while (X11.XPending(Display) > 0)
+        {
+            X11.XNextEvent(Display, ev);
+            // XGenericEventCookie: type @0, extension @32, evtype @36; XIRawEvent.detail @56 (LP64)
+            if (*(int*)ev != X11.GenericEvent || *(int*)(ev + 32) != _xiOpcode || !X11.XGetEventData(Display, ev)) continue;
+            try
+            {
+                var raw = *(byte**)(ev + 48);
+                if (*(int*)(ev + 36) == X11.XI_RawButtonPress && raw != null)
+                    sum += *(int*)(raw + 56) switch { 4 => -1, 5 => +1, _ => 0 };
+            }
+            finally { X11.XFreeEventData(Display, ev); }
+        }
+        return sum;
     }
 
     static bool Key(byte* keys, byte code) => code != 0 && (keys[code >> 3] & (1 << (code & 7))) != 0;

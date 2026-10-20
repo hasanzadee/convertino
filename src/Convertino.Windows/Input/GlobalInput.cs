@@ -27,12 +27,19 @@ public sealed class GlobalInput : IDisposable
     // keyboard state (hook thread only)
     bool _triggerHeld;
     bool _shiftHeld;
+    bool _tabHeld;
     bool _otherKeyDuringShift;
     uint _shiftDownTime;
     uint _lastTapUpTime;
 
     /// <summary>The trigger key (Shift, Ctrl or Alt, from the settings) went down. Args: whether a left-button drag is in progress, cursor position.</summary>
     public event Action<bool, POINT>? TriggerDown;
+    /// <summary>The trigger key came back up.</summary>
+    public event Action? TriggerUp;
+    /// <summary>Tab went down while <see cref="Paging"/> is set (arg: Shift held → previous). The key is kept from other apps.</summary>
+    public event Action<bool>? Tab;
+    /// <summary>Wheel turned over the <see cref="Paging"/> area (arg: WHEEL_DELTA units, &gt; 0 = up/away). Kept from other apps.</summary>
+    public event Action<int>? Wheel;
     /// <summary>Shift was tapped twice quickly with no other key in between (and no mouse drag). Always Shift, whatever the trigger key.</summary>
     public event Action<POINT>? ShiftDoubleTap;
     public event Action<POINT>? MouseDown;
@@ -75,6 +82,19 @@ public sealed class GlobalInput : IDisposable
         ready.Wait(2000);
     }
 
+    readonly object _pagingLock = new();
+    RECT? _paging;
+
+    /// <summary>
+    /// Screen rect of the open flower (null while it's closed or still a seed). Meanwhile Tab and the wheel over it
+    /// flip its rings and are swallowed: during an OLE drag they'd otherwise reach Explorer behind the flower.
+    /// </summary>
+    public RECT? Paging
+    {
+        get { lock (_pagingLock) return _paging; }
+        set { lock (_pagingLock) _paging = value; }
+    }
+
     public bool IsLeftDown => _lDown;
     public bool IsDragging => _dragging;
 
@@ -105,7 +125,11 @@ public sealed class GlobalInput : IDisposable
                     GetCursorPos(out var pt);
                     Post(() => TriggerDown?.Invoke(dragging, pt));
                 }
-                else if (up) _triggerHeld = false;
+                else if (up && _triggerHeld)
+                {
+                    _triggerHeld = false;
+                    Post(() => TriggerUp?.Invoke());
+                }
             }
 
             if (isShift)
@@ -138,6 +162,17 @@ public sealed class GlobalInput : IDisposable
                 _otherKeyDuringShift = true;
                 _lastTapUpTime = 0;
                 if (k.vkCode == VK_ESCAPE) Post(() => Escape?.Invoke());
+            }
+
+            if (k.vkCode == VK_TAB)
+            {
+                if (down && Paging != null)
+                {
+                    if (!_tabHeld) { bool back = _shiftHeld; Post(() => Tab?.Invoke(back)); } // not on key repeat
+                    _tabHeld = true;
+                    return 1;
+                }
+                if (up && _tabHeld) { _tabHeld = false; return 1; }
             }
         }
         return CallNextHookEx(IntPtr.Zero, nCode, wParam, lParam);
@@ -177,6 +212,15 @@ public sealed class GlobalInput : IDisposable
                     var pt = m.pt;
                     Post(() => MouseUp?.Invoke(pt));
                     break;
+                }
+                case WM_MOUSEWHEEL:
+                {
+                    if (Paging is not { } area) break;
+                    var m = Marshal.PtrToStructure<MSLLHOOKSTRUCT>(lParam);
+                    if (!area.Contains(m.pt)) break;
+                    int delta = (short)(m.mouseData >> 16);
+                    Post(() => Wheel?.Invoke(delta));
+                    return 1;
                 }
                 case WM_RBUTTONDOWN:
                 {

@@ -37,7 +37,7 @@ public sealed class RadialWindow : Window
 
 /// <summary>
 /// Drag a file, tap the trigger key (Shift by default, see <see cref="TriggerKey"/>) → the flower blooms under the cursor,
-/// drop on a petal → the action runs. The key again flips Convert ⇄ Tools. "convertino menu files…" opens the same flower in click mode.
+/// drop on a petal → the action runs. The key again, Tab / Shift+Tab or the wheel flip the rings (Convert → Tools → More). "convertino menu files…" opens the same flower in click mode.
 /// </summary>
 public sealed class OverlayController
 {
@@ -51,7 +51,7 @@ public sealed class OverlayController
     State _state = State.Hidden;
     IReadOnlyList<string> _files = [];
     Pages? _pages;
-    int _page;
+    readonly RingPager _pager = new();
     int _session;
     PixelRect _rect;
     bool _shaped;
@@ -68,6 +68,15 @@ public sealed class OverlayController
         _win.AddHandler(DragDrop.DropEvent, OnDrop);
         _win.PointerMoved += (_, e) => { if (_state == State.Click) _win.View.SetHover(_win.View.HitTestPetal(e.GetPosition(_win))); };
         _win.PointerReleased += OnClick;
+        // over the flower itself (click mode; macOS also routes the wheel here during a drag). The pager drops repeats
+        // when a global watcher reports the same press or notch too.
+        _win.PointerWheelChanged += (_, e) => { Flip(_pager.Wheel(-e.Delta.Y), "wheel"); e.Handled = true; };
+        _win.AddHandler(InputElement.KeyDownEvent, (_, e) =>
+        {
+            if (e.Key != Key.Tab || !Visible) return;
+            Flip(_pager.Tab(e.KeyModifiers.HasFlag(KeyModifiers.Shift)), "tab");
+            e.Handled = true; // no focus traversal
+        }, Avalonia.Interactivity.RoutingStrategies.Tunnel);
 
         _seedTimeout.Tick += (_, _) => { _seedTimeout.Stop(); if (_state == State.Seed && !_pinned) Hide(); };
         _releaseTimer.Tick += (_, _) => { _releaseTimer.Stop(); if (_state is State.Seed or State.Drag) Hide(); };
@@ -76,7 +85,10 @@ public sealed class OverlayController
         if (input != null)
         {
             input.TriggerDown += OnTriggerDown;
+            input.TriggerUp += () => Flip(_pager.TriggerUp(), "key");
+            input.Tab += back => Flip(_pager.Tab(back), "tab");
             input.ButtonUp += _ => { if (_state is State.Seed or State.Drag && !_pinned) _releaseTimer.Start(); };
+            input.Wheel += (d, p) => { if (Contains(p)) Flip(_pager.Wheel(d), "wheel"); };
             input.ButtonDown += p => { if (_state == State.Click && !Contains(p)) Hide(); };
             input.Escape += () => { if (_state is State.Seed or State.Drag or State.Click) Hide(); };
         }
@@ -106,7 +118,7 @@ public sealed class OverlayController
     {
         if (Diag) Log.Info($"trigger dragging={dragging} state={_state} at {pt}");
         if (!Settings.Current.Enabled) return;
-        if (Visible) { if (_state != State.Seed) FlipPage(); return; }
+        if (Visible) { if (_state != State.Seed) _pager.TriggerDown(); return; } // flips when the key comes back up
         if (_state == State.Hidden && dragging && _gate.Opens(Settings.Current.TriggerKey)) ShowAt(pt, State.Seed);
     }
 
@@ -187,14 +199,14 @@ public sealed class OverlayController
         _seedTimeout.Stop();
         _files = files;
         _pages = Catalog.For(files);
-        _page = 0;
+        _pager.Reset(_pages);
         var v = _win.View;
         v.HubTitle = files.Count == 1 ? Paths.HumanSize(Paths.SizeOf(files[0])) : $"{files.Count} items";
         v.HubSub = files.Count == 1 ? _pages.Title : Paths.HumanSize(files.Sum(Paths.SizeOf));
         v.HubBadge = _pages.Badge;
         v.SetMode(HubMode.Info);
-        v.SetPages(_pages.Tools.Count > 0 ? 2 : 1, 0);
-        v.SetPetals(_pages.Convert, +1);
+        v.SetPages(_pager.Count, 0);
+        v.SetPetals(_pager.Current, +1);
         if (_state == State.Seed) _state = State.Drag;
 
         int session = _session;
@@ -205,13 +217,14 @@ public sealed class OverlayController
         });
     }
 
-    void FlipPage()
+    /// <summary>Show the next (+1) or previous (−1) ring; 0 = the input didn't ask for a flip.</summary>
+    void Flip(int dir, string why)
     {
-        if (_pages == null) return;
-        if (_pages.Tools.Count == 0) { _win.View.Nudge(); return; }
-        _page ^= 1;
-        _win.View.SetPages(2, _page);
-        _win.View.SetPetals(_page == 0 ? _pages.Convert : _pages.Tools, _page == 0 ? -1 : +1);
+        if (dir == 0 || _pages == null || _state is not (State.Drag or State.Click)) return;
+        if (!_pager.Step(dir)) { _win.View.Nudge(); return; }
+        if (Diag) Log.Info($"ring {_pager.Page + 1}/{_pager.Count} ({why})");
+        _win.View.SetPages(_pager.Count, _pager.Page);
+        _win.View.SetPetals(_pager.Current, dir);
     }
 
     async void Hide()
@@ -237,6 +250,7 @@ public sealed class OverlayController
         if (_input != null) _input.Hot = false;
         _files = [];
         _pages = null;
+        _pager.Clear();
     }
 
     // ---------- XDND ----------
@@ -304,7 +318,7 @@ public sealed class OverlayController
     {
         if (_state != State.Click) return;
         var pos = e.GetPosition(_win);
-        if (_win.View.IsOverHub(pos)) { FlipPage(); return; }
+        if (_win.View.IsOverHub(pos)) { Flip(+1, "hub"); return; }
         Launch(_win.View.HitTestPetal(pos));
     }
 

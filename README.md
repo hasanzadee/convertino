@@ -32,8 +32,8 @@ Converting a file usually means opening an app, finding *Export…*, picking a f
 
 | | |
 |---|---|
-| ✿ **Two rings** | **Convert** (formats) and **Tools** (editors & actions). Tap the key again mid-drag to flip between them. |
-| 🖼 **Images** | PNG · JPG · WEBP · AVIF · PDF · ICO · TIFF, from anything ImageMagick reads (HEIC, PSD, RAW, SVG…) |
+| ✿ **Rings** | **Convert** (formats), **Tools** (editors & actions) and, for images, **More** (rarer formats, one-tap resize and B&W). Tap the key again, press <kbd>Tab</kbd> or turn the mouse wheel mid-drag to flip between them. |
+| 🖼 **Images** | PNG · JPG · WEBP · AVIF · GIF · PDF · TIFF · ICO · BMP · JPEG XL · QOI, from anything ImageMagick reads (HEIC, PSD, RAW, SVG…); **Half**, **Full HD** (fit in 1920 × 1080) and **B&W** in one tap |
 | 📄 **Documents** | PDF ⇄ DOCX, DOCX/XLSX/PPTX → PDF, slides → PNG, Markdown → HTML/PDF/DOCX (Microsoft Office or LibreOffice) |
 | 🎞 **Video & audio** | MP4 · WEBM · GIF · MOV · MKV · MP3 · WAV · FLAC · OGG · OPUS · M4A, plus compress, 720p, mute, grab frame, loudness, trim silence |
 | ✂️ **Editors** | **Crop**, **Add BG** (screenshot beautifier), **Annotate** (arrows, text, numbered steps, highlighter), **Redact** (pixelate / blur / black, *find text automatically*), **Adjust** (light, colour, sharpen, vignette, rotate, resize) |
@@ -128,7 +128,7 @@ convertino model install
 | Gesture | What happens |
 |---|---|
 | Drag file(s) · tap <kbd>Shift</kbd> | The flower opens under the cursor on the **Convert** ring |
-| <kbd>Shift</kbd> again while dragging | Flip to the **Tools** ring and back |
+| <kbd>Shift</kbd> again, <kbd>Tab</kbd> or the mouse wheel | Next ring: **Convert** → **Tools** → **More** (images) → Convert. <kbd>Shift</kbd>+<kbd>Tab</kbd> or wheel up goes back |
 | Drop on a petal | Runs it; the result appears beside the source and a card shows the outcome |
 | Drop on the centre · drag away · <kbd>Esc</kbd> | Cancel — nothing happens, the flower fades |
 | Double-tap <kbd>Shift</kbd> in Explorer / on the desktop *(Windows)* | Same flower for the selected files — click a petal |
@@ -138,6 +138,8 @@ convertino model install
 | Click the result card | Open the file · folder icon reveals it · × cancels a running job |
 
 <kbd>Shift</kbd> is the default. To use another key, pick it under **Open with** in the tray panel or the tray / menu-bar menu: <kbd>Shift</kbd>, <kbd>Shift</kbd> twice, <kbd>Ctrl</kbd> or <kbd>Alt</kbd> (<kbd>⌃ Control</kbd> / <kbd>⌥ Option</kbd> on macOS). The gestures above then use that key.
+
+The wheel flips the rings while the pointer is over the flower; a touchpad swipe or a quick spin counts as one flip. On Windows, Tab and the wheel don't reach the window behind the flower while it's open. On macOS, Tab during a drag needs Input Monitoring (like <kbd>Esc</kbd>, see *Permissions* above); in the Quick Action's flower it always works.
 
 While dragging over a petal, the caption under the Explorer drag image says what will happen (*Convert to DOCX*, *Crop*…). Convertino always copies — even though <kbd>Shift</kbd> normally means *move*, the source file is never touched.
 
@@ -150,7 +152,7 @@ While dragging over a petal, the caption under the Explorer drag image says what
 
 | Files | Convert ring | Tools ring |
 |---|---|---|
-| **Image** | PNG · JPG · WEBP · AVIF · PDF · ICO · TIFF *(HEIC where the codec allows)* | Cut out · Compress · Clean · Adjust · Annotate · Add BG · Crop · Redact · Text |
+| **Image** | PNG · JPG · WEBP · AVIF · PDF · GIF | Cut out · Compress · Clean · Adjust · Annotate · Add BG · Crop · Redact · Text |
 | **Several images** | same, as a batch; PDF merges them | Compress · Clean · Cut out · Text · Zip |
 | **Images + PDFs** | Merge into one PDF · Zip · Path | |
 | **PDF** | DOCX · JPG · TXT · PNG | Text (OCR) · Split · Rotate · Clean · Merge · Zip |
@@ -163,6 +165,8 @@ While dragging over a petal, the caption under the Explorer drag image says what
 | **Audio** | MP3 · M4A · WAV · FLAC · OGG · OPUS | Loudness · Trim silence · Zip · Path |
 | **ZIP** | Extract · Path · SHA-256 | |
 | **Folder / anything else** | Zip · Path · Copy / SHA-256 · Base64 | |
+
+Images also get a third ring, **More**: Half · Full HD · B&W · HEIC *(where the codec allows)* · TIFF · ICO · BMP · JXL · QOI. Half, Full HD and B&W keep the source's format and write beside it: `photo (2016x1512).jpg`, `photo (1920x1080).jpg`, `photo (grayscale).jpg`. Full HD only ever shrinks (portrait images fit in 1080 × 1920), and animated GIF / WebP stay animated.
 
 Petals only appear when the engine behind them is available (e.g. office formats need Microsoft Office or LibreOffice).
 

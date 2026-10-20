@@ -189,7 +189,7 @@ public sealed class Flyout : Window
             Children =
             {
                 HowRow("", $"Drag any file, {key.Tap()}", "the flower opens under your cursor"),
-                HowRow("", $"{key.KeyName()} again", "switch Convert ⇄ Tools"),
+                HowRow("", $"{key.KeyName()} again, Tab or wheel", "next ring: Convert → Tools → More"),
                 HowRow("", "Double-tap Shift in Explorer", "same menu for selected files"),
             },
         }, new Thickness(0, 14, 0, 0)));
