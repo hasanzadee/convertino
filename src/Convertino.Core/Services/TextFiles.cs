@@ -29,25 +29,44 @@ public static class TextFiles
 
     /// <summary>
     /// "UTF-8" and the line-ending petal for plain-text files: LF when they use CRLF, CRLF when they use LF,
-    /// both when they mix. Sniffs the first 16 KB of up to 8 files; none for folders, other files or binaries.
+    /// both when they mix. This runs while the flower opens mid-drag, so it reads only the first 8 KB of up to 4 local
+    /// files, and nothing of cloud placeholders, offline files or network shares (those get both petals; the tools
+    /// still check for binaries when they run). None for folders, other files or binaries.
     /// </summary>
     public static List<PetalAction> Petals(IReadOnlyList<string> files)
     {
         var list = new List<PetalAction>();
         if (files.Count == 0 || !files.All(f => IsTextFile(f) && File.Exists(f))) return list;
         int crlf = 0, lf = 0, cr = 0;
-        foreach (var f in files.Take(8))
-        {
-            var head = Head(f, 16 * 1024);
-            if (head == null || IsBinary(head)) return list;
-            var u = Unicode(head, out int bom);
-            var (a, b, c) = Count(u != null ? u.GetString(head, bom, head.Length - bom) : Encoding.Latin1.GetString(head));
-            crlf += a; lf += b; cr += c;
-        }
+        if (files.Any(IsRemote)) crlf = lf = 1;
+        else
+            foreach (var f in files.Take(4))
+            {
+                var head = Head(f, 8 * 1024);
+                if (head == null || IsBinary(head)) return list;
+                var u = Unicode(head, out int bom);
+                var (a, b, c) = Count(u != null ? u.GetString(head, bom, head.Length - bom) : Encoding.Latin1.GetString(head));
+                crlf += a; lf += b; cr += c;
+            }
         list.Add(Catalog.Tool("utf8", "UTF-8", "encoding", "Re-encode as UTF-8", ToUtf8));
         if (crlf + cr > 0) list.Add(Catalog.Tool("lf", "LF", "eol", "Convert line endings to LF", ToLf));
         if (lf + cr > 0) list.Add(Catalog.Tool("crlf", "CRLF", "eol", "Convert line endings to CRLF", ToCrlf));
         return list;
+    }
+
+    /// <summary>Windows: a network path, an offline file or a cloud placeholder (OneDrive…), which reading would stall on or download.</summary>
+    static bool IsRemote(string path)
+    {
+        if (!OperatingSystem.IsWindows()) return false;
+        try
+        {
+            if (path.StartsWith(@"\\?\UNC\", StringComparison.OrdinalIgnoreCase)) return true;
+            if (path.StartsWith(@"\\", StringComparison.Ordinal) && !path.StartsWith(@"\\?\", StringComparison.Ordinal)) return true;
+            if (Path.GetPathRoot(path) is { Length: > 0 } root && new DriveInfo(root).DriveType == DriveType.Network) return true;
+            const FileAttributes RecallOnOpen = (FileAttributes)0x40000, RecallOnDataAccess = (FileAttributes)0x400000;
+            return (File.GetAttributes(path) & (FileAttributes.Offline | RecallOnOpen | RecallOnDataAccess)) != 0;
+        }
+        catch { return true; }
     }
 
     static byte[]? Head(string path, int max)
@@ -65,14 +84,15 @@ public static class TextFiles
     // ── petals ──────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// "UTF-8": legacy code pages and UTF-16/32 re-encoded as UTF-8 beside the file ("notes (UTF-8).txt"); mixed
-    /// line endings become the file's main style. A UTF-8 CSV without a BOM gets one, so Excel reads it as UTF-8.
+    /// "UTF-8": legacy code pages and UTF-16/32 re-encoded as UTF-8 beside the file ("notes (UTF-8).txt"). Only the
+    /// encoding changes: line endings stay as they are (a quoted CSV cell may hold a line break; LF / CRLF are their own
+    /// petals). A UTF-8 CSV without a BOM gets one, so Excel reads it as UTF-8.
     /// </summary>
     public static async Task ToUtf8(Job job)
     {
-        int n = job.Inputs.Count, binary = 0;
+        int n = job.Inputs.Count, binary = 0, damaged = 0;
         var from = new SortedSet<string>();
-        bool bomAdded = false, eolFixed = false;
+        bool bomAdded = false;
         for (int i = 0; i < n; i++)
         {
             job.Token.ThrowIfCancellationRequested();
@@ -81,33 +101,41 @@ public static class TextFiles
             var bytes = await File.ReadAllBytesAsync(src, job.Token);
             if (IsBinary(bytes)) { binary++; continue; }
             var enc = Detect(bytes, out int bom);
-            var text = enc.GetString(bytes, bom, bytes.Length - bom);
             var ext = Kinds.Ext(src);
-            var (crlf, lf, cr) = Count(text);
-            bool utf8 = enc.CodePage == 65001, mixed = cr > 0 || (crlf > 0 && lf > 0);
-            bool addBom = utf8 && bom == 0 && ext is "csv" or "tsv";
-            if (utf8 && !mixed && !addBom) continue;
-            if (mixed) text = Normalize(text, crlf >= lf && crlf > 0 ? "\r\n" : "\n", out _);
+            bool utf8 = enc.CodePage == 65001, addBom = utf8 && bom == 0 && ext is "csv" or "tsv";
+            if (utf8 && !addBom)
+            {
+                // near-UTF-8 (a stray byte or two) is left as it is rather than rewritten
+                if (!Utf8.IsValid(bytes.AsSpan(bom))) damaged++;
+                continue;
+            }
             var dst = Paths.Beside(src, ext, "(UTF-8)");
-            await File.WriteAllTextAsync(dst, text, new UTF8Encoding(BomExt.Contains(ext)), job.Token);
+            await File.WriteAllTextAsync(dst, enc.GetString(bytes, bom, bytes.Length - bom), new UTF8Encoding(BomExt.Contains(ext)), job.Token);
+            KeepMode(src, dst);
             job.Outputs.Add(dst);
             if (!utf8) from.Add(Name(enc));
             bomAdded |= addBom;
-            eolFixed |= mixed;
         }
         if (job.Outputs.Count == 0)
         {
             if (binary == n) throw new InvalidDataException(Binary(n));
             job.Title = n == 1 ? "Already UTF-8" : "All already UTF-8";
-            job.Summary = binary > 0 ? $"Nothing to change · {binary} binary skipped" : "Nothing to change";
+            job.Summary = damaged > 0 ? "A few bytes aren't valid UTF-8; left as they are" : "Nothing to change";
+            if (binary > 0) job.Summary += $" · {binary} binary skipped";
             return;
         }
         var parts = new List<string>();
         if (from.Count > 0) parts.Add($"{string.Join(", ", from)} → UTF-8");
-        if (bomAdded) parts.Add("BOM added for Excel");
-        if (eolFixed) parts.Add(parts.Count == 0 ? "Line endings fixed" : "line endings fixed");
+        if (bomAdded) parts.Add(parts.Count == 0 ? "BOM added for Excel" : "BOM added to UTF-8 CSV for Excel");
         if (binary > 0) parts.Add($"{binary} binary skipped");
         job.Summary = string.Join(" · ", parts);
+    }
+
+    /// <summary>The copy keeps the source's Unix permissions, so deploy.sh stays executable.</summary>
+    static void KeepMode(string src, string dst)
+    {
+        if (OperatingSystem.IsWindows()) return;
+        try { File.SetUnixFileMode(dst, File.GetUnixFileMode(src)); } catch { }
     }
 
     public static Task ToLf(Job job) => LineEndings(job, "\n", "LF");
@@ -141,6 +169,7 @@ public static class TextFiles
             if (count == 0) continue;
             var dst = Paths.Beside(src, Kinds.Ext(src), $"({label})");
             await File.WriteAllBytesAsync(dst, result, job.Token);
+            KeepMode(src, dst);
             job.Outputs.Add(dst);
             changed += count;
         }
@@ -227,8 +256,15 @@ public static class TextFiles
         if (Unicode(b, out bom) is { } u) return u;
         if (Utf8.IsValid(b)) return new UTF8Encoding(false);
 
-        Encoding? best = null;
-        double bestScore = double.MinValue;
+        // a stray byte in an otherwise UTF-8 file: UTF-8 read leniently competes too. Each bad byte costs it 6 (a legacy
+        // reading pays 20 per undefined character) and each real multi-byte character earns it 2, so near-UTF-8 stays
+        // UTF-8, while a legacy file, almost none of whose high bytes form valid UTF-8, still goes to its code page
+        var lenient = new UTF8Encoding(false, false);
+        var asUtf8 = lenient.GetString(b);
+        int bad = 0, good = 0;
+        foreach (var ch in asUtf8) { if (ch == '�') bad++; else if (ch >= 0x80) good++; }
+        Encoding best = lenient;
+        double bestScore = Plausibility(asUtf8) + 14 * bad + 2 * good;
         foreach (var cp in CodePages())
         {
             Encoding enc;
@@ -238,7 +274,7 @@ public static class TextFiles
             var score = Plausibility(enc.GetString(b)) - cp switch { 866 => 1, 20866 => 0.5, _ => 0 };
             if (score > bestScore) { best = enc; bestScore = score; }
         }
-        return best ?? Encoding.Latin1;
+        return best;
     }
 
     static List<int> CodePages()
