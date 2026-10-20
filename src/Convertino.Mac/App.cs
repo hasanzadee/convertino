@@ -217,16 +217,19 @@ public sealed class App : Application
         menu.Items.Add(quit);
         if (OverlayController.Diag) menu.Opening += (_, _) => Log.Info("tray menu opening");
 
+        var tip = $"Convertino — drag a file, {s.TriggerKey.Tap()}";
         if (_tray == null)
         {
             using var ms = new MemoryStream();
             AppIcon.Render(44).Save(ms, PngBitmapEncoderOptions.Default);
             ms.Position = 0;
-            _tray = new TrayIcon { Icon = new WindowIcon(ms), IsVisible = true };
+            // Avalonia.Native hands the tooltip to the status item as it attaches: a null one crashes
+            _tray = new TrayIcon { Icon = new WindowIcon(ms), ToolTipText = tip, Menu = menu, IsVisible = true };
             TrayIcon.SetIcons(this, [_tray]);
+            return;
         }
         // later calls refresh the same status item (a new one could land somewhere else in the menu bar)
-        _tray.ToolTipText = $"Convertino — drag a file, {s.TriggerKey.Tap()}";
+        _tray.ToolTipText = tip;
         _tray.Menu = menu;
     }
 

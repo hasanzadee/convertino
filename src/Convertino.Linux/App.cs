@@ -172,18 +172,20 @@ public sealed class App : Application
         quit.Click += (_, _) => (ApplicationLifetime as IClassicDesktopStyleApplicationLifetime)?.Shutdown();
         menu.Items.Add(quit);
 
+        var tip = $"Convertino — drag a file, {s.TriggerKey.Tap()}";
         if (_tray == null)
         {
             using var ms = new MemoryStream();
             AppIcon.Render(64).Save(ms, PngBitmapEncoderOptions.Default);
             ms.Position = 0;
-            _tray = new TrayIcon { Icon = new WindowIcon(ms), IsVisible = true };
+            _tray = new TrayIcon { Icon = new WindowIcon(ms), ToolTipText = tip, Menu = menu, IsVisible = true };
             // a left click opens the panel where the desktop reports it (KDE, XFCE, GNOME's AppIndicator extension …)
             _tray.Clicked += (_, _) => _panel?.Toggle();
             TrayIcon.SetIcons(this, [_tray]);
+            return;
         }
         // later calls refresh the same icon (re-registering it could move it around the tray)
-        _tray.ToolTipText = $"Convertino — drag a file, {s.TriggerKey.Tap()}";
+        _tray.ToolTipText = tip;
         _tray.Menu = menu;
     }
 
