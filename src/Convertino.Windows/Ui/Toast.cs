@@ -29,13 +29,16 @@ public sealed class ToastWindow : Window
     readonly Border _bar;
     readonly Button _close;
     readonly Button _folder;
+    readonly StackPanel _buttons;
     readonly TranslateTransform _slide = new();
     readonly DispatcherTimer _life = new();
-    bool _closing;
+    bool _closing, _asking;
 
     public IntPtr Hwnd { get; private set; }
     public POINT Anchor { get; init; }
     public Action? OnCancel { get; set; }
+    /// <summary>Replaces the default click (open / reveal the output).</summary>
+    public Action? OnClick { get; set; }
     public Action<ToastWindow>? AfterClose { get; set; }
     public List<string> Outputs { get; } = [];
     public bool Running { get; private set; } = true;
@@ -111,17 +114,17 @@ public sealed class ToastWindow : Window
         _folder.Visibility = Visibility.Collapsed;
         _close = IconButton("", "Close");
         _close.Click += (_, _) => { if (Running) OnCancel?.Invoke(); Dismiss(); };
-        var buttons = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center, Children = { _folder, _close } };
+        _buttons = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center, Children = { _folder, _close } };
 
         var grid = new Grid { Margin = new Thickness(14, 0, 10, 0) };
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         Grid.SetColumn(text, 1);
-        Grid.SetColumn(buttons, 2);
+        Grid.SetColumn(_buttons, 2);
         grid.Children.Add(_iconBox);
         grid.Children.Add(text);
-        grid.Children.Add(buttons);
+        grid.Children.Add(_buttons);
 
         var layers = new Grid
         {
@@ -147,13 +150,14 @@ public sealed class ToastWindow : Window
         layers.Clip = new RectangleGeometry(new Rect(0, 0, CardW - 2, CardH - 2), 15, 15);
         _card.MouseLeftButtonUp += (_, e) =>
         {
-            if (e.OriginalSource is DependencyObject d && FindButton(d) != null) return;
+            if (_asking || e.OriginalSource is DependencyObject d && FindButton(d) != null) return;
+            if (OnClick != null) { OnClick(); Dismiss(); return; }
             if (Outputs.Count == 1 && File.Exists(Outputs[0])) Shell.Open(Outputs[0]);
             else if (Outputs.Count > 0) Shell.Reveal(Outputs[0]);
             Dismiss();
         };
         _card.MouseEnter += (_, _) => _life.Stop();
-        _card.MouseLeave += (_, _) => { if (!Running) _life.Start(); };
+        _card.MouseLeave += (_, _) => { if (!Running && !_asking) _life.Start(); };
         Content = new Grid { Margin = new Thickness(Margin_), Children = { _card } };
 
         _life.Tick += (_, _) => { _life.Stop(); Dismiss(); };
@@ -237,6 +241,49 @@ public sealed class ToastWindow : Window
         var pop = new DoubleAnimation(1.18, 1, TimeSpan.FromMilliseconds(420)) { EasingFunction = new ElasticEase { Oscillations = 1, Springiness = 4 } };
         s.BeginAnimation(ScaleTransform.ScaleXProperty, pop);
         s.BeginAnimation(ScaleTransform.ScaleYProperty, pop);
+    }
+
+    /// <summary>A question with two answers that stays until answered; the text may take two lines.</summary>
+    public void SetChoice(string title, string sub, string glyph, string yes, string no, Action<bool> answer, string? tip = null)
+    {
+        Running = false;
+        _asking = true;
+        _title.Text = title;
+        _sub.Text = sub;
+        _sub.Visibility = string.IsNullOrEmpty(sub) ? Visibility.Collapsed : Visibility.Visible;
+        _sub.TextWrapping = TextWrapping.Wrap;
+        _sub.MaxHeight = 34; // two lines
+        _barTrack.Visibility = Visibility.Collapsed;
+        _glyph.Text = glyph;
+        _folder.Visibility = Visibility.Collapsed;
+        _close.Visibility = Visibility.Collapsed;
+        _card.Cursor = Cursors.Arrow;
+        if (tip != null) _card.ToolTip = tip;
+        _buttons.Children.Insert(0, TextButton(no, false, () => { answer(false); Dismiss(); }));
+        _buttons.Children.Insert(0, TextButton(yes, true, () => { answer(true); Dismiss(); }));
+    }
+
+    static Button TextButton(string text, bool primary, Action click)
+    {
+        var t = Theme.Current;
+        var tpl = new ControlTemplate(typeof(Button));
+        var bd = new FrameworkElementFactory(typeof(Border));
+        bd.SetValue(Border.CornerRadiusProperty, new CornerRadius(8));
+        bd.SetValue(Border.PaddingProperty, new Thickness(10, 4, 10, 5));
+        bd.SetValue(Border.BackgroundProperty, primary ? new LinearGradientBrush(t.AccentA, t.AccentB, 0) : new SolidColorBrush(Color.FromArgb(36, t.SubText.R, t.SubText.G, t.SubText.B)));
+        bd.AppendChild(new FrameworkElementFactory(typeof(ContentPresenter)));
+        tpl.VisualTree = bd;
+        var b = new Button
+        {
+            Template = tpl, Cursor = Cursors.Hand, Margin = new Thickness(0, 0, 4, 0), VerticalAlignment = VerticalAlignment.Center,
+            Content = new TextBlock
+            {
+                Text = text, FontFamily = new FontFamily("Segoe UI Variable Text, Segoe UI"), FontSize = 12, FontWeight = FontWeights.SemiBold,
+                Foreground = new SolidColorBrush(primary ? t.AccentText : t.Text),
+            },
+        };
+        b.Click += (_, _) => click();
+        return b;
     }
 
     public void AnimateIn()

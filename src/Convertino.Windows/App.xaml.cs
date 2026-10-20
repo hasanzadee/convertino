@@ -173,6 +173,7 @@ public partial class App : Application
                 Toasts.Show(t);
             });
         }
+        Dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle, UpdateCards.Start);
     }
 
     protected override void OnExit(ExitEventArgs e)

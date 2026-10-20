@@ -12,6 +12,7 @@ using Avalonia.Media.Imaging;
 using Avalonia.Media.Immutable;
 using Avalonia.Threading;
 using Convertino.Overlay;
+using Convertino.Services;
 
 namespace Convertino.Ui;
 
@@ -273,6 +274,7 @@ public sealed class TrayPanel : Window
                 ToggleRow("Enabled", s.Enabled, v => { s.Enabled = v; Subtitle(); }),
                 TriggerRow(key),
                 ToggleRow("Notifications", s.Notifications, v => s.Notifications = v),
+                ToggleRow("Tell me about new versions", s.CheckForUpdates == true, Updates.Answer),
                 ToggleRow(OperatingSystem.IsMacOS() ? "Open at login" : "Start at login", s.LaunchAtStartup,
                     v => { s.LaunchAtStartup = v; Platform.Current.SetAutostart(v); }),
             },
@@ -289,11 +291,12 @@ public sealed class TrayPanel : Window
         }
 
         // footer
-        var footer = new DockPanel { Margin = new Thickness(0, 14, 0, 0) };
+        var footer = new DockPanel { Margin = new Thickness(0, 14, 0, 0), LastChildFill = false };
         var quit = FooterButton("power", "Quit", () => (Application.Current?.ApplicationLifetime as IClassicDesktopStyleApplicationLifetime)?.Shutdown());
         DockPanel.SetDock(quit, Dock.Right);
         footer.Children.Add(quit);
         footer.Children.Add(FooterButton("log", "Log", () => Platform.Current.Open(Paths.LogFile)));
+        footer.Children.Add(FooterButton("update", "Updates", UpdateCards.CheckNow));
 
         // header and footer stay put; only the middle scrolls when the screen is short
         var body = new DockPanel { Margin = new Thickness(18, 16, 18, 14) };
