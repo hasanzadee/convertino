@@ -201,14 +201,20 @@ public static class Catalog
                 conv.Add(Fmt("html", "web", j => office!.Convert(j, "html")));
                 tools.AddRange([ZipA, PathA, HashA]);
                 break;
-            case Kind.Excel when hasOffice(Kind.Excel):
-                conv.Add(Fmt("pdf", "print", j => office!.Convert(j, "pdf")));
-                if (ext != "xlsx") conv.Add(Fmt("xlsx", "Excel", j => office!.Convert(j, "xlsx")));
-                if (ext != "csv") conv.Add(Fmt("csv", "UTF-8", j => office!.Convert(j, "csv")));
-                if (ext != "ods") conv.Add(Fmt("ods", "OpenDoc", j => office!.Convert(j, "ods")));
-                conv.Add(Fmt("html", "web", j => office!.Convert(j, "html")));
+            case Kind.Excel when hasOffice(Kind.Excel) || files.All(Sheets.IsSheet):
+            {
+                // CSV ⇄ XLSX, → JSON and the HTML / Markdown tables run in-process: no office suite needed, UTF-8 kept, every sheet converted
+                bool sheets = files.All(Sheets.IsSheet), viaOffice = hasOffice(Kind.Excel);
+                if (viaOffice) conv.Add(Fmt("pdf", "print", j => office!.Convert(j, "pdf")));
+                if (ext != "xlsx") conv.Add(Fmt("xlsx", "Excel", j => sheets ? Data.Convert(j, "xlsx") : office!.Convert(j, "xlsx")));
+                if (ext != "csv") conv.Add(Fmt("csv", "UTF-8", j => sheets ? Data.Convert(j, "csv") : office!.Convert(j, "csv")));
+                if (viaOffice && ext != "ods") conv.Add(Fmt("ods", "OpenDoc", j => office!.Convert(j, "ods")));
+                conv.Add(Fmt("html", sheets ? "table" : "web", j => sheets ? Data.Convert(j, "html") : office!.Convert(j, "html")));
+                if (sheets) conv.Add(Fmt("json", "data", j => Data.Convert(j, "json")));
+                if (sheets) conv.Add(Fmt("md", "table", j => Data.Convert(j, "md")));
                 tools.AddRange([ZipA, PathA, HashA]);
                 break;
+            }
             case Kind.Slides when hasOffice(Kind.Slides):
                 conv.Add(Fmt("pdf", "handout", j => office!.Convert(j, "pdf")));
                 conv.Add(Fmt("png", "slides", j => office!.Convert(j, "png")));
@@ -257,6 +263,33 @@ public static class Catalog
                 tools.Add(Tool("trim", "Trim", "cut", "Trim silence", Media.TrimSilence));
                 tools.AddRange([ZipA, PathA]);
                 break;
+            case Kind.Data:
+            {
+                // JSON, JSON Lines, YAML, TOML and XML into one another, and to CSV / XLSX (Services/Data.cs);
+                // CSS only gets Pretty / Minify, so they lead its first ring
+                string self = Data.Canon(ext);
+                bool same = files.All(f => Data.Canon(Kinds.Ext(f)) == self), css = files.Any(f => Kinds.Ext(f) == "css");
+                void D(string to, string hint)
+                {
+                    if (!css && !(same && to == self)) conv.Add(Fmt(to, hint, j => Data.Convert(j, to)));
+                }
+                D("json", "web");
+                D("yaml", "readable");
+                D("toml", "config");
+                D("xml", "markup");
+                D("csv", "table");
+                D("xlsx", "Excel");
+                if (self is "json" or "jsonl") D("jsonl", "lines");
+                var ring = css ? conv : tools;
+                if (files.All(Data.CanReformat))
+                {
+                    ring.Add(Tool("pretty", "Pretty", "code", "Pretty-print", Data.Pretty));
+                    ring.Add(Tool("minify", "Minify", "compress", "Minify", Data.Minify));
+                }
+                ring.Add(Tool("copytext", "Copy", "copy", "Copy contents", CopyText, quick: true));
+                tools.AddRange([ZipA, PathA, HashA]);
+                break;
+            }
             case Kind.Archive:
                 conv.Add(Tool("extract", "Extract", "folder", "Extract here", Archives.Extract));
                 conv.AddRange([PathA, HashA]);

@@ -8,5 +8,5 @@ Icon=convertino
 Terminal=false
 Categories=Utility;Graphics;FileTools;
 Keywords=convert;converter;image;pdf;video;compress;crop;ocr;
-MimeType=image/png;image/jpeg;image/webp;image/heic;image/avif;image/gif;image/tiff;image/bmp;application/pdf;video/mp4;video/x-matroska;video/webm;video/quicktime;audio/mpeg;audio/x-wav;audio/flac;audio/ogg;text/markdown;text/plain;application/x-subrip;text/vtt;text/x-ssa;application/vnd.openxmlformats-officedocument.wordprocessingml.document;application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;application/vnd.openxmlformats-officedocument.presentationml.presentation;application/zip;
+MimeType=image/png;image/jpeg;image/webp;image/heic;image/avif;image/gif;image/tiff;image/bmp;application/pdf;video/mp4;video/x-matroska;video/webm;video/quicktime;audio/mpeg;audio/x-wav;audio/flac;audio/ogg;text/markdown;text/plain;application/x-subrip;text/vtt;text/x-ssa;application/vnd.openxmlformats-officedocument.wordprocessingml.document;application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;application/vnd.openxmlformats-officedocument.presentationml.presentation;application/zip;application/json;application/x-ndjson;application/yaml;application/x-yaml;application/toml;application/xml;text/xml;text/csv;
 StartupNotify=false

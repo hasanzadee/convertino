@@ -9,6 +9,9 @@ Convertino is MIT-licensed. It builds on these projects (all used unmodified, vi
 | [PDFsharp](https://github.com/empira/PDFsharp) 6.2.x | MIT | PDF merge / split / rotate / metadata, images → PDF |
 | [Markdig](https://github.com/xoofx/markdig) | BSD-2-Clause | Markdown → HTML |
 | [SharpCompress](https://github.com/adamhathcock/sharpcompress) 0.50.7 | MIT | reading 7Z, RAR, ZIP, BZ2, XZ archives; writing 7Z |
+| [YamlDotNet](https://github.com/aaubry/YamlDotNet) 18.1.0 | MIT | reading YAML |
+| [Tomlyn](https://github.com/xoofx/Tomlyn) 2.10.1 | BSD-2-Clause | reading and writing TOML |
+| [MiniExcel](https://github.com/mini-software/MiniExcel) 1.46.0 | Apache-2.0 | reading and writing XLSX without an office suite |
 | [ONNX Runtime](https://github.com/microsoft/onnxruntime) (+ DirectML) | MIT | running the cut-out model |
 | [BiRefNet](https://github.com/ZhengPeng7/BiRefNet) — `BiRefNet_lite` ONNX export by [onnx-community](https://huggingface.co/onnx-community/BiRefNet_lite-ONNX) | MIT | background removal model (downloaded on request, not redistributed) |
 | [Avalonia](https://github.com/AvaloniaUI/Avalonia) | MIT | Linux and macOS user interface |
