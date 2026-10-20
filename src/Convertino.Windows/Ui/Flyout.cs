@@ -559,7 +559,7 @@ public sealed class Flyout : Window
             var text = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
             text.Children.Add(new TextBlock { Text = System.IO.Path.GetFileName(path.TrimEnd('\\', '/')), FontFamily = TextF, FontSize = 12.5, Foreground = B(T.Text), TextTrimming = TextTrimming.CharacterEllipsis, MaxWidth = 210 });
             text.Children.Add(new TextBlock { Text = $"new files → {Watches.LabelOf(wf.Action)} · in {wf.Out}" + (Directory.Exists(path) ? "" : " · missing"), FontFamily = TextF, FontSize = 11, Foreground = B(T.SubText) });
-            var remove = (FrameworkElement)FooterButton("", "", () => { Watches.Remove(path); Build(); });
+            var remove = (FrameworkElement)FooterButton("", "", () => { try { Watches.Remove(path); } catch (Exception ex) { Log.Error("watch remove", ex); } Build(); });
             remove.ToolTip = "Stop watching";
             remove.VerticalAlignment = VerticalAlignment.Center;
             var main = new Border
@@ -595,7 +595,7 @@ public sealed class Flyout : Window
                 pill.MouseLeave += (_, _) => pill.Background = B(A(T.SubText, .12));
                 pill.MouseLeftButtonUp += (_, e) =>
                 {
-                    Watches.Add(new WatchFolder { Path = dir, Action = id });
+                    try { Watches.Add(new WatchFolder { Path = dir, Action = id }); } catch (Exception ex) { Log.Error("watch add", ex); }
                     _pendingWatch = null;
                     Build();
                     e.Handled = true;
