@@ -10,20 +10,22 @@ public static class Misc
 {
     public static async Task Zip(Job job)
     {
-        var first = job.Inputs[0];
-        var dir = Path.GetDirectoryName(first.TrimEnd('\\'))!;
-        string name = job.Inputs.Count == 1
-            ? Path.GetFileNameWithoutExtension(first.TrimEnd('\\'))
+        // "photos/" from a shell's tab completion would otherwise zip into the folder itself, as ".zip"
+        var inputs = job.Inputs.Select(Path.TrimEndingDirectorySeparator).ToList();
+        var first = inputs[0];
+        var dir = Path.GetDirectoryName(first)!;
+        string name = inputs.Count == 1
+            ? (Directory.Exists(first) ? Path.GetFileName(first) : Path.GetFileNameWithoutExtension(first))
             : (Path.GetFileName(dir) is { Length: > 0 } d ? d : "Archive");
         var dst = Paths.Unique(dir, name, "zip");
         await Task.Run(() =>
         {
             var files = new List<(string full, string entry)>();
-            foreach (var input in job.Inputs)
+            foreach (var input in inputs)
             {
                 if (Directory.Exists(input))
                 {
-                    var root = Path.GetDirectoryName(input.TrimEnd('\\'))!;
+                    var root = Path.GetDirectoryName(input)!;
                     foreach (var f in Directory.EnumerateFiles(input, "*", SearchOption.AllDirectories))
                         files.Add((f, Path.GetRelativePath(root, f)));
                 }
