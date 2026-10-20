@@ -75,7 +75,7 @@ macOS (`Convertino.app/Contents/MacOS/convertino`) takes the same `CONVERTINO_DE
 | `CONVERTINO_NOVIBRANCY=1` | no native blur under the petals |
 | `CONVERTINO_GLASS_MATERIAL=n` | `NSVisualEffectMaterial` for the glass (default 13, HUD window) |
 
-All: `CONVERTINO_CUTOUT_CPU=1` forces the cut-out onto the CPU. Logs: `%APPDATA%\Convertino\convertino.log`, `~/.config/convertino/convertino.log`, `~/Library/Application Support/Convertino/convertino.log`.
+All: `CONVERTINO_CUTOUT_CPU=1` forces the cut-out onto the CPU (no DirectML / Core ML). Logs: `%APPDATA%\Convertino\convertino.log`, `~/.config/convertino/convertino.log`, `~/Library/Application Support/Convertino/convertino.log`.
 
 ## Testing the Linux build
 
@@ -90,7 +90,7 @@ DISPLAY=:99 import -window root /tmp/shot.png
 
 ## Testing the macOS build
 
-`tools/mac-smoke.sh dist/macos-arm64/Convertino.app --gui` runs what CI runs: CLI conversions, CoreGraphics PDF rendering, Vision OCR, the editors' self-test, then the app itself — a pinned flower, `convertino menu` over IPC, and a synthetic drag → Shift → drop on a petal (`tools/mac-drag-test.swift`; the terminal needs Accessibility to post input). Screenshots and the log land in `./mac-smoke/`. `CUTOUT=1` adds Cut out (downloads the model). In CI it also sets a striped wallpaper, runs `install.sh` and the Finder Quick Action through `automator`, and uninstalls again; those steps are skipped on your own Mac. Every CI run uploads the screenshots, plus a zipped `Convertino.app`, as the `macos-arm64` / `macos-x64` artifacts — handy without a Mac.
+`tools/mac-smoke.sh dist/macos-arm64/Convertino.app --gui` runs what CI runs: CLI conversions, CoreGraphics PDF rendering, Vision OCR, the editors' self-test, then the app itself — a pinned flower, `convertino menu` over IPC, and a synthetic drag → Shift → drop on a petal (`tools/mac-drag-test.swift`; the terminal needs Accessibility to post input). Screenshots and the log land in `./mac-smoke/`. `CUTOUT=1` adds Cut out (downloads the model): twice on Core ML (the first load compiles, the second uses the cache), once on the CPU, and `tools/mac-cutout-diff.swift` checks the two masks match. In CI it also sets a striped wallpaper, runs `install.sh` and the Finder Quick Action through `automator`, and uninstalls again; those steps are skipped on your own Mac. Every CI run uploads the screenshots, plus a zipped `Convertino.app`, as the `macos-arm64` / `macos-x64` artifacts — handy without a Mac.
 
 What CI can't show is a real Finder drag with Shift (its synthetic drag starts from a test window). The glass does show: GitHub's macOS images ship with *Reduce transparency* on, which draws every `NSVisualEffectView` flat, so the script switches it off in CI. If you have one, `CONVERTINO_DEBUG=1 ~/Applications/Convertino.app/Contents/MacOS/convertino` logs every Shift / drag / drop step.
 

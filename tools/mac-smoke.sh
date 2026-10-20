@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Smoke test for the macOS build (used by CI; works on any Mac):
-#   tools/mac-smoke.sh dist/Convertino.app          command line: conversions, CoreGraphics PDF, Vision OCR (CUTOUT=1: Cut out)
+#   tools/mac-smoke.sh dist/Convertino.app          command line: conversions, CoreGraphics PDF, Vision OCR (CUTOUT=1: Cut out
+#                                                 on Core ML and on the CPU, compared)
 #   tools/mac-smoke.sh dist/Convertino.app --gui    + editors, pinned flower, "convertino menu" over IPC, a synthetic drag + Shift
 #                                                 + drop; in CI also install.sh and the Finder Quick Action
 # Screenshots and the log land in ./mac-smoke/.
@@ -49,11 +50,29 @@ fi
 cp smoke.jpg "$OUT/pdf-render.jpg"
 
 if [ -n "${CUTOUT:-}" ]; then
-  step "Cut out (ONNX Runtime on the CPU)"
+  step "Cut out: Core ML (first load compiles, second uses the cache) vs the CPU"
   "$D" model install | tail -1
-  "$D" run cutout smoke.png
-  test -s "smoke (cutout).png"
-  cp "smoke (cutout).png" "$OUT/cutout.png"
+  # a photo with a clear subject: one of macOS's account pictures (animals first), else the app icon
+  pics="$(find "/Library/User Pictures" -type f \( -iname '*.heic' -o -iname '*.jpg' -o -iname '*.png' -o -iname '*.tif' \) 2>/dev/null | sort || true)"
+  pic="$({ grep -i '/animals/' <<<"$pics"; echo "$pics"; } | grep -m1 . || true)"
+  if [ -n "$pic" ] && sips -s format png "$pic" --out cut.png >/dev/null 2>&1 && [ -s cut.png ]; then echo "picture: $pic"
+  else echo "picture: the app icon (no account pictures on this Mac)"; cp smoke.png cut.png; fi
+  cp cut.png "$OUT/cutout-input.png"
+  rm -rf "$HOME/Library/Application Support/Convertino/models"/coreml-*
+  n0=$(wc -l < "$LOG" 2>/dev/null || echo 0)
+  for pass in cold cached; do
+    "$D" run cutout cut.png
+    mv "cut (cutout).png" "$OUT/cutout-coreml-$pass.png"
+  done
+  du -sh "$HOME/Library/Application Support/Convertino/models"/coreml-* || true
+  CONVERTINO_CUTOUT_CPU=1 "$D" run cutout cut.png
+  mv "cut (cutout).png" "$OUT/cutout-cpu.png"
+  tail -n +"$((n0 + 1))" "$LOG" | grep "cutout:" | tee "$OUT/cutout-log.txt"
+  grep -q "inference on CoreML" "$OUT/cutout-log.txt" || { echo "Cut out didn't run on Core ML"; exit 1; }
+  if grep -qE "Core ML unavailable|retrying on CPU" "$OUT/cutout-log.txt"; then echo "Core ML failed and the CPU took over"; exit 1; fi
+  grep -q "program from the cache" "$OUT/cutout-log.txt" || echo "::warning::the second Core ML load didn't use the compiled-model cache"
+  swiftc -O "$ROOT/tools/mac-cutout-diff.swift" -o "$WORK/cutdiff"
+  "$WORK/cutdiff" "$OUT/cutout-coreml-cached.png" "$OUT/cutout-cpu.png" "$OUT/cutout-compare.png" "Core ML" "CPU"
 fi
 
 [ "$GUI" = "--gui" ] || exit 0

@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Cut out on Apple silicon runs on Core ML (ONNX Runtime's Core ML provider, ML Program on the GPU / Neural Engine) instead of the CPU only, with the CPU as the fallback if Core ML fails. The first cut-out compiles the model for your Mac and caches it next to the model, so later loads are quick; `convertino model remove` deletes the cache too. The log says which provider ran and how ONNX Runtime split the model.
+
 ## 1.1.0 — 2026-10-20
 
 - Activity card in the Windows tray panel: files handled, space saved and your day streak for the last two weeks (the numbers count up as the panel opens), a bar per day that shows that day's numbers on hover, and your most used actions. It takes the place of the how-to card once you've converted something.

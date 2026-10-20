@@ -57,7 +57,7 @@ public static class Cli
                     if (!Services.Cutout.Supported) { o.WriteLine("Cut out isn't available on this Mac (ONNX Runtime has no Intel-Mac build) - it needs Apple silicon."); return 2; }
                     var path = Services.Cutout.ModelPath;
                     if (args[1] == "status") { o.WriteLine(File.Exists(path) ? $"installed: {path}" : "not installed - run: convertino model install"); return 0; }
-                    if (args[1] == "remove") { if (File.Exists(path)) File.Delete(path); o.WriteLine("removed"); return 0; }
+                    if (args[1] == "remove") { Services.Cutout.Remove(); o.WriteLine("removed"); return 0; }
                     if (File.Exists(path)) { o.WriteLine($"already installed: {path}"); return 0; }
                     o.WriteLine($"Downloading BiRefNet-lite (MIT, {Paths.HumanSize(Services.Cutout.ModelBytes)}) from Hugging Face...");
                     int last = -1;

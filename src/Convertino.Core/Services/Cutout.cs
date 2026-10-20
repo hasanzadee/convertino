@@ -6,7 +6,8 @@ using Microsoft.ML.OnnxRuntime;
 namespace Convertino.Services;
 
 /// <summary>
-/// Offline background removal: BiRefNet-lite (MIT) on ONNX Runtime — DirectML GPU, CPU fallback.
+/// Offline background removal: BiRefNet-lite (MIT) on ONNX Runtime — DirectML GPU on Windows, Core ML on Apple silicon,
+/// CPU fallback.
 /// The model's 1024² mask is upscaled smoothly with its edge re-tightened, then edge colours are decontaminated
 /// (blur-fusion foreground estimation) so no background tint survives in hair, fur or soft edges.
 /// </summary>
@@ -26,8 +27,8 @@ public static class Cutout
     static readonly Timer Idle = new(_ => Unload());
     static InferenceSession? _session;
     static string _device = "";
-    // DirectML is Windows-only; everywhere else ONNX Runtime runs on the CPU
-    static bool _cpuOnly = !OperatingSystem.IsWindows() || Environment.GetEnvironmentVariable("CONVERTINO_CUTOUT_CPU") == "1";
+    // DirectML on Windows, Core ML on Apple silicon (Intel Macs never get here); Linux runs on the CPU
+    static bool _cpuOnly = !(OperatingSystem.IsWindows() || OperatingSystem.IsMacOS()) || Environment.GetEnvironmentVariable("CONVERTINO_CUTOUT_CPU") == "1";
 
     public static async Task Run(Job job)
     {
@@ -168,9 +169,9 @@ public static class Cutout
         report(0.3);
         try { return InferOn(s, img, ct); }
         catch (OnnxRuntimeException) when (ct.IsCancellationRequested) { throw new OperationCanceledException(ct); }
-        catch (OnnxRuntimeException ex) when (_device == "GPU")
+        catch (Exception ex) when (_device != "CPU" && ex is not OperationCanceledException)
         {
-            Log.Error("cutout: GPU run failed, retrying on CPU", ex);
+            Log.Error($"cutout: {_device} run failed, retrying on CPU", ex);
             _session?.Dispose();
             _session = null;
             _cpuOnly = true;
@@ -212,7 +213,13 @@ public static class Cutout
 
         // BiRefNet returns logits; models that already end in a sigmoid stay in [0, 1]
         float mn = float.MaxValue, mx = float.MinValue;
-        foreach (var v in mask) { if (v < mn) mn = v; if (v > mx) mx = v; }
+        foreach (var v in mask)
+        {
+            // half-precision overflow on a GPU / Neural Engine shows up as NaN or ∞: let the caller retry on the CPU
+            if (!float.IsFinite(v)) throw new InvalidDataException($"{_device} returned a non-finite mask");
+            if (v < mn) mn = v;
+            if (v > mx) mx = v;
+        }
         if (mn < -0.01f || mx > 1.01f)
             for (int i = 0; i < mask.Length; i++) mask[i] = 1f / (1f + MathF.Exp(-mask[i]));
         return (mask, ow, oh);
@@ -221,29 +228,109 @@ public static class Cutout
     static InferenceSession Open()
     {
         if (_session != null) return _session;
+        OrtLogging();
         var sw = Stopwatch.StartNew();
+        string note = "";
         if (!_cpuOnly)
         {
             try
             {
-                using var o = new SessionOptions { EnableMemoryPattern = false, ExecutionMode = ExecutionMode.ORT_SEQUENTIAL };
-                // DML's whole-graph fusion runs out of GPU memory on BiRefNet's deformable convs (Intel Arc iGPU);
-                // op-by-op dispatch works and still runs ~5× faster than the CPU
-                o.AddSessionConfigEntry("ep.dml.disable_graph_fusion", "1");
-                o.AppendExecutionProvider_DML(0);
-                _session = new InferenceSession(ModelPath, o);
-                _device = "GPU";
+                if (OperatingSystem.IsWindows())
+                {
+                    using var o = new SessionOptions { EnableMemoryPattern = false, ExecutionMode = ExecutionMode.ORT_SEQUENTIAL };
+                    // DML's whole-graph fusion runs out of GPU memory on BiRefNet's deformable convs (Intel Arc iGPU);
+                    // op-by-op dispatch works and still runs ~5× faster than the CPU
+                    o.AddSessionConfigEntry("ep.dml.disable_graph_fusion", "1");
+                    o.AppendExecutionProvider_DML(0);
+                    _session = new InferenceSession(ModelPath, o);
+                    _device = "GPU";
+                }
+                else
+                {
+                    _session = OpenCoreML(out note);
+                    _device = "CoreML";
+                }
             }
-            catch (Exception ex) { Log.Error("cutout: DirectML unavailable, using CPU", ex); }
+            catch (Exception ex) { Log.Error($"cutout: {(OperatingSystem.IsWindows() ? "DirectML" : "Core ML")} unavailable, using CPU", ex); }
         }
         if (_session == null)
         {
             using var o = new SessionOptions { GraphOptimizationLevel = GraphOptimizationLevel.ORT_ENABLE_ALL };
             _session = new InferenceSession(ModelPath, o);
             _device = "CPU";
+            note = "";
         }
-        Log.Info($"cutout: model loaded on {_device} in {sw.ElapsedMilliseconds} ms");
+        Log.Info($"cutout: model loaded on {_device} in {sw.ElapsedMilliseconds} ms{note}");
         return _session;
+    }
+
+    /// <summary>
+    /// Apple silicon: ONNX Runtime hands Core ML every subgraph it can run, compiled to an ML Program that Core ML may
+    /// place on the GPU, the Neural Engine or the CPU; the rest (the decoder's deformable-conv gathers) stays on
+    /// ONNX Runtime's CPU kernels. The compiled programs are cached, so only the first load pays for the conversion.
+    /// </summary>
+    static InferenceSession OpenCoreML(out string note)
+    {
+        if (!OrtEnv.Instance().GetAvailableProviders().Contains("CoreMLExecutionProvider"))
+            throw new PlatformNotSupportedException("this ONNX Runtime build has no Core ML provider");
+        var cache = CoreMLCache();
+        note = Directory.EnumerateFileSystemEntries(cache).Any() ? " (compiled Core ML program from the cache)" : " (first load: compiling the Core ML program)";
+        // INFO on this session only, so Core ML's partition summary reaches OrtLogging (it's a warning only when split)
+        using var o = new SessionOptions { GraphOptimizationLevel = GraphOptimizationLevel.ORT_ENABLE_ALL, LogSeverityLevel = OrtLoggingLevel.ORT_LOGGING_LEVEL_INFO };
+        o.AppendExecutionProvider("CoreML", new Dictionary<string, string>
+        {
+            ["ModelFormat"] = "MLProgram",
+            ["MLComputeUnits"] = "ALL",
+            ["ModelCacheDirectory"] = cache,
+        });
+        return new InferenceSession(ModelPath, o);
+    }
+
+    // ONNX Runtime trusts whatever sits in the Core ML cache, so the folder is keyed on the model and the runtime version;
+    // a new key clears the old folders
+    const string CoreMLCachePrefix = "coreml-";
+    static string CoreMLCache()
+    {
+        var dir = Path.Combine(Path.GetDirectoryName(ModelPath)!, $"{CoreMLCachePrefix}{ModelSha256[..12].ToLowerInvariant()}-ort{OrtEnv.Instance().GetVersionString()}");
+        if (!Directory.Exists(dir))
+        {
+            DeleteCoreMLCaches();
+            Directory.CreateDirectory(dir);
+        }
+        return dir;
+    }
+
+    static void DeleteCoreMLCaches()
+    {
+        var models = Path.GetDirectoryName(ModelPath)!;
+        if (!Directory.Exists(models)) return;
+        foreach (var d in Directory.EnumerateDirectories(models, CoreMLCachePrefix + "*"))
+            try { Directory.Delete(d, true); } catch (Exception ex) { Log.Error("cutout: couldn't clear " + d, ex); }
+    }
+
+    /// <summary>Deletes the model and anything compiled from it.</summary>
+    public static void Remove()
+    {
+        if (File.Exists(ModelPath)) File.Delete(ModelPath);
+        DeleteCoreMLCaches();
+    }
+
+    // ONNX Runtime's warnings go to our log rather than the stderr of a menu-bar app; set once, before the first session
+    static DOrtLoggingFunction? _ortLog;
+    static void OrtLogging()
+    {
+        if (_ortLog != null) return;
+        _ortLog = (_, level, _, _, _, msg) =>
+        {
+            if (level >= OrtLoggingLevel.ORT_LOGGING_LEVEL_ERROR) Log.Error("cutout: onnxruntime: " + msg);
+            else if (level == OrtLoggingLevel.ORT_LOGGING_LEVEL_WARNING || msg.Contains("supported by CoreML")) Log.Info("cutout: onnxruntime: " + msg);
+        };
+        try
+        {
+            var env = new EnvironmentCreationOptions { logId = "convertino", logLevel = OrtLoggingLevel.ORT_LOGGING_LEVEL_WARNING, loggingFunction = _ortLog };
+            OrtEnv.CreateInstanceWithOptions(ref env);
+        }
+        catch (Exception ex) { Log.Error("cutout: ONNX Runtime keeps logging to stderr", ex); }
     }
 
     static void Unload()

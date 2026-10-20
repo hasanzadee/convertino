@@ -37,7 +37,7 @@ Converting a file usually means opening an app, finding *Export…*, picking a f
 | 📄 **Documents** | PDF ⇄ DOCX, DOCX/XLSX/PPTX → PDF, slides → PNG, Markdown → HTML/PDF/DOCX (Microsoft Office or LibreOffice) |
 | 🎞 **Video & audio** | MP4 · WEBM · GIF · MOV · MKV · MP3 · WAV · FLAC · OGG · OPUS · M4A, plus compress, 720p, mute, grab frame, loudness, trim silence |
 | ✂️ **Editors** | **Crop**, **Add BG** (screenshot beautifier), **Annotate** (arrows, text, numbered steps, highlighter), **Redact** (pixelate / blur / black, *find text automatically*), **Adjust** (light, colour, sharpen, vignette, rotate, resize) |
-| 🤖 **Cut out** | AI background removal (BiRefNet-lite), fully offline, GPU-accelerated on Windows |
+| 🤖 **Cut out** | AI background removal (BiRefNet-lite), fully offline, GPU-accelerated on Windows and Apple silicon |
 | 🔤 **Text** | Copy text from images and scanned PDFs (Windows OCR / Apple Vision / Tesseract) |
 | 🧹 **Clean** | Strip EXIF & GPS — losslessly for JPEGs; strip PDF metadata |
 | 🗜 **Compress** | Smart image compression with the savings shown: `1.2 MB → 340 KB (−72%)` |
@@ -188,7 +188,7 @@ On Windows the executable is `Convertino.exe` (in `%LOCALAPPDATA%\Programs\Conve
 | Office documents | Microsoft Office (COM), else LibreOffice | LibreOffice (headless) | LibreOffice (headless) |
 | OCR | Windows OCR (installed language packs), else Tesseract | Tesseract | Vision framework, else Tesseract |
 | Video / audio | ffmpeg | ffmpeg | ffmpeg (Homebrew) |
-| Cut out | ONNX Runtime + DirectML (GPU), CPU fallback | ONNX Runtime (CPU) | ONNX Runtime (CPU, Apple silicon) |
+| Cut out | ONNX Runtime + DirectML (GPU), CPU fallback | ONNX Runtime (CPU) | ONNX Runtime + Core ML (GPU / Neural Engine, Apple silicon), CPU fallback |
 | UI | WPF, Win32 hooks, OLE drag & drop | Avalonia, X11 polling, XDND | Avalonia, Quartz polling, AppKit drag & drop |
 
 ## How it works

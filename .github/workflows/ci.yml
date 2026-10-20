@@ -48,7 +48,7 @@ jobs:
           - { runner: macos-latest, arch: arm64 }
           - { runner: macos-15-intel, arch: x64 }
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 25
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-dotnet@v6
