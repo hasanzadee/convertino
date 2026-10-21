@@ -26,6 +26,8 @@ public sealed class PetalAction
     public bool Interactive { get; init; }
     /// <summary>Finishes instantly (clipboard etc.) — no progress card.</summary>
     public bool Quick { get; init; }
+    /// <summary>Where its results go instead of the "Save results" setting (a recipe's own choice; see <see cref="Output"/>).</summary>
+    public string? Out { get; init; }
     public required Func<Job, Task> Run { get; init; }
 }
 
@@ -36,6 +38,8 @@ public sealed class Job
     public ScreenPoint Where { get; init; }
     public CancellationToken Token { get; init; }
     public Action<double>? OnProgress { get; init; }
+    /// <summary>Where results end up ("Save results", see <see cref="Output"/>), for drops and the CLI; null leaves them beside the originals.</summary>
+    public string? Place { get; init; }
     public List<string> Outputs { get; } = [];
     /// <summary>One-line result for the card, e.g. "1.2 MB → 340 KB (−72%)".</summary>
     public string? Summary { get; set; }

@@ -17,8 +17,11 @@ public sealed record Pages(List<PetalAction> Convert, List<PetalAction> Tools, s
     /// <summary>Rarer output formats. Last in the cycle, so they sit one step back from Convert (images: HEIC, TIFF, ICO, BMP, JPEG XL, QOI).</summary>
     public List<PetalAction> MoreFormats { get; init; } = [];
 
-    /// <summary>The rings in flip order, Convert → Tools → More tools → More formats, empty ones left out.</summary>
-    public IReadOnlyList<Ring> Rings => [.. Split("Convert", Convert), .. Split("Tools", Tools), .. Split("More tools", More), .. Split("More formats", MoreFormats)];
+    /// <summary>Your recipes and commands that fit these files (<see cref="Convertino.Recipes"/>): one flip from Convert.</summary>
+    public List<PetalAction> Recipes { get; init; } = [];
+
+    /// <summary>The rings in flip order, Convert → Recipes → Tools → More tools → More formats, empty ones left out.</summary>
+    public IReadOnlyList<Ring> Rings => [.. Split("Convert", Convert), .. Split("Recipes", Recipes), .. Split("Tools", Tools), .. Split("More tools", More), .. Split("More formats", MoreFormats)];
 
     static IEnumerable<Ring> Split(string name, List<PetalAction> petals)
     {
@@ -83,10 +86,23 @@ public static class Catalog
     public static IEnumerable<PetalAction> All(IReadOnlyList<string> files)
     {
         var p = For(files);
+        return p.Convert.Concat(p.Recipes).Concat(p.Tools).Concat(p.More).Concat(p.MoreFormats);
+    }
+
+    /// <summary>The built-in petals alone, without your recipes and commands: what a recipe's steps are made of.</summary>
+    public static IEnumerable<PetalAction> Builtin(IReadOnlyList<string> files)
+    {
+        var p = Base(files);
         return p.Convert.Concat(p.Tools).Concat(p.More).Concat(p.MoreFormats);
     }
 
     public static Pages For(IReadOnlyList<string> files)
+    {
+        var p = Base(files);
+        return Convertino.Recipes.Petals(files, p) is { Count: > 0 } mine ? p with { Recipes = mine } : p;
+    }
+
+    static Pages Base(IReadOnlyList<string> files)
     {
         var kinds = files.Select(Kinds.Of).Distinct().ToList();
         int n = files.Count;

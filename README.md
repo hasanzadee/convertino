@@ -46,6 +46,9 @@ Converting a file usually means opening an app, finding *Export…*, picking a f
 | 🗜 **Compress** | Smart image compression with the savings shown: `1.2 MB → 340 KB (−72%)` |
 | 📑 **PDF tools** | Merge, split, rotate, page numbers, cover image, extract every image at original quality, compress (with Ghostscript) |
 | 📥 **Watch folders** | New files in a folder convert by themselves into its `Converted` subfolder (panel, or `convertino watch`) |
+| 🧪 **Recipes** | Chain petals into one: *Web-ready* = Full HD → WEBP → Clean, *Email PDF* = PDF → Compress, *Insta square* = Square → JPG. They get a ring of their own right after Convert; make them in the panel (one-click templates or a small builder), with `convertino recipe add` or in `recipes.json`. Only the final result lands ([how](#recipes-and-your-own-commands)) |
+| ⚙️ **Your commands** | Your own programs as petals (`optipng`, `ffmpeg`, an upload script…) with `{in}` / `{out}` placeholders, run without a shell so file names can't inject anything; they can be recipe steps too |
+| 📂 **Save results** | Next to the original, in a subfolder, or in one fixed folder, for every petal; a recipe can pick its own place |
 | 🗃 **Archives** | Extract ZIP · 7Z · RAR · TAR · TAR.GZ / BZ2 / XZ · GZ · BZ2 · XZ into a new folder, refusing `../` and absolute paths, skipping links and stopping decompression bombs; pack folders as ZIP · 7Z · TAR.GZ |
 | 🧰 **File tools** | Split big files into 25 / 50 / 100 MB… parts and join the `.001` back; find duplicates (an HTML report, nothing is deleted); verify a `.sha256` / `SHA256SUMS` (*Matches ✓*); copy MD5 · SHA-1 · SHA-256 · SHA-512 |
 | 🧰 **Image tools** | One tap, no questions: **Messenger** (≤ 2560 px JPEG, GPS gone), **Square** (blurred fill), **Rounded** (corners + shadow), **Palette**, **Favicon** set, **Copy** the picture itself, **Read QR** / make a **QR** from a text or link file; for several images **Contact sheet**, **Slideshow** (GIF + WEBP) and **Compare** |
@@ -190,6 +193,51 @@ Images (one or several) also get **More tools**: Half · Full HD · B&W, and **M
 Petals only appear when the engine behind them is available (e.g. office formats need Microsoft Office or LibreOffice).
 Plain-text files of any kind (TXT, Markdown, CSV/TSV, JSON, YAML, XML, INI, HTML, scripts, subtitles…) also get **UTF-8** and **LF** or **CRLF** (whichever the file doesn't use) at the front of their tools; files with NUL bytes are treated as binary and never get them.
 
+## Recipes and your own commands
+
+A **recipe** is a chain of petals that shows up as one petal, on a **Recipes** ring right after Convert (one more tap of the key, <kbd>Tab</kbd> or a turn of the wheel). Drop a photo on *Web-ready* and you get `photo (Web-ready).webp`: shrunk to fit Full HD, saved as WEBP, metadata gone. The steps work on copies in a temporary folder, so nothing half-done appears next to your files and only the final result lands; cancelling cleans up, and a step that fails says which one it was (*Web-ready stopped at step 2: WEBP*). The ring only shows the recipes whose every step works on the files you're dragging.
+
+Make one in the panel (**Recipes → New recipe…**: pick a kind of file, add steps — only those that can take the previous step's result are offered — then a name and an icon), click a template (*Web-ready*, *Email PDF*, *Insta square*, *Podcast*; without Ghostscript *Email PDF* compresses the pictures before they go into the PDF), or from the command line:
+
+```bash
+convertino recipe add Web-ready --steps fithd,to-webp,meta           # for images: worked out from the steps
+convertino recipe add "Email PDF" --steps to-pdf,compress --for jpg,png,heic --out Mail
+convertino recipe list
+convertino recipe run Web-ready *.jpg                                  # or: convertino run recipe-web-ready *.jpg
+convertino recipe remove Web-ready
+```
+
+Steps are the petal ids `convertino actions <file>` lists. Each one has to work on what the step before it makes (an image tool can't follow → PDF, a clipboard petal like Path can only come last), or the recipe isn't saved.
+
+**Custom commands** put your own programs on the same ring. They live in `recipes.json`, next to the settings (**Recipes → recipes.json** in the panel opens it; comments and trailing commas are fine):
+
+```jsonc
+{
+  "recipes": [
+    { "name": "Web-ready", "icon": "globe", "steps": ["fithd", "to-webp", "meta"], "for": ["image"] },
+    { "name": "Email PDF", "icon": "send", "steps": ["to-pdf", "compress"], "for": ["jpg", "png"], "out": "Mail" },
+    { "name": "Tiny PNG", "steps": ["cmd-optipng", "to-webp"], "for": ["png"] }
+  ],
+  "commands": [
+    { "name": "optipng", "for": ["png"], "program": "optipng", "args": ["-o5", "-out", "{out}", "{in}"], "output": "{name}.min.png" },
+    { "name": "Opus", "icon": "volume", "for": ["audio"], "program": "ffmpeg",
+      "args": ["-i", "{in}", "-c:a", "libopus", "-b:a", "96k", "{out}"], "output": "{name}.opus", "timeout": 600 },
+    { "name": "Upload", "program": "/usr/local/bin/my-upload", "args": ["{in}"] }
+  ]
+}
+```
+
+- **`program`** is a name on `PATH` or a full path. **`args`** is a list, one entry per argument, with `{in}` (the file's full path), `{name}` (its name without the extension), `{ext}`, `{dir}` and `{out}` filled in. The arguments are handed to the program as they are, never through a shell, so a file called `a & del *.jpg` is only a name. For the same reason Windows batch files (`.bat`, `.cmd`) are refused: run an `.exe`, or e.g. `powershell.exe` with `-File script.ps1 {in}`.
+- **`output`** names the file it makes, relative to the file's folder; `{out}` is that path, with ` (2)` added if the name is taken (with `{out}` in `args` but no `output`, it's `name (Command).ext`). Leave both out for a command that makes no file. A command that makes a file can also be a recipe step (`cmd-<name>`).
+- **`for`** takes extensions (`"png"`) or kinds (`"image"`, `"video"`, `"audio"`, `"pdf"`, `"document"`, `"text"`, `"data"`…); without it a command is offered for any file. **`timeout`** is in seconds (300 by default). The program runs once per file; what it prints goes to the log, and a non-zero exit shows its last line on the card.
+- **`icon`**: `recipe`, `terminal`, `globe`, `send`, `squareimg`, `compress`, `picture`, `volume`, `zip`, or any other petal's icon.
+
+> ⚠️ **`recipes.json` runs programs.** Convertino only ever reads it from your settings folder, never from the files you convert, and only you (or the panel and CLI on your behalf) write it. Don't paste in commands you don't understand.
+
+### Where results go
+
+**Save results** in the panel: *Beside it* (the default), in a *Subfolder* of the original's folder (`Converted`, or a name you type), or in a *Fixed folder*. It applies to every petal that makes a new file, on a drop and on the command line; a taken name gets ` (2)`. Editors, clipboard petals and *Extract here* / *Join* keep their place, and watch folders keep their own `Converted` folder. A recipe can choose its own: `"out": "Mail"` (a subfolder), `"beside"`, or a full folder path; `--out` on the command line.
+
 ## Command line
 
 ```bash
@@ -210,6 +258,7 @@ convertino menu photo.png notes.md                # open the flower for them (us
 convertino model install | status | remove        # the AI cut-out model
 convertino watch ~/Inbox --to pdf                 # convert every new file there, until Ctrl+C
 convertino watch add ~/Inbox --to webp            # same, run by the desktop app (also: watch list | remove)
+convertino recipe add Web-ready --steps fithd,to-webp,meta   # a chain of petals as one (also: recipe list | run | remove)
 ```
 
 On Windows the executable is `Convertino.exe` (in `%LOCALAPPDATA%\Programs\Convertino`); on macOS the installer puts a `convertino` wrapper for `~/Applications/Convertino.app` in `~/.local/bin`.
@@ -272,7 +321,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for developer flags (render the flower to
 
 **An app I drop files into uses Shift too (Claude attaches a file on Shift + drop).** Set **Open with** to *Shift twice*. A single Shift then goes to the app, and a quick double-tap during the drag opens the flower. Or pick <kbd>Ctrl</kbd> or <kbd>Alt</kbd>.
 
-**Where are my settings?** `%APPDATA%\Convertino` on Windows, `~/.config/convertino` on Linux, `~/Library/Application Support/Convertino` on macOS (`settings.json`, `convertino.log`, `models/`).
+**Where are my settings?** `%APPDATA%\Convertino` on Windows, `~/.config/convertino` on Linux, `~/Library/Application Support/Convertino` on macOS (`settings.json`, `recipes.json`, `watch.json`, `convertino.log`, `models/`). Set `CONVERTINO_APPDATA` to a folder to keep them there instead (a portable copy, tests).
 
 **macOS?** Yes — see [Install](#macos-13-or-later-apple-silicon-or-intel). It's the newest port; it has been tested on a MacBook M4 with macOS 27, and CI runs it on Apple silicon and Intel.
 

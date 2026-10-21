@@ -21,7 +21,7 @@ namespace Convertino.Ui;
 /// Quick-settings panel next to the tray icon / menu-bar item, like the Windows one: two weeks of activity (or how
 /// to start until there is any), theme, options, recent files.
 /// </summary>
-public sealed class TrayPanel : Window
+public sealed partial class TrayPanel : Window
 {
     const double W = 340, Pad = 18, BarsH = 58;
 
@@ -303,6 +303,12 @@ public sealed class TrayPanel : Window
         // folders whose new files convert by themselves
         stack.Children.Add(Label("Watch folders"));
         stack.Children.Add(WatchCard());
+
+        // your own chains of petals, and where results go (TrayPanelRecipes.cs)
+        stack.Children.Add(Label("Recipes"));
+        stack.Children.Add(RecipesCard());
+        stack.Children.Add(Label("Save results"));
+        stack.Children.Add(SaveCard());
 
         // recent
         var recent = s.Recent.Where(r => File.Exists(r.Path) || Directory.Exists(r.Path)).Take(4).ToList();

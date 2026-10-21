@@ -78,6 +78,8 @@ public sealed class App : Application
                 // it never has focus (override-redirect), so a click outside and Esc are seen globally
                 input.ButtonDown += p => _panel.ClickAt(p);
                 input.Escape += () => _panel.HideAnimated();
+                // ... and a text box in it (a recipe's name) has to ask for the keyboard
+                _panel.TakeKeyboard = w => { if (w.TryGetPlatformHandle()?.Handle is { } h && h != IntPtr.Zero) X11.Focus(input.Display, h); };
             }
             BuildTray();
             platform.SetAutostart(Settings.Current.LaunchAtStartup);

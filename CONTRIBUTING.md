@@ -53,7 +53,7 @@ Windows (`Convertino.exe`):
 |---|---|
 | `--snapshot out.png [theme] [img\|tools\|more\|formats\|pdf] [hoverIndex]` | render one ring of the flower to a PNG (no drag needed); `img`, `tools`, `more` and `formats` are the four image rings |
 | `--paging-selftest dir` | feed the hook callbacks wheel / Tab / Shift data and check the overlay cycles every ring and swallows only what it should; no hooks, no injected input, no window. Writes `results.txt` and a PNG per ring |
-| `--panel out.png [theme] [demo]` | render the tray panel to a PNG (`demo` fills the Activity card with sample data) |
+| `--panel out.png [theme] [demo] [recipes\|builder]` | render the tray panel to a PNG (`demo` fills the Activity card with sample data; `recipes` unfolds the Recipes card, `builder` also opens its builder) |
 | `--run <actionId> files…` | run one action headless; result in the log |
 | `--edit <crop\|addbg\|annotate\|redact\|adjust> file` | open an editor directly |
 | `--edit-selftest file` | build every editor, simulate an edit, save |
@@ -67,6 +67,7 @@ Linux (`convertino`) environment variables:
 | `CONVERTINO_PIN=x,y` | park the flower at a point (test drops onto a pre-mapped window) |
 | `CONVERTINO_NOSHAPE=1` | don't apply the circular X input shape |
 | `CONVERTINO_EDIT_SELFTEST=/path/img.png` | save every editor once and exit |
+| `CONVERTINO_PANEL=1\|demo`, `CONVERTINO_PANEL_RECIPES=open\|builder` | open the panel at start (`demo`: sample activity), with the Recipes card unfolded / its builder open |
 
 macOS (`Convertino.app/Contents/MacOS/convertino`) takes the same `CONVERTINO_DEBUG`, `CONVERTINO_PIN` and `CONVERTINO_EDIT_SELFTEST`, plus:
 
@@ -76,7 +77,7 @@ macOS (`Convertino.app/Contents/MacOS/convertino`) takes the same `CONVERTINO_DE
 | `CONVERTINO_NOVIBRANCY=1` | no native blur under the petals |
 | `CONVERTINO_GLASS_MATERIAL=n` | `NSVisualEffectMaterial` for the glass (default 13, HUD window) |
 
-All: `CONVERTINO_CUTOUT_CPU=1` forces the cut-out onto the CPU. Logs: `%APPDATA%\Convertino\convertino.log`, `~/.config/convertino/convertino.log`, `~/Library/Application Support/Convertino/convertino.log`.
+All: `CONVERTINO_CUTOUT_CPU=1` forces the cut-out onto the CPU; `CONVERTINO_APPDATA=<folder>` keeps settings, `recipes.json`, `watch.json`, stats and the log there instead of your real ones (tests: `tools/recipes-smoke.sh` uses it). Logs: `%APPDATA%\Convertino\convertino.log`, `~/.config/convertino/convertino.log`, `~/Library/Application Support/Convertino/convertino.log`.
 
 ## Testing the Linux build
 
