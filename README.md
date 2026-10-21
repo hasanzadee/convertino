@@ -115,12 +115,13 @@ sudo pacman -S ffmpeg poppler tesseract tesseract-data-eng libreoffice-fresh   #
 
 > **Status: tested on a real Mac** (MacBook M4, macOS 27): conversions, HEIC, video, PDF rendering, Vision OCR, Cut out, the glass flower on Retina and an external display, and dragging from Finder with the trigger key. Every CI run also tests the build on GitHub's macOS runners (Apple silicon and Intel), including the gesture with synthetic input. If something doesn't work on your Mac, please [send a macOS report](https://github.com/hasanzadee/convertino/issues/new?template=macos_report.yml).
 
-1. Download **`convertino-macos-arm64.zip`** (Apple silicon: M1 and later) or **`convertino-macos-x64.zip`** (Intel) from the [latest release](https://github.com/hasanzadee/convertino/releases/latest).
-2. Unzip it (double-click it in Finder) and run the installer from Terminal:
+Paste this into Terminal (it picks the build for your chip, and the same line updates it later):
 
-   ```bash
-   cd ~/Downloads/convertino && ./install.sh
-   ```
+```bash
+curl -fsSL https://raw.githubusercontent.com/hasanzadee/convertino/main/packaging/macos/get.sh | bash
+```
+
+Or by hand: download **`convertino-macos-arm64.zip`** (Apple silicon: M1 and later) or **`convertino-macos-x64.zip`** (Intel) from the [latest release](https://github.com/hasanzadee/convertino/releases/latest), unzip it and run `cd ~/Downloads/convertino && ./install.sh`. Use the installer rather than dragging `Convertino.app` into Applications yourself: Convertino isn't notarized by Apple (that needs a paid developer account), so a copy downloaded with a browser gets *"Apple could not verify Convertino"*; the installer and the line above don't.
 
 The installer copies `Convertino.app` to `~/Applications`, adds the `convertino` command (`~/.local/bin`) and a **Quick Actions → Convertino** entry to Finder's right-click menu, and starts Convertino in the menu bar; it opens at login (toggle it in the panel). Click the menu-bar icon for the panel: activity, theme, options, recent files; right-click (or Control-click) it for the menu. `./install.sh --uninstall` removes it again. Optional helpers:
 
@@ -376,6 +377,8 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for developer flags (render the flower to
 **An app I drop files into uses Shift too (Claude attaches a file on Shift + drop).** Set **Open with** to *Shift twice*. A single Shift then goes to the app, and a quick double-tap during the drag opens the flower. Or pick <kbd>Ctrl</kbd> or <kbd>Alt</kbd>.
 
 **Where are my settings?** `%APPDATA%\Convertino` on Windows, `~/.config/convertino` on Linux, `~/Library/Application Support/Convertino` on macOS (`settings.json`, `recipes.json`, `watch.json`, `convertino.log`, `models/`). Set `CONVERTINO_APPDATA` to a folder to keep them there instead (a portable copy, tests).
+
+**macOS says "Apple could not verify Convertino".** That copy was downloaded with a browser and dragged into Applications by hand. Install with the [one-line installer](#macos-13-or-later-apple-silicon-or-intel) instead, or clear the flag once: `xattr -dr com.apple.quarantine /Applications/Convertino.app` (or System Settings → Privacy & Security → *Open Anyway*). The panel's header shows which version you run; click it for that release's notes.
 
 **macOS?** Yes — see [Install](#macos-13-or-later-apple-silicon-or-intel). It's the newest port; it has been tested on a MacBook M4 with macOS 27, and CI runs it on Apple silicon and Intel.
 

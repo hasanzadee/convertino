@@ -632,5 +632,6 @@
   "doesn't work on {0} files": "不适用于 {0} 文件",
   "It doesn't work on folders": "它不适用于文件夹",
   "It doesn't work on that": "它不适用于上一步的结果",
-  "It doesn't work on {0} files": "它不适用于 {0} 文件"
+  "It doesn't work on {0} files": "它不适用于 {0} 文件",
+  "What's new in this version": "此版本的新功能"
 }

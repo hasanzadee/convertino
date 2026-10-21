@@ -251,7 +251,20 @@ public sealed partial class TrayPanel : Window
         // header
         var logo = new Image { Source = AppIcon.Render(68, T), Width = 34, Height = 34 };
         var title = new StackPanel { Margin = new Thickness(12, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
-        title.Children.Add(new TextBlock { Text = "Convertino", FontWeight = FontWeight.SemiBold, FontSize = 17, Foreground = B(T.Text) });
+        // the version beside the name; a click opens that release's notes
+        var ver = new Border
+        {
+            CornerRadius = new CornerRadius(6), Padding = new Thickness(6, 1, 6, 2), Margin = new Thickness(8, 3, 0, 0), VerticalAlignment = VerticalAlignment.Center,
+            Background = B(A(T.SubText, .14)), Cursor = new Cursor(StandardCursorType.Hand),
+            Child = new TextBlock { Text = "v" + Cli.Version, FontSize = 11, Foreground = B(T.SubText) },
+        };
+        ToolTip.SetTip(ver, L.T("What's new in this version"));
+        ver.PointerReleased += (_, e) => { Platform.Current.Open(Updates.ReleaseUrl(Cli.Version)); e.Handled = true; };
+        title.Children.Add(new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Children = { new TextBlock { Text = "Convertino", FontWeight = FontWeight.SemiBold, FontSize = 17, Foreground = B(T.Text) }, ver },
+        });
         title.Children.Add(_subtitle = new TextBlock { FontSize = 12, Foreground = B(T.SubText) });
         Subtitle();
         var header = new DockPanel { LastChildFill = false };

@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.4.1 — 2026-10-21
+
+- The panel's header shows the version you run (`v1.4.1`); click it for that release's notes.
+- macOS: a one-line installer that also updates — `curl -fsSL https://raw.githubusercontent.com/hasanzadee/convertino/main/packaging/macos/get.sh | bash`. It downloads with curl, so macOS never asks *"Apple could not verify Convertino"* (Convertino isn't notarized). `install.sh` now also clears that flag on a copy someone dragged into /Applications by hand and points it out.
+
 ## 1.4.0 — 2026-10-21
 
 Five big pieces, built in parallel and each reviewed for safety before release: see a petal's result before you drop (and get it instantly when you do), chain petals into recipes and add your own programs, drag straight out of a browser, use the flower without dragging at all (clipboard and screen capture), and the whole interface in 11 languages.

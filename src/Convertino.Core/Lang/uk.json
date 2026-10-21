@@ -800,5 +800,6 @@
   "doesn't work on {0} files": "не працює з файлами {0}",
   "It doesn't work on folders": "Цей крок не працює з папками",
   "It doesn't work on that": "Цей крок не працює з цим",
-  "It doesn't work on {0} files": "Цей крок не працює з файлами {0}"
+  "It doesn't work on {0} files": "Цей крок не працює з файлами {0}",
+  "What's new in this version": "Що нового в цій версії"
 }

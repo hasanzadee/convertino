@@ -758,5 +758,6 @@
   "doesn't work on {0} files": "ne fonctionne pas sur les fichiers {0}",
   "It doesn't work on folders": "Ne fonctionne pas sur les dossiers",
   "It doesn't work on that": "Ne s'applique pas à cela",
-  "It doesn't work on {0} files": "Ne fonctionne pas sur les fichiers {0}"
+  "It doesn't work on {0} files": "Ne fonctionne pas sur les fichiers {0}",
+  "What's new in this version": "Nouveautés de cette version"
 }

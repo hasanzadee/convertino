@@ -632,5 +632,6 @@
   "doesn't work on {0} files": "{0} dosyalarında çalışmaz",
   "It doesn't work on folders": "Bu adım klasörlerde çalışmıyor",
   "It doesn't work on that": "Bu adım buna uygulanamıyor",
-  "It doesn't work on {0} files": "Bu adım {0} dosyalarında çalışmıyor"
+  "It doesn't work on {0} files": "Bu adım {0} dosyalarında çalışmıyor",
+  "What's new in this version": "Bu sürümde neler yeni"
 }

@@ -175,7 +175,19 @@ public sealed partial class Flyout : Window
         // header
         var logo = new Image { Source = new DrawingImage(AppIcon.Drawing(T)), Width = 34, Height = 34 };
         var title = new StackPanel { Margin = new Thickness(12, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
-        title.Children.Add(new TextBlock { Text = "Convertino", FontFamily = Display, FontWeight = FontWeights.SemiBold, FontSize = 17, Foreground = B(T.Text) });
+        // the version beside the name; a click opens that release's notes
+        var ver = new Border
+        {
+            CornerRadius = new CornerRadius(6), Padding = new Thickness(6, 1, 6, 2), Margin = new Thickness(8, 3, 0, 0), VerticalAlignment = VerticalAlignment.Center,
+            Background = B(A(T.SubText, .14)), Cursor = Cursors.Hand, ToolTip = L.T("What's new in this version"),
+            Child = new TextBlock { Text = "v" + Cli.Version, FontFamily = TextF, FontSize = 11, Foreground = B(T.SubText) },
+        };
+        ver.MouseLeftButtonUp += (_, e) => { Platform.Current.Open(Updates.ReleaseUrl(Cli.Version)); e.Handled = true; };
+        title.Children.Add(new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Children = { new TextBlock { Text = "Convertino", FontFamily = Display, FontWeight = FontWeights.SemiBold, FontSize = 17, Foreground = B(T.Text) }, ver },
+        });
         title.Children.Add(new TextBlock { Text = s.Enabled ? L.T("Drag a file · {0}", key.Tap()) : L.T("Paused"), FontFamily = TextF, FontSize = 12, Foreground = B(T.SubText) });
         var header = new DockPanel { LastChildFill = false };
         var close = (FrameworkElement)FooterButton("\uE711", "", HideAnimated);
