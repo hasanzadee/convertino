@@ -13,7 +13,12 @@ public sealed class DragCase
     /// <summary>Format → payload, encoded the way the browser writes it (UTF-16 where it uses UTF-16).</summary>
     public List<(string Format, byte[] Data)> Formats { get; } = [];
     /// <summary>Windows virtual files (FileGroupDescriptorW + FileContents): served as an IStream (Firefox) or an HGLOBAL (Chrome).</summary>
-    public List<(string Name, byte[] Data, bool Stream)> Virtual { get; } = [];
+    public List<VirtualFile> Virtual { get; } = [];
+    /// <summary>The source supports the async drop protocol (Chrome, Firefox): the files may be copied after the drop returns.</summary>
+    public bool Async { get; init; }
+    /// <summary>Set by the platform's test data: told when the drop has returned, asked after the job for anything it saw go wrong.</summary>
+    public Action? Dropped { get; set; }
+    public Func<string?>? Verify { get; set; }
     /// <summary>Real paths the drag offers too (CF_HDROP, file:// URIs).</summary>
     public List<string> Local { get; } = [];
     public bool Bloom { get; init; } = true;
@@ -24,6 +29,9 @@ public sealed class DragCase
     public string? Pick { get; init; }
     public Func<Outcome, string?>? Check { get; init; }
 }
+
+/// <summary>A Windows virtual file: its bytes, how the source hands them over ("hglobal", "stream" or "storage"), the size its descriptor claims.</summary>
+public sealed record VirtualFile(string Name, byte[] Data, string Medium = "hglobal", long? Declared = null);
 
 public sealed class Outcome
 {
@@ -99,6 +107,7 @@ public static class WebSelfTest
         if (petal == null) return $"no '{c.Pick}' petal; it has {string.Join(" ", petals.Select(p => p.Id))}";
 
         web.Grab(data);
+        c.Dropped?.Invoke();
         Job? job = null;
         string? error = null;
         try { job = await Jobs.RunHeadless(web.Wrap(petal), web.Files); }
@@ -109,7 +118,7 @@ public static class WebSelfTest
         if (error == null && marks && (!OperatingSystem.IsLinux() || web.Items.Any(i => i.Url is { } u && !Fetch.IsData(u))))
             foreach (var f in Directory.Exists(downloads) ? Directory.EnumerateFiles(downloads) : [])
                 if (!Fetch.IsMarked(f)) return $"{Path.GetFileName(f)} isn't marked as coming from the internet";
-        return c.Check?.Invoke(o);
+        return c.Check?.Invoke(o) ?? c.Verify?.Invoke();
     }
 
     static bool MarksWork(string dir)
@@ -244,6 +253,22 @@ public static class WebSelfTest
         yield return LinkCase(family, "no cookies or credentials sent", s.Base.Replace("://", "://user:secret@") + "/echo.txt", shown: "echo.txt", pick: "download",
             check: Made("echo.txt").And(Holds("echo.txt", t => t == "cookie=;auth=", "show that no cookie or credentials were sent")));
 
+        // what the server sends can't change what the user picked, nor sneak a program or an Explorer-active file into Downloads
+        yield return ImgCase(family, "<img> answered with a program → refused", $"{b}/img/evil.png", $"{b}/", pick: "to-jpg", check: Fails("program"));
+        yield return ImgCase(family, "<img> the server renames .library-ms → kept as .jpg", $"{b}/img/cat.jpg", $"{b}/", shown: "cat.jpg", pick: "to-png",
+            check: Made("cat.png").And(Kept("cat.jpg")));
+        yield return LinkCase(family, "link answered with a program named by the server → .download", $"{b}/get", pick: "download", check: Made("tool.exe.download"));
+        yield return LinkCase(family, "link ending .exe → kept as .exe", $"{b}/files/setup.exe", link: false, shown: "setup.exe", pick: "download", check: Made("setup.exe"));
+        yield return LinkCase(family, "link to a .scf → .download", $"{b}/files/notes.scf", shown: "notes.scf", pick: "download", check: Made("notes.scf.download"));
+        yield return ImgCase(family, "<img> answered with a web page → refused", $"{b}/img/notimage", $"{b}/", pick: "to-jpg", check: Fails("web page"));
+        {
+            // …unless the drag carries the picture itself
+            var c = ImgCase(family, "<img> answered with a web page → the picture data in the drag", $"{b}/img/notimage", $"{b}/", shown: "notimage", pick: "to-jpg",
+                check: Made("notimage.jpg").And(Kept("notimage.png")));
+            c.Formats.Add((family switch { "windows" => "PNG", "x11" => "image/png", _ => "public.png" }, TestServer.Png));
+            yield return c;
+        }
+
         // not for us
         yield return LinkCase(family, "ftp: link ignored", "ftp://127.0.0.1/a.png", bloom: false);
         yield return LinkCase(family, "file: link ignored", OperatingSystem.IsWindows() ? "file:///C:/Windows/win.ini" : "file:///etc/hosts", bloom: false);
@@ -262,13 +287,13 @@ public static class WebSelfTest
         string b = s.Base, img = $"{b}/img/photo.png";
         var html = CfHtml($"<img src=\"{img}\">", $"{b}/gallery/index.html");
 
-        var chrome = new DragCase { Name = "Chrome image: virtual file (HGLOBAL) → JPG, no download", Shown = "photo.png", Pick = "to-jpg", Check = Made("photo.jpg").And(Kept("photo.png")).And(Offline(s, "/img/photo.png")) };
-        chrome.Virtual.Add(("photo.png", TestServer.Png, false));
+        var chrome = new DragCase { Name = "Chrome image: virtual file (HGLOBAL), async drop → JPG, no download", Async = true, Shown = "photo.png", Pick = "to-jpg", Check = Made("photo.jpg").And(Kept("photo.png")).And(Offline(s, "/img/photo.png")) };
+        chrome.Virtual.Add(new("photo.png", TestServer.Png));
         chrome.Formats.AddRange([("UniformResourceLocatorW", U16(img)), ("HTML Format", html)]);
         yield return chrome;
 
-        var ff = new DragCase { Name = "Firefox image: virtual file (IStream) → WEBP", Shown = "photo.png", Pick = "to-webp", Check = Made("photo.webp").And(Offline(s, "/img/photo.png")) };
-        ff.Virtual.Add(("photo.png", TestServer.Png, true));
+        var ff = new DragCase { Name = "Firefox image: virtual file (IStream), async drop → WEBP", Async = true, Shown = "photo.png", Pick = "to-webp", Check = Made("photo.webp").And(Offline(s, "/img/photo.png")) };
+        ff.Virtual.Add(new("photo.png", TestServer.Png, "stream"));
         ff.Formats.AddRange([("text/x-moz-url", U16(img + "\nPhoto")), ("application/x-moz-file-promise-url", U16(img)), ("HTML Format", html)]);
         yield return ff;
 
@@ -279,12 +304,29 @@ public static class WebSelfTest
         var ffTemp = new DragCase { Name = "Firefox image: its temp copy in CF_HDROP → JPG", Pick = "to-jpg",
             Check = Made("photo.jpg").And(Kept("photo.png")).And(_ => File.Exists(tmp) ? null : "the browser's temp file was moved") };
         ffTemp.Local.Add(tmp);
-        ffTemp.Virtual.Add(("photo.png", TestServer.Png, true));
+        ffTemp.Virtual.Add(new("photo.png", TestServer.Png, "stream"));
         ffTemp.Formats.AddRange([("text/x-moz-url", U16(img + "\nPhoto")), ("application/x-moz-file-promise-url", U16(img))]);
         yield return ffTemp;
 
+        var mail = new DragCase { Name = "Outlook mail (IStorage) → Save as .msg", Shown = "Re hello.msg", Pick = "download",
+            Check = Made("Re hello.msg").And(o => File.ReadAllBytes(Path.Combine(o.Downloads, "Re hello.msg")).AsSpan(0, 4).SequenceEqual(new byte[] { 0xD0, 0xCF, 0x11, 0xE0 }) ? null : "not a compound file") };
+        mail.Virtual.Add(new("Re: hello.msg", U8("subject"), "storage"));
+        yield return mail;
+
+        var huge = new DragCase { Name = "virtual file its descriptor says is too big → refused before copying", Async = true, Pick = "download", Check = Fails("Too big") };
+        huge.Virtual.Add(new("huge.iso", U8("tiny"), "stream", Fetch.Cap + 1));
+        yield return huge;
+
+        var lib = new DragCase { Name = "virtual .library-ms → kept as .download", Shown = "evil.library-ms", Pick = "download", Check = Made("evil.library-ms.download") };
+        lib.Virtual.Add(new("evil.library-ms", U8("<libraryDescription/>")));
+        yield return lib;
+
+        var lnk = new DragCase { Name = "virtual shortcut (.lnk) → kept as .download", Shown = "Invoice.lnk", Pick = "download", Check = Made("Invoice.lnk.download") };
+        lnk.Virtual.Add(new("Invoice.lnk", [0x4C, 0, 0, 0, 0x01, 0x14, 0x02, 0, 0, 0, 0, 0, 0xC0, 0, 0, 0, 0, 0, 0, 0x46]));
+        yield return lnk;
+
         var lying = new DragCase { Name = "virtual file named .jpg holding a PNG → kept as .png", Shown = "photo.jpg", Pick = "to-webp", Check = Made("photo.webp").And(Kept("photo.png")) };
-        lying.Virtual.Add(("photo.jpg", TestServer.Png, false));
+        lying.Virtual.Add(new("photo.jpg", TestServer.Png));
         yield return lying;
 
         var dl = new DragCase { Name = "DownloadURL → Save", Shown = "report.pdf", Link = false, Pick = "download",
@@ -297,7 +339,7 @@ public static class WebSelfTest
         yield return custom;
 
         var link = new DragCase { Name = "link drag with its virtual .url → link flower", Link = true, Shown = "Example page", Pick = "shortcut", Check = Made("Example page.url") };
-        link.Virtual.Add(("Example page.url", U8($"[InternetShortcut]\r\nURL={b}/page.html\r\n"), true));
+        link.Virtual.Add(new("Example page.url", U8($"[InternetShortcut]\r\nURL={b}/page.html\r\n"), "stream"));
         link.Formats.Add(("text/x-moz-url", U16($"{b}/page.html\nExample page")));
         yield return link;
 
@@ -314,8 +356,8 @@ public static class WebSelfTest
         yield return dib;
 
         var two = new DragCase { Name = "two virtual files (Outlook-style) → Save both", Pick = "download", Check = Made("notes.txt", "data.csv") };
-        two.Virtual.Add(("notes.txt", U8("hello"), true));
-        two.Virtual.Add(("data.csv", U8("a,b\n1,2\n"), false));
+        two.Virtual.Add(new("notes.txt", U8("hello"), "stream"));
+        two.Virtual.Add(new("data.csv", U8("a,b\n1,2\n")));
         yield return two;
 
         var real = Path.Combine(outDir, "mine.png");
@@ -440,6 +482,31 @@ public static class WebSelfTest
         })
             yield return ($"FixExtension {name} ({sniffed ?? mime})", Eq(Fetch.FixExtension(name, sniffed, mime), want));
 
+        foreach (var (bytes, what) in new (byte[], string)[]
+        {
+            (TestServer.Program, "MZ"), ([0x7F, 0x45, 0x4C, 0x46, 2, 1], "ELF"), ([0xCF, 0xFA, 0xED, 0xFE, 7, 0], "Mach-O"), ([0xCA, 0xFE, 0xBA, 0xBE, 0, 0], "fat Mach-O"),
+            ([0x4C, 0, 0, 0, 0x01, 0x14, 0x02, 0], "LNK"), (U8("#!/bin/sh\nrm -rf ~"), "#! script"),
+        })
+            yield return ($"IsProgram {what}", Fetch.IsProgram(bytes) ? null : "not seen as a program");
+        yield return ("IsProgram PNG", Fetch.IsProgram(TestServer.Png) ? "a PNG seen as a program" : null);
+        foreach (var (cand, exp, bytes, want) in new (string, string?, byte[], string)[]
+        {
+            ("cat.jpg.library-ms", "cat.jpg", TestServer.Jpg, "cat.jpg"), ("x.url", null, U8("[InternetShortcut]"), "x.url.download"),
+            ("tool.exe", null, TestServer.Program, "tool.exe.download"), ("setup.exe", "setup.exe", TestServer.Program, "setup.exe"),
+            ("run.ps1", null, U8("Remove-Item"), "run.ps1.download"), ("desktop.ini", null, U8("[.ShellClassInfo]"), "desktop.ini.download"),
+            ("photo.jpg", "photo.jpg", TestServer.Png, "photo.png"), ("a.exe", "a.exe", TestServer.Png, "a.png"),
+        })
+            yield return ($"FinalName {cand} (shown {exp ?? "-"})", Probe(() => Eq(Fetch.FinalName(cand, exp, bytes, null), want)));
+        yield return ("FinalName MZ as .png", Throws(() => Fetch.FinalName("pic.png", "pic.png", TestServer.Program, "image/png")));
+        foreach (var (ip, local) in new[] { ("10.1.2.3", true), ("172.16.0.1", true), ("172.32.0.1", false), ("192.168.1.1", true), ("169.254.169.254", true), ("100.64.0.1", true),
+                                            ("127.0.0.1", true), ("0.0.0.0", true), ("224.0.0.1", true), ("8.8.8.8", false), ("::1", true), ("fe80::1", true), ("fd00::1", true),
+                                            ("::ffff:10.0.0.1", true), ("2606:4700::1111", false) })
+            yield return ($"IsLocal {ip}", Fetch.IsLocal(IPAddress.Parse(ip)) == local ? null : $"said {!local}");
+        var web = new Uri("https://example.com/a");
+        yield return ("redirect https → http", Fetch.RedirectRefusal(web, new Uri("http://example.com/b"), false, false) != null ? null : "followed");
+        yield return ("redirect web → local network", Fetch.RedirectRefusal(new Uri("http://example.com/a"), new Uri("http://169.254.169.254/latest"), false, true) != null ? null : "followed");
+        yield return ("redirect intranet → intranet", Fetch.RedirectRefusal(new Uri("http://nas.local/a"), new Uri("http://10.0.0.5/b"), true, true) == null ? null : "refused");
+        yield return ("redirect http → https", Fetch.RedirectRefusal(new Uri("http://example.com/a"), new Uri("https://example.com/b"), false, false) == null ? null : "refused");
         yield return ("Parse ftp:", Fetch.Parse("ftp://x/y") == null ? null : "accepted");
         yield return ("Parse file:", Fetch.Parse("file:///etc/passwd") == null ? null : "accepted");
         yield return ("Parse javascript:", Fetch.Parse("javascript:alert(1)") == null ? null : "accepted");
@@ -493,6 +560,8 @@ sealed class TestServer : IDisposable
     public string Base { get; }
 
     public static readonly byte[] Png = Picture(MagickFormat.Png), Jpg = Picture(MagickFormat.Jpeg), Tiff = Picture(MagickFormat.Tiff);
+    /// <summary>The start of a Windows executable: enough for the sniffing (it never runs).</summary>
+    public static readonly byte[] Program = [(byte)'M', (byte)'Z', 0x90, 0, 3, 0, 0, 0, 4, 0, 0, 0, 0xFF, 0xFF, 0, 0];
     /// <summary>A packed DIB (BITMAPV5HEADER + pixels), as CF_DIBV5 carries it.</summary>
     public static readonly byte[] Dib = Picture(MagickFormat.Bmp)[14..];
 
@@ -562,6 +631,12 @@ sealed class TestServer : IDisposable
             case "/evil2": await Send(Png, "image/png", "attachment; filename*=UTF-8''..%2F..%2Fevil2.png"); break;
             case "/con": await Send(Png, "image/png", "attachment; filename=\"CON.png\""); break;
             case "/bidi": await Send(Png, "image/png", "attachment; filename*=UTF-8''photo%E2%80%AEgnp.exe"); break;
+            case "/img/evil.png": await Send(Program, "image/png"); break;
+            case "/img/cat.jpg": await Send(Jpg, "image/jpeg", "attachment; filename=\"cat.jpg.library-ms\""); break;
+            case "/get": await Send(Program, "application/octet-stream", "attachment; filename=\"tool.exe\""); break;
+            case "/files/setup.exe": await Send(Program, "application/octet-stream"); break;
+            case "/files/notes.scf": await Send(Encoding.ASCII.GetBytes("[Shell]\r\nCommand=2\r\n"), "application/octet-stream"); break;
+            case "/img/notimage": await Send(Encoding.UTF8.GetBytes("<!doctype html><html><body>Not here</body></html>"), "text/html"); break;
             case "/tofile": Redirect(OperatingSystem.IsWindows() ? "file:///C:/Windows/win.ini" : "file:///etc/passwd"); break;
             case "/toftp": Redirect("ftp://127.0.0.1/x.png"); break;
             case "/todata": Redirect("data:text/plain,hi"); break;

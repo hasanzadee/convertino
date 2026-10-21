@@ -74,20 +74,41 @@ public sealed class AvaloniaDrag(IDataTransfer data) : IDragData
         catch (Exception ex) { Log.Error("direct save", ex); return null; }
     }
 
-    /// <summary>The file once the browser is done with it: there, and the same size for 0.6 s.</summary>
+    /// <summary>
+    /// The file once the browser is done with it: there, the same size and time for 2 s, and — for a picture — readable
+    /// to the end. Null when that doesn't happen within 2 minutes, so the job falls back to the picture's address.
+    /// </summary>
     static async Task<string?> Settled(string path)
     {
-        long last = -1;
+        (long, DateTime) last = (-1, default);
         int steady = 0;
         for (int i = 0; i < 600; i++)
         {
             await Task.Delay(200);
-            long len = File.Exists(path) ? new FileInfo(path).Length : -1;
-            if (len > 0 && len == last) { if (++steady >= 3) return path; }
+            var fi = new FileInfo(path);
+            var now = fi.Exists ? (fi.Length, fi.LastWriteTimeUtc) : (-1, default);
+            if (now.Item1 > 0 && now == last) steady++;
             else steady = 0;
-            last = len;
+            last = now;
+            // a picture that only decodes with warnings (a cut-off JPEG does) gets longer to prove it's done
+            if (steady >= 10 && steady % 5 == 0 && Complete(path) is var done && (done == true || (done == null && steady >= 25))) return path;
         }
-        return File.Exists(path) ? path : null;
+        return null;
+    }
+
+    /// <summary>A picture that decodes cleanly: true; only with warnings: null; not at all (half-written): false. Anything else counts as done.</summary>
+    static bool? Complete(string path)
+    {
+        if (Kinds.Of(path) != Kind.Image) return true;
+        try
+        {
+            bool warned = false;
+            using var img = new ImageMagick.MagickImage();
+            img.Warning += (_, _) => warned = true;
+            img.Read(path);
+            return warned ? null : true;
+        }
+        catch (Exception ex) { Log.Info($"direct save {Path.GetFileName(path)} not complete yet: {ex.Message}"); return false; }
     }
 
     [System.Runtime.InteropServices.DllImport("libX11.so.6")]

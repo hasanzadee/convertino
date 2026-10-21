@@ -32,6 +32,9 @@ public static class Fetch
 
     static readonly HttpClient Http = Client();
 
+    /// <summary>Set on a request whose chain started on the local network (an intranet link): only then may it connect there.</summary>
+    static readonly HttpRequestOptionsKey<bool> LocalOk = new("convertino.local-ok");
+
     static HttpClient Client()
     {
         var http = new HttpClient(new SocketsHttpHandler
@@ -45,11 +48,66 @@ public static class Fetch
             ConnectTimeout = TimeSpan.FromSeconds(30),
             AutomaticDecompression = DecompressionMethods.All,
             PooledConnectionIdleTimeout = TimeSpan.FromMinutes(1),
+            ConnectCallback = Connect,
         }) { Timeout = System.Threading.Timeout.InfiniteTimeSpan };
         http.DefaultRequestHeaders.TryAddWithoutValidation("User-Agent",
             $"Mozilla/5.0 (compatible; Convertino/{typeof(Fetch).Assembly.GetName().Version?.ToString(3)}; +https://github.com/hasanzadee/convertino)");
         http.DefaultRequestHeaders.TryAddWithoutValidation("Accept", "*/*");
         return http;
+    }
+
+    /// <summary>
+    /// Every new connection: a link from the internet never reaches loopback, the local network, link-local addresses
+    /// (169.254.169.254 cloud metadata included) or multicast, even when a host name resolves there (DNS rebinding).
+    /// The system proxy itself may live on the local network.
+    /// </summary>
+    static async ValueTask<Stream> Connect(SocketsHttpConnectionContext ctx, CancellationToken ct)
+    {
+        var host = ctx.DnsEndPoint.Host;
+        IPAddress[] addrs = IPAddress.TryParse(host, out var literal) ? [literal] : await Dns.GetHostAddressesAsync(host, ct);
+        bool proxy = ctx.InitialRequestMessage.RequestUri is { } ru && HttpClient.DefaultProxy.GetProxy(ru) is { } p
+                     && string.Equals(p.Host, host, StringComparison.OrdinalIgnoreCase) && p.Port == ctx.DnsEndPoint.Port;
+        bool localOk = proxy || (ctx.InitialRequestMessage.Options.TryGetValue(LocalOk, out var ok) && ok);
+        if (!localOk) addrs = addrs.Where(a => !IsLocal(a)).ToArray();
+        if (addrs.Length == 0) throw new Refused($"{host} is on the local network — a link from the web isn't followed there");
+        var s = new System.Net.Sockets.Socket(System.Net.Sockets.SocketType.Stream, System.Net.Sockets.ProtocolType.Tcp) { NoDelay = true };
+        try
+        {
+            await s.ConnectAsync(addrs, ctx.DnsEndPoint.Port, ct);
+            return new System.Net.Sockets.NetworkStream(s, ownsSocket: true);
+        }
+        catch { s.Dispose(); throw; }
+    }
+
+    /// <summary>Loopback, private (10/8, 172.16/12, 192.168/16, 100.64/10, fc00::/7), link-local (169.254/16, fe80::/10), unspecified, multicast.</summary>
+    public static bool IsLocal(IPAddress a)
+    {
+        if (a.IsIPv4MappedToIPv6) a = a.MapToIPv4();
+        if (IPAddress.IsLoopback(a)) return true;
+        var b = a.GetAddressBytes();
+        if (a.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
+            return b[0] is 0 or 10 or 127 || b[0] >= 224 || (b[0] == 169 && b[1] == 254) || (b[0] == 172 && b[1] is >= 16 and <= 31)
+                || (b[0] == 192 && b[1] == 168) || (b[0] == 100 && b[1] is >= 64 and <= 127);
+        return a.Equals(IPAddress.IPv6None) || a.IsIPv6LinkLocal || a.IsIPv6SiteLocal || a.IsIPv6Multicast || (b[0] & 0xFE) == 0xFC;
+    }
+
+    /// <summary>Whether <paramref name="host"/> is (or resolves to) the local network; unresolvable names count as not.</summary>
+    static async Task<bool> IsLocalHost(string host, CancellationToken ct)
+    {
+        if (IPAddress.TryParse(host, out var ip)) return IsLocal(ip);
+        if (host.Equals("localhost", StringComparison.OrdinalIgnoreCase) || host.EndsWith(".localhost", StringComparison.OrdinalIgnoreCase)) return true;
+        try { return (await Dns.GetHostAddressesAsync(host, ct)).Any(IsLocal); }
+        catch (System.Net.Sockets.SocketException) { return false; }
+    }
+
+    /// <summary>Why a redirect from <paramref name="from"/> to <paramref name="to"/> isn't followed, or null when it may be.</summary>
+    public static string? RedirectRefusal(Uri from, Uri? to, bool localOk, bool toLocal)
+    {
+        // file:, ftp:, data: and the rest never; nor https → http; nor from the web into the local network
+        if (to == null || IsData(to)) return $"{HostOf(from)} redirected to a link Convertino doesn't open";
+        if (from.Scheme == "https" && to.Scheme == "http") return $"{HostOf(from)} redirected from https to plain http";
+        if (!localOk && toLocal) return $"{HostOf(from)} redirected into the local network";
+        return null;
     }
 
     /// <summary>An absolute http, https or data: URL (user name and password dropped), or null.</summary>
@@ -69,35 +127,38 @@ public static class Fetch
     public static string HostOf(Uri? u) => u == null || IsData(u) ? "web page" : u.IdnHost.StartsWith("www.") ? u.IdnHost[4..] : u.IdnHost;
 
     /// <summary>
-    /// Get <paramref name="url"/> into <paramref name="dir"/> (a fresh working folder). The name comes from
-    /// <paramref name="suggested"/> (what the page or browser called it), Content-Disposition or the URL, with the
-    /// extension corrected to what the bytes are; <paramref name="fallback"/> (a link's title) only when neither names a
-    /// real file. <paramref name="expectFile"/>: the drag promised a file, so an HTML sign-in page instead of it means the
-    /// site wants a login.
+    /// Get <paramref name="url"/> into <paramref name="dir"/> (a fresh working folder). <paramref name="expected"/> is the
+    /// name the flower showed before the drop: when it has an extension, the server can't change the type (only the bytes
+    /// can, to a harmless one). Otherwise the name comes from Content-Disposition or the URL, <paramref name="fallback"/> (a
+    /// link's title) when neither names a real file. See <see cref="FinalName"/> for programs and Explorer-active types.
+    /// <paramref name="expectFile"/>: the drag promised a file, so an HTML sign-in page instead of it means the site wants a login.
     /// </summary>
-    public static async Task<Result> Download(Uri url, string dir, string? suggested, Action<long, long?>? progress, CancellationToken ct,
+    public static async Task<Result> Download(Uri url, string dir, string? expected, Action<long, long?>? progress, CancellationToken ct,
         bool expectFile = false, string? fallback = null)
     {
         Directory.CreateDirectory(dir);
         if (IsData(url))
         {
             var (mime, bytes) = DataUri(url.OriginalString);
-            var name = SafeName(suggested is { Length: > 0 } ? suggested : "image" + MimeExt(mime), "download");
-            var p = Path.Combine(dir, FixExtension(name, Sniff(bytes), mime));
+            var p = Unique(dir, FinalName(expected ?? "image" + MimeExt(mime), expected, bytes, mime));
             await File.WriteAllBytesAsync(p, bytes, ct);
             progress?.Invoke(bytes.Length, bytes.Length);
             return new(p, mime, bytes.Length, url);
         }
 
+        // a chain that starts on the local network (an intranet link) may stay there; one from the web may not go there
+        bool localOk = await IsLocalHost(url.Host, ct);
         var current = url;
         for (int hop = 0; ; hop++)
         {
             using var idle = CancellationTokenSource.CreateLinkedTokenSource(ct);
             idle.CancelAfter(IdleTimeout);
             using var req = new HttpRequestMessage(HttpMethod.Get, current);
+            req.Options.Set(LocalOk, localOk);
             HttpResponseMessage resp;
             try { resp = await Http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, idle.Token); }
             catch (OperationCanceledException) when (!ct.IsCancellationRequested) { throw new Refused($"{HostOf(current)} didn't answer for {IdleTimeout.TotalSeconds:0} s"); }
+            catch (HttpRequestException ex) when (ex.InnerException is Refused r) { throw r; }
             catch (HttpRequestException ex) { throw new Refused($"Couldn't reach {HostOf(current)}" + (ex.HttpRequestError == HttpRequestError.NameResolutionError ? " (no such site)" : "")); }
             using (resp)
             {
@@ -108,9 +169,9 @@ public static class Fetch
                     var loc = resp.Headers.Location;
                     if (loc == null) throw new Refused($"{HostOf(current)} redirected nowhere");
                     var next = Parse(new Uri(current, loc).AbsoluteUri);
-                    // https → http is allowed (browsers do too); file:, ftp:, data: and the rest never are
-                    if (next == null || IsData(next)) throw new Refused($"{HostOf(current)} redirected to a link Convertino doesn't open");
-                    current = next;
+                    bool toLocal = next != null && !IsData(next) && !localOk && await IsLocalHost(next.Host, ct);
+                    if (RedirectRefusal(current, next, localOk, toLocal) is { } why) throw new Refused(why);
+                    current = next!;
                     continue;
                 }
                 if (code is 401 or 403 or 407) throw new Refused(SignIn);
@@ -123,10 +184,8 @@ public static class Fetch
 
                 var landed = UrlName(current);
                 bool real = landed != null && Path.GetExtension(landed) is { Length: > 1 } le && !PageExts.Contains(le[1..]);
-                var name = suggested is { Length: > 0 } s ? s
-                    : DispositionName(resp.Content.Headers) ?? (real ? landed : fallback ?? landed ?? UrlName(url)) ?? "download";
-                name = SafeName(name, "download");
-                var part = Path.Combine(dir, ".download.part");
+                var name = DispositionName(resp.Content.Headers) ?? (real ? landed : fallback ?? landed ?? UrlName(url)) ?? "download";
+                var part = Path.Combine(dir, $".download-{Guid.NewGuid():N}.part");
                 var head = new byte[4096];
                 int headLen = 0;
                 long done = 0;
@@ -154,7 +213,7 @@ public static class Fetch
                     }
                     if (total is { } t && done < t) throw new Refused($"The download from {HostOf(current)} broke off");
                     progress?.Invoke(done, done);
-                    var final = Path.Combine(dir, FixExtension(name, Sniff(head.AsSpan(0, headLen)), mime));
+                    var final = Unique(dir, FinalName(name, expected, head.AsSpan(0, headLen), mime));
                     File.Move(part, final);
                     return new(final, mime, done, current);
                 }
@@ -357,6 +416,61 @@ public static class Fetch
         }
         if (PageExts.Contains(ext) && MimeExt(mime) is { Length: > 0 } m && m != "." + ext) return stem + m;
         return name;
+    }
+
+    /// <summary>Types that run code when opened.</summary>
+    public static readonly HashSet<string> Programs = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "exe", "com", "scr", "pif", "bat", "cmd", "ps1", "psm1", "psd1", "ps1xml", "vbs", "vbe", "js", "jse", "wsf", "wsh", "wsc", "hta",
+        "msi", "msp", "mst", "msix", "msixbundle", "appx", "appxbundle", "appinstaller", "application", "appref-ms", "xbap", "cpl",
+        "dll", "ocx", "sys", "drv", "inf", "reg", "msc", "gadget", "diagcab", "jar", "jnlp", "sh", "bash", "zsh", "csh", "ksh", "command",
+        "tool", "app", "run", "py", "pyw", "pyc", "pl", "rb", "php", "chm", "hlp", "iqy", "slk", "sct", "xll", "xlam", "ppam",
+    };
+
+    /// <summary>
+    /// Types that act just by sitting in a folder Explorer or a file manager shows: they reach out to the network (NTLM
+    /// leaks through .url, .scf, .library-ms …), point elsewhere or run on a double click without a warning.
+    /// </summary>
+    public static readonly HashSet<string> Active = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "url", "website", "scf", "lnk", "library-ms", "searchconnector-ms", "search-ms", "searchms", "settingcontent-ms", "desktop",
+        "theme", "themepack", "deskthemepack", "ini", "webloc", "inetloc", "fileloc", "terminal", "workflow",
+    };
+
+    /// <summary>
+    /// The name a download is kept under. With an <paramref name="expected"/> name (what the flower showed, extension
+    /// included) the server can't change the type: only bytes of a known harmless type can (photo.jpg holding a PNG →
+    /// photo.png). Bytes that are a program (Windows, Linux or macOS executable, a shortcut, a script) are refused unless the
+    /// name is a program type already. A program or Explorer-active type the user didn't see before the drop — and an
+    /// Explorer-active type in any case — gets ".download" appended, so it can't run or reach out by sitting in Downloads.
+    /// </summary>
+    public static string FinalName(string candidate, string? expected, ReadOnlySpan<byte> head, string? mime)
+    {
+        var shown = expected != null && Path.GetExtension(expected) is { Length: > 1 } x && !PageExts.Contains(x[1..]) ? x[1..].ToLowerInvariant() : null;
+        var name = FixExtension(SafeName(shown != null ? expected : candidate, "download"), Sniff(head), mime);
+        var ext = Path.GetExtension(name).TrimStart('.').ToLowerInvariant();
+        if (IsProgram(head) && !Programs.Contains(ext) && !Active.Contains(ext))
+            throw new Refused($"The site sent a program instead of {(ext.Length > 0 ? $"a .{ext} file" : "a file")} — not kept");
+        if (Active.Contains(ext) || (Programs.Contains(ext) && ext != shown)) name += ".download";
+        return name;
+    }
+
+    /// <summary>Bytes that are a program: a Windows executable (MZ), ELF, Mach-O, a Windows shortcut (.lnk) or a #! script.</summary>
+    public static bool IsProgram(ReadOnlySpan<byte> b) =>
+        At(b, 0, "MZ") || Has(b, 0, 0x7F, 0x45, 0x4C, 0x46)
+        || Has(b, 0, 0xFE, 0xED, 0xFA, 0xCE) || Has(b, 0, 0xFE, 0xED, 0xFA, 0xCF) || Has(b, 0, 0xCE, 0xFA, 0xED, 0xFE) || Has(b, 0, 0xCF, 0xFA, 0xED, 0xFE)
+        || Has(b, 0, 0xCA, 0xFE, 0xBA, 0xBE)
+        || Has(b, 0, 0x4C, 0, 0, 0, 0x01, 0x14, 0x02, 0)
+        || At(b, 0, "#!");
+
+    /// <summary>dir/name, or "name (2).ext" … when taken.</summary>
+    static string Unique(string dir, string name)
+    {
+        var p = Path.Combine(dir, name);
+        var ext = Path.GetExtension(name);
+        var stem = ext.Length > 0 ? name[..^ext.Length] : name;
+        for (int i = 2; File.Exists(p) || Directory.Exists(p); i++) p = Path.Combine(dir, $"{stem} ({i}){ext}");
+        return p;
     }
 
     static readonly Dictionary<string, string> Mimes = new(StringComparer.OrdinalIgnoreCase)

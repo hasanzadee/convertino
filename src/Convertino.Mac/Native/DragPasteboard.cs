@@ -79,7 +79,14 @@ public sealed class MacDrag : IDragData
             if (_queue == IntPtr.Zero) _queue = ObjC.New("NSOperationQueue");
             if (_reader == IntPtr.Zero) _reader = GlobalBlock();
             var t = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
-            lock (Pending) Pending[Norm(Path.GetFullPath(dir))] = t;
+            var key = Norm(Path.GetFullPath(dir));
+            lock (Pending) Pending[key] = t;
+            // a source that never keeps its promise mustn't leave its entry behind
+            _ = Task.Delay(TimeSpan.FromMinutes(3)).ContinueWith(_ =>
+            {
+                lock (Pending) if (Pending.TryGetValue(key, out var waiting) && waiting == t) Pending.Remove(key);
+                t.TrySetResult(null);
+            });
             var dest = ObjC.Send(ObjC.Class("NSURL"), "fileURLWithPath:", ObjC.NSString(dir));
             var options = ObjC.Send(ObjC.Class("NSDictionary"), "dictionary");
             Msg(ObjC.At(receivers, 0), ObjC.Sel("receivePromisedFilesAtDestination:options:operationQueue:reader:"), dest, options, _queue, _reader);

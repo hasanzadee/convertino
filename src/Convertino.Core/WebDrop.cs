@@ -20,6 +20,14 @@ public interface IDragData
     /// Called during the drop; null when this platform has no such thing.
     /// </summary>
     Task<string?>? Save(WebItem item, string dir, string name) => null;
+
+    /// <summary>One format straight into <paramref name="dst"/> (big pictures: the platform copies in slices); false when missing or over <paramref name="max"/>.</summary>
+    bool CopyTo(string format, Stream dst, long max)
+    {
+        if (Bytes(format, (int)Math.Min(max, int.MaxValue - 64)) is not { } b) return false;
+        dst.Write(b);
+        return true;
+    }
 }
 
 public enum WebSource { Url, Virtual, Format, TempFile, Promise }
@@ -175,6 +183,9 @@ public sealed class WebDrop
 
     static List<WebItem>? Parse(IDragData d, IReadOnlyList<string>? localFiles)
     {
+        // an ordinary file drag (real paths outside the temp folder): nothing more to read at drag-enter
+        var temp = Path.GetFullPath(Path.GetTempPath());
+        if (localFiles is { Count: > 0 } && !localFiles.All(f => Path.GetFullPath(f).StartsWith(temp, StringComparison.OrdinalIgnoreCase))) return null;
         var formats = new HashSet<string>(d.Formats, StringComparer.OrdinalIgnoreCase);
         bool Has(string f) => formats.Contains(f);
         string? Text(string f, int max = Small) => Has(f) && d.Bytes(f, max) is { Length: > 0 } b ? DecodeText(b) : null;
@@ -216,7 +227,6 @@ public sealed class WebDrop
         if (localFiles is { Count: > 0 })
         {
             bool browser = url != null || img != null || Has("application/x-moz-file-promise-url") || Has("application/x-moz-file-promise");
-            var temp = Path.GetFullPath(Path.GetTempPath());
             if (!browser || !localFiles.All(f => File.Exists(f) && Path.GetFullPath(f).StartsWith(temp, StringComparison.OrdinalIgnoreCase))) return null;
             foreach (var f in localFiles)
                 items.Add(new WebItem { Source = WebSource.TempFile, Key = f, Name = Path.GetFileName(f), Title = title, Size = Paths.SizeOf(f) });
@@ -488,18 +498,7 @@ public sealed class WebDrop
         {
             var it = Items[i];
             if (it.Raw != null && it.Source != WebSource.Format)
-                try
-                {
-                    var rawDir = Path.Combine(Dir, i + "-raw");
-                    Directory.CreateDirectory(rawDir);
-                    if (d.Bytes(it.Raw, Inline) is { Length: > 0 } rb)
-                    {
-                        if (it.Raw is "CF_DIBV5" or "DeviceIndependentBitmap") rb = DibToBmp(rb);
-                        var rp = Path.Combine(rawDir, Path.GetFileNameWithoutExtension(Names[i]) + Fetch.MimeExt(RawMime(it.Raw)));
-                        File.WriteAllBytes(rp, rb);
-                        it.RawGrabbed = rp;
-                    }
-                }
+                try { it.RawGrabbed = Picture(d, it.Raw, Path.Combine(Dir, i + "-raw"), Path.GetFileNameWithoutExtension(Names[i])); }
                 catch (Exception ex) { Log.Error($"browser drop: picture data for {Names[i]}", ex); }
             if (it.Source == WebSource.Url) continue;
             try
@@ -508,19 +507,22 @@ public sealed class WebDrop
                 Directory.CreateDirectory(dir);
                 switch (it.Source)
                 {
-                    case WebSource.Format when d.Bytes(it.Key!, Inline) is { Length: > 0 } bytes:
-                    {
-                        if (it.Key is "CF_DIBV5" or "DeviceIndependentBitmap") bytes = DibToBmp(bytes);
-                        var p = Path.Combine(dir, Names[i].Contains('.') ? Names[i] : Names[i] + Fetch.MimeExt(it.Mime));
-                        File.WriteAllBytes(p, bytes);
-                        it.Grabbed = Task.FromResult<string?>(p);
+                    case WebSource.Format:
+                        it.Grabbed = Task.FromResult(Picture(d, it.Key!, dir, Path.GetFileNameWithoutExtension(Names[i])));
                         break;
-                    }
-                    case WebSource.TempFile when it.Key != null && new FileInfo(it.Key) is { Exists: true } fi && fi.Length <= Fetch.Cap:
+                    case WebSource.TempFile when it.Key != null:
                     {
-                        var p = Path.Combine(dir, Fetch.SafeName(fi.Name));
-                        File.Copy(fi.FullName, p);
-                        it.Grabbed = Task.FromResult<string?>(p);
+                        // a real file that outlives the drop: copied off the UI thread
+                        var src = it.Key;
+                        it.Grabbed = Task.Run(() =>
+                        {
+                            var fi = new FileInfo(src);
+                            if (!fi.Exists) return null;
+                            if (fi.Length > Fetch.Cap) throw new Fetch.Refused($"Too big ({Paths.HumanSize(fi.Length)}; {Paths.HumanSize(Fetch.Cap)} at most)");
+                            var p = Path.Combine(dir, Fetch.SafeName(fi.Name));
+                            File.Copy(fi.FullName, p);
+                            return (string?)p;
+                        });
                         break;
                     }
                     case WebSource.Virtual or WebSource.Promise:
@@ -532,13 +534,43 @@ public sealed class WebDrop
         }
     }
 
+    /// <summary>Picture data the drag carries, written as dir/stem.ext (a packed DIB gets its BMP header); null when it isn't there.</summary>
+    static string? Picture(IDragData d, string format, string dir, string stem)
+    {
+        Directory.CreateDirectory(dir);
+        var path = Path.Combine(dir, Fetch.SafeName(stem, "image") + Fetch.MimeExt(RawMime(format)));
+        if (format is "CF_DIBV5" or "DeviceIndependentBitmap")
+        {
+            if (d.Bytes(format, 256 << 20) is not { Length: > 0 } dib) return null;
+            File.WriteAllBytes(path, DibToBmp(dib));
+            return path;
+        }
+        bool ok;
+        using (var fs = new FileStream(path, FileMode.CreateNew, FileAccess.Write)) ok = d.CopyTo(format, fs, Inline) && fs.Length > 0;
+        if (ok) return path;
+        FileTools.TryDeleteFile(path);
+        return null;
+    }
+
     /// <summary>The job for a petal of this flower: the file first (from the drag, or downloaded), kept in Downloads, then the petal on it there.</summary>
     public PetalAction Wrap(PetalAction picked) => new()
     {
         Id = picked.Id, Label = picked.Label, Hint = picked.Hint, Icon = picked.Icon, Verb = picked.Verb, Short = picked.Short,
-        Interactive = picked.Interactive,
+        // never interactive itself: the download gets its card and cancel; an editor opens once the file is here
         Run = job => Run(job, picked),
     };
+
+    /// <summary>Run <paramref name="f"/> on the UI thread (editors open windows) and wait for it.</summary>
+    static Task OnUi(Func<Task> f)
+    {
+        var done = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        Platform.Current.Ui.Post(async () =>
+        {
+            try { await f(); done.TrySetResult(); }
+            catch (Exception ex) { done.TrySetException(ex); }
+        });
+        return done.Task;
+    }
 
     async Task Run(Job job, PetalAction picked)
     {
@@ -570,7 +602,11 @@ public sealed class WebDrop
                 return;
             }
             var sub = new Job { Inputs = kept, Action = action, Where = job.Where, Token = job.Token, OnProgress = p => job.Report(0.4 + 0.6 * p) };
-            if (action.Interactive) await action.Run(sub);
+            if (action.Interactive)
+            {
+                job.Report(1);
+                await OnUi(() => action.Run(sub));
+            }
             else await Task.Run(() => action.Run(sub), job.Token);
             if (sub.Summary == null && sub.Outputs.Count > 0) sub.Summary = Images.SizeSummary(sub);
             var origin = Items.Select(i => i.Url).FirstOrDefault(u => u != null);
@@ -600,53 +636,68 @@ public sealed class WebDrop
         {
             job.Token.ThrowIfCancellationRequested();
             var it = Items[i];
-            var dir = Path.Combine(Dir, i.ToString());
+            // the name the flower showed, when it named a type: what's kept can't turn into another type behind the user's back
+            string? expected = Kinds.Ext(Names[i]) is { Length: > 0 } e && !Fetch.PageExts.Contains(e) ? Names[i] : null;
             string? path = null;
             if (it.Grabbed != null)
             {
                 try { path = await it.Grabbed.WaitAsync(Fetch.IdleTimeout * 4, job.Token); }
+                catch (Fetch.Refused) { throw; } // too big and the like: downloading it instead wouldn't change that
                 catch (Exception ex) when (ex is not OperationCanceledException || !job.Token.IsCancellationRequested) { Log.Error($"browser drop: {Names[i]} from the drag", ex); }
             }
-            if (path != null && !File.Exists(path)) path = null;
-            if (path == null && it.Url != null)
+            if (path != null && File.Exists(path))
             {
-                // a name the page or browser chose wins; otherwise Content-Disposition or the URL; a link is saved under its title
-                string? suggested = it.Source != WebSource.Url || it.Mime != null ? Fetch.SafeName(Names[i], "download") : null;
+                list.Add((await Checked(path, expected, it.Mime, job.Token), it.Url));
+                job.Report(share * (i + 1) / n);
+                continue;
+            }
+            if (it.Url != null)
+            {
                 int k = i;
                 try
                 {
-                    var r = await Fetch.Download(it.Url, dir, suggested, (done, total) => job.Report(share * (k + (total is long t && t > 0 ? Math.Min(1, (double)done / t) : 0)) / n),
+                    var r = await Fetch.Download(it.Url, Path.Combine(Dir, i + "-web"), expected,
+                        (done, total) => job.Report(share * (k + (total is long t && t > 0 ? Math.Min(1, (double)done / t) : 0)) / n),
                         job.Token, expectFile: !Link, fallback: Link ? LinkName : null);
+                    // a picture was promised: a page (or anything else) in its place is no picture
+                    if (it.Image && Kinds.Of(r.Path) != Kind.Image)
+                    {
+                        FileTools.TryDeleteFile(r.Path);
+                        throw new Fetch.Refused($"{Fetch.HostOf(r.Source)} sent {(Kinds.Ext(r.Path) is "html" or "htm" ? "a web page" : "something else")} instead of the picture — save it from the browser first");
+                    }
                     list.Add((r.Path, r.Source));
                     continue;
                 }
-                // a sign-in, a dead link…: the browser's own copy of the picture still beats nothing
+                // a sign-in, a dead link, a page instead of the picture: the browser's own copy of the picture still beats nothing
                 catch (Exception ex) when (it.RawGrabbed != null && ex is not OperationCanceledException)
                 {
                     Log.Info($"browser drop: {ex.Message}; using the picture data from the drag");
                 }
             }
-            path ??= it.RawGrabbed;
-            if (path != null && File.Exists(path))
+            if (it.RawGrabbed is { } raw && File.Exists(raw))
             {
-                if (new FileInfo(path).Length > Fetch.Cap) throw new Fetch.Refused($"Too big ({Paths.HumanSize(Fetch.Cap)} at most)");
-                // the name the drag gave may not match the bytes either
-                var head = new byte[4096];
-                int got;
-                await using (var fs = File.OpenRead(path)) got = await fs.ReadAsync(head, job.Token);
-                var fixedName = Fetch.FixExtension(Fetch.SafeName(Path.GetFileName(path)), Fetch.Sniff(head.AsSpan(0, got)), it.Mime);
-                if (fixedName != Path.GetFileName(path))
-                {
-                    var p2 = Path.Combine(Path.GetDirectoryName(path)!, fixedName);
-                    if (!File.Exists(p2)) { File.Move(path, p2); path = p2; }
-                }
-                list.Add((path, it.Url));
+                list.Add((await Checked(raw, null, null, job.Token), it.Url));
                 job.Report(share * (i + 1) / n);
                 continue;
             }
-            throw new Fetch.Refused(it.Source == WebSource.Url ? "Nothing to download" : "The browser didn't hand the file over — save it first");
+            throw new Fetch.Refused(it.Source == WebSource.Url ? "Nothing to download" : "The app didn't hand the file over — save it first, then drag the saved file");
         }
         return list;
+    }
+
+    /// <summary>A file the drag handed over, under the name <see cref="Fetch.FinalName"/> allows (the bytes decide the type, programs are refused).</summary>
+    static async Task<string> Checked(string path, string? expected, string? mime, CancellationToken ct)
+    {
+        if (new FileInfo(path).Length > Fetch.Cap) throw new Fetch.Refused($"Too big ({Paths.HumanSize(Fetch.Cap)} at most)");
+        var head = new byte[4096];
+        int got;
+        await using (var fs = File.OpenRead(path)) got = await fs.ReadAsync(head, ct);
+        var name = Fetch.FinalName(Path.GetFileName(path), expected, head.AsSpan(0, got), mime);
+        if (name == Path.GetFileName(path)) return path;
+        var dst = Path.Combine(Path.GetDirectoryName(path)!, name);
+        for (int n = 2; File.Exists(dst); n++) dst = Path.Combine(Path.GetDirectoryName(path)!, $"{Path.GetFileNameWithoutExtension(name)} ({n}){Path.GetExtension(name)}");
+        File.Move(path, dst);
+        return dst;
     }
 
     async Task QrLink(Job job)
