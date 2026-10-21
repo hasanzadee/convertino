@@ -77,7 +77,7 @@ public static class Media
     /// <summary>Run ffmpeg; progress parsed from -progress pipe:1.</summary>
     public static async Task Run(string args, double duration, Action<double>? progress, CancellationToken ct)
     {
-        var exe = FFmpeg ?? throw new InvalidOperationException(OperatingSystem.IsWindows() ? "ffmpeg not found — install it with: winget install Gyan.FFmpeg" : OperatingSystem.IsMacOS() ? "ffmpeg not found — install it with: brew install ffmpeg" : "ffmpeg not found — install it with your package manager (e.g. sudo apt install ffmpeg)");
+        var exe = FFmpeg ?? throw new InvalidOperationException(OperatingSystem.IsWindows() ? L.T("ffmpeg not found — install it with: {0}", "winget install Gyan.FFmpeg") : OperatingSystem.IsMacOS() ? L.T("ffmpeg not found — install it with: {0}", "brew install ffmpeg") : L.T("ffmpeg not found — install it with your package manager (e.g. sudo apt install ffmpeg)"));
         var psi = new ProcessStartInfo(exe, $"-hide_banner -nostdin -y -progress pipe:1 -nostats {args}")
         {
             RedirectStandardOutput = true,
@@ -114,7 +114,7 @@ public static class Media
         {
             string tail;
             lock (errTail) tail = string.Join(" ", errTail.TakeLast(3));
-            throw new IOException($"ffmpeg failed: {tail}");
+            throw new IOException(L.T("ffmpeg failed: {0}", tail));
         }
     }
 
@@ -193,7 +193,7 @@ public static class Media
             await Run($"-ss {at.ToString("0.###", CultureInfo.InvariantCulture)} -i {Q(src)} -frames:v 1 {Q(dst)}", 0, null, job.Token);
             job.Outputs.Add(dst);
         }
-        job.Summary = "Frame at 10%";
+        job.Summary = L.T("Frame at 10%");
     }
 
     public static Task Normalize(Job job) => Each(job, "(normalized)", src => $"-i {Q(src)} -af loudnorm=I=-16:TP=-1.5:LRA=11 -ar 48000", null, audio: true);

@@ -11,7 +11,10 @@ public static class Paths
     static string Resolve()
     {
         string dir;
-        if (OperatingSystem.IsWindows())
+        // dev / tests: a throwaway settings folder instead of the real one
+        if (Environment.GetEnvironmentVariable("CONVERTINO_HOME") is { Length: > 0 } home)
+            dir = home;
+        else if (OperatingSystem.IsWindows())
             dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Convertino");
         else if (OperatingSystem.IsMacOS())
             dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Library", "Application Support", "Convertino");
@@ -151,6 +154,8 @@ public sealed class Settings
         set => Trigger = value.ToString();
     }
     public bool LaunchAtStartup { get; set; } = true;
+    /// <summary>UI language code ("ru", "pt-BR" …); null follows the OS (see <see cref="L.Use"/>).</summary>
+    public string? Language { get; set; }
     public bool FirstRunDone { get; set; }
     public int JpegQuality { get; set; } = 90;
     public int CompressQuality { get; set; } = 72;
@@ -174,6 +179,7 @@ public sealed class Settings
                 Current = JsonSerializer.Deserialize<Settings>(File.ReadAllText(file)) ?? new();
         }
         catch (Exception ex) { Log.Error("settings load", ex); Current = new(); }
+        L.Use(Current.Language);
     }
 
     static readonly object SaveGate = new();

@@ -221,7 +221,7 @@ public sealed class OverlayController
         _pages = Catalog.For(files);
         _pager.Reset(_pages);
         var v = _win.View;
-        v.HubTitle = files.Count == 1 ? Paths.HumanSize(Paths.SizeOf(files[0])) : $"{files.Count} items";
+        v.HubTitle = files.Count == 1 ? Paths.HumanSize(Paths.SizeOf(files[0])) : L.N(files.Count, "{0} item", "{0} items");
         v.HubSub = files.Count == 1 ? _pages.Title : Paths.HumanSize(files.Sum(Paths.SizeOf));
         v.HubBadge = _pages.Badge;
         v.SetMode(HubMode.Info);

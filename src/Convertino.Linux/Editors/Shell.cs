@@ -60,13 +60,13 @@ public sealed class EditorWindow : Window
         WindowStartupLocation = WindowStartupLocation.CenterScreen;
         using (var ms = new MemoryStream()) { AppIcon.Render(64).Save(ms, PngBitmapEncoderOptions.Default); ms.Position = 0; Icon = new WindowIcon(ms); }
 
-        var reset = new Button { Content = "Reset" };
+        var reset = new Button { Content = L.T("Reset") };
         reset.Click += (_, _) => editor.Reset();
-        var cancel = new Button { Content = "Cancel", Margin = new Thickness(0, 0, 8, 0) };
+        var cancel = new Button { Content = L.T("Cancel"), Margin = new Thickness(0, 0, 8, 0) };
         cancel.Click += (_, _) => Close();
         _save = new Button
         {
-            Content = "Save", MinWidth = 110, FontWeight = FontWeight.SemiBold,
+            Content = L.T("Save"), MinWidth = 110, FontWeight = FontWeight.SemiBold,
             Background = t.AccentGradient(), Foreground = B(t.AccentText), HorizontalContentAlignment = HorizontalAlignment.Center,
         };
         _save.Click += async (_, _) => await DoSave();
@@ -102,7 +102,7 @@ public sealed class EditorWindow : Window
         if (_saving) return;
         _saving = true;
         _save.IsEnabled = false;
-        _save.Content = "Saving…";
+        _save.Content = L.T("Saving…");
         try
         {
             var path = await _editor.Save();
@@ -111,9 +111,9 @@ public sealed class EditorWindow : Window
         catch (Exception ex)
         {
             Log.Error("editor save", ex);
-            Title = "Couldn't save: " + ex.Message;
+            Title = L.T("Couldn't save: {0}", ex.Message);
         }
-        _save.Content = "Save";
+        _save.Content = L.T("Save");
         _save.IsEnabled = true;
         _saving = false;
     }

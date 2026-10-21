@@ -22,10 +22,10 @@ public static class Qr
             texts.AddRange(await Task.Run(() => Decode(f), job.Token));
         }
         texts = texts.Distinct().ToList();
-        if (texts.Count == 0) { job.Title = "No QR code found"; job.Summary = "Try a sharper or tighter screenshot"; return; }
+        if (texts.Count == 0) { job.Title = L.T("No QR code found"); job.Summary = L.T("Try a sharper or tighter screenshot"); return; }
         var text = string.Join(Environment.NewLine, texts);
         Platform.Current.SetClipboardText(text);
-        job.Title = texts.Count == 1 ? "QR text copied" : $"{texts.Count} QR codes copied";
+        job.Title = texts.Count == 1 ? L.T("QR text copied") : L.N(texts.Count, "{0} QR code copied", "{0} QR codes copied");
         job.Summary = Ocr.Preview(text);
     }
 
@@ -74,7 +74,7 @@ public static class Qr
         {
             job.Token.ThrowIfCancellationRequested();
             var text = Content(src);
-            if (text.Length == 0) throw new InvalidOperationException("The file is empty");
+            if (text.Length == 0) throw new InvalidOperationException(L.T("The file is empty"));
             var dst = Paths.Beside(src, "png", "(QR)");
             await File.WriteAllBytesAsync(dst, Png(text), job.Token);
             job.Outputs.Add(dst);
@@ -94,7 +94,7 @@ public static class Qr
             try { data = gen.CreateQrCode(text, QRCodeGenerator.ECCLevel.L, forceUtf8: !ascii); }
             catch (QRCoder.Exceptions.DataTooLongException)
             {
-                throw new InvalidOperationException($"Too long for a QR code ({Encoding.UTF8.GetByteCount(text):N0} bytes; about 2,900 fit)");
+                throw new InvalidOperationException(L.T("Too long for a QR code ({0:N0} bytes; about 2,900 fit)", Encoding.UTF8.GetByteCount(text)));
             }
         }
         using (data)
@@ -113,7 +113,7 @@ public static class Qr
             case "url":
                 foreach (var line in File.ReadLines(path))
                     if (line.StartsWith("URL=", StringComparison.OrdinalIgnoreCase)) return line[4..].Trim();
-                throw new InvalidOperationException("No URL= line in this shortcut");
+                throw new InvalidOperationException(L.T("No URL= line in this shortcut"));
             case "webloc":
             {
                 var bytes = File.ReadAllBytes(path);
@@ -132,7 +132,7 @@ public static class Qr
                     }
                     catch (System.Xml.XmlException) { }
                 }
-                throw new InvalidOperationException("No link in this .webloc");
+                throw new InvalidOperationException(L.T("No link in this .webloc"));
             }
             default:
                 return File.ReadAllText(path).Trim();

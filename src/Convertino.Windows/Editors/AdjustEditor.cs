@@ -49,15 +49,15 @@ public sealed class AdjustEditor : Editor
         string Signed(double v) => v == 0 ? "0" : $"{(v > 0 ? "+" : "")}{v:0}";
 
         var grid = new UniformGrid3();
-        grid.Children.Add(S("Brightness", -60, 60, p => p.Brightness, (p, v) => p with { Brightness = v }, Signed));
-        grid.Children.Add(S("Contrast", -60, 60, p => p.Contrast, (p, v) => p with { Contrast = v }, Signed));
-        grid.Children.Add(S("Saturation", -100, 100, p => p.Saturation, (p, v) => p with { Saturation = v }, Signed));
-        grid.Children.Add(S("Warmth", -100, 100, p => p.Warmth, (p, v) => p with { Warmth = v }, Signed));
-        grid.Children.Add(S("Sharpness", 0, 100, p => p.Sharpness, (p, v) => p with { Sharpness = v }, v => $"{v:0}"));
-        grid.Children.Add(S("Vignette", 0, 100, p => p.Vignette, (p, v) => p with { Vignette = v }, v => $"{v:0}"));
+        grid.Children.Add(S(L.T("Brightness"), -60, 60, p => p.Brightness, (p, v) => p with { Brightness = v }, Signed));
+        grid.Children.Add(S(L.T("Contrast"), -60, 60, p => p.Contrast, (p, v) => p with { Contrast = v }, Signed));
+        grid.Children.Add(S(L.T("Saturation"), -100, 100, p => p.Saturation, (p, v) => p with { Saturation = v }, Signed));
+        grid.Children.Add(S(L.T("Warmth"), -100, 100, p => p.Warmth, (p, v) => p with { Warmth = v }, Signed));
+        grid.Children.Add(S(L.T("Sharpness"), 0, 100, p => p.Sharpness, (p, v) => p with { Sharpness = v }, v => $"{v:0}"));
+        grid.Children.Add(S(L.T("Vignette"), 0, 100, p => p.Vignette, (p, v) => p with { Vignette = v }, v => $"{v:0}"));
 
         var scale = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 4, 0, 0) };
-        scale.Children.Add(UiKit.Label("Size"));
+        scale.Children.Add(UiKit.Label(L.T("Size")));
         foreach (var pct in new[] { 100, 75, 50, 25 })
         {
             var chip = UiKit.Chip(pct == 100 ? $"100% · {img.Width}×{img.Height}" : $"{pct}%", "scale", pct == 100, () => { _p = _p with { Scale = pct }; Kick(); });
@@ -65,11 +65,11 @@ public sealed class AdjustEditor : Editor
             scale.Children.Add(chip);
         }
         scale.Children.Add(new Border { Width = 14 });
-        scale.Children.Add(UiKit.Icon("", "Rotate left", () => { _p = _p with { Rotate = (_p.Rotate + 270) % 360 }; Kick(); }));
-        scale.Children.Add(UiKit.Icon("", "Rotate right", () => { _p = _p with { Rotate = (_p.Rotate + 90) % 360 }; Kick(); }));
+        scale.Children.Add(UiKit.Icon("", L.T("Rotate left"), () => { _p = _p with { Rotate = (_p.Rotate + 270) % 360 }; Kick(); }));
+        scale.Children.Add(UiKit.Icon("", L.T("Rotate right"), () => { _p = _p with { Rotate = (_p.Rotate + 90) % 360 }; Kick(); }));
         ((Button)scale.Children[^2]).RenderTransform = new System.Windows.Media.ScaleTransform(-1, 1, 17, 16);
-        scale.Children.Add(UiKit.Icon("", "Flip horizontal", () => { _p = _p with { FlipH = !_p.FlipH }; Kick(); }));
-        scale.Children.Add(UiKit.Icon("", "Flip vertical", () => { _p = _p with { FlipV = !_p.FlipV }; Kick(); }));
+        scale.Children.Add(UiKit.Icon("", L.T("Flip horizontal"), () => { _p = _p with { FlipH = !_p.FlipH }; Kick(); }));
+        scale.Children.Add(UiKit.Icon("", L.T("Flip vertical"), () => { _p = _p with { FlipV = !_p.FlipV }; Kick(); }));
         ((Button)scale.Children[^1]).RenderTransform = new System.Windows.Media.RotateTransform(90, 17, 16);
 
         _controls = new StackPanel { Children = { grid, scale } };
@@ -130,7 +130,7 @@ public sealed class AdjustEditor : Editor
 
     internal override void DevPrepare() => _p = _p with { Brightness = 15, Contrast = 20, Saturation = 30, Warmth = 40, Sharpness = 50, Vignette = 60, Rotate = 90, Scale = 50 };
 
-    public override string Title => "Adjust";
+    public override string Title => L.T("Adjust");
     public override FrameworkElement Preview => _surface;
     public override FrameworkElement Controls => _controls;
 

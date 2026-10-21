@@ -337,13 +337,18 @@ public sealed class FlowerView : Control
             if (act.Icon != null)
             {
                 DrawIcon(dc, act.Icon, new Point(lc.X, lc.Y - 9 * scale), 20 * bs, k);
-                DrawText(dc, Spaced(act.Label.ToUpperInvariant()), SmallFace, 9.2 * bs, lc.X, lc.Y + 12 * scale, k);
+                // letter-spaced capitals while they fit the petal, then unspaced, then smaller
+                var caps = PetalText.Caps(act.Label);
+                double room = PetalText.Room(n, p.Index, R1, R2, Gap);
+                bool spaced = PetalText.Spaceable(caps) && Width1(Spaced(caps), SmallFace) * 9.2 <= room;
+                DrawText(dc, spaced ? Spaced(caps) : caps, SmallFace, (spaced ? 9.2 : Fit(caps, SmallFace, 9.2, room, 6.5)) * bs, lc.X, lc.Y + 12 * scale, k);
             }
             else
             {
                 bool hint = !string.IsNullOrEmpty(act.Hint);
-                DrawText(dc, act.Label, LabelFace, (act.Label.Length > 4 ? 14 : 16) * bs, lc.X, lc.Y - (hint ? 6 : 0) * scale, k);
-                if (hint) DrawText(dc, act.Hint, HintFace, 9.5 * bs, lc.X, lc.Y + 11 * scale, k, sub: true);
+                double room = PetalText.Room(n, p.Index, R1, R2, Gap);
+                DrawText(dc, act.Label, LabelFace, Fit(act.Label, LabelFace, act.Label.Length > 4 ? 14 : 16, room, 10) * bs, lc.X, lc.Y - (hint ? 6 : 0) * scale, k);
+                if (hint) DrawText(dc, act.Hint, HintFace, Fit(act.Hint, HintFace, 9.5, room, 7) * bs, lc.X, lc.Y + 11 * scale, k, sub: true);
             }
         }
     }
@@ -368,6 +373,21 @@ public sealed class FlowerView : Control
     }
 
     static string Spaced(string s) => string.Join(" ", s.ToCharArray());
+
+    readonly Dictionary<(string, Typeface), double> _widths = [];
+
+    /// <summary>The width of <paramref name="text"/> at font size 1.</summary>
+    double Width1(string text, Typeface face)
+    {
+        if (_widths.TryGetValue((text, face), out var w)) return w;
+        if (_widths.Count > 400) _widths.Clear();
+        var ft = new FormattedText(text, CultureInfo.InvariantCulture, FlowDirection.LeftToRight, face, 100, Brushes.Black);
+        return _widths[(text, face)] = ft.WidthIncludingTrailingWhitespace / 100;
+    }
+
+    /// <summary><paramref name="size"/>, or smaller (not below <paramref name="min"/>) so the text fits <paramref name="room"/>.</summary>
+    double Fit(string text, Typeface face, double size, double room, double min) =>
+        Math.Clamp(room / Math.Max(1e-6, Width1(text, face)), min, size);
 
     void DrawHub(DrawingContext dc, Point c, double g, Rect full)
     {
@@ -434,6 +454,9 @@ public sealed class FlowerView : Control
     static void Fit(DrawingContext dc, string text, Typeface face, double size, double cx, double cy, double maxW, Color col)
     {
         if (string.IsNullOrEmpty(text)) return;
+        // a little smaller before the ellipsis: translations run longer than the English
+        double w = new FormattedText(text, CultureInfo.CurrentCulture, FlowDirection.LeftToRight, face, size, B(col)).Width;
+        if (w > maxW) size = Math.Max(size * 0.8, size * maxW / w);
         var ft = new FormattedText(text, CultureInfo.CurrentCulture, FlowDirection.LeftToRight, face, size, B(col))
         {
             MaxTextWidth = Math.Max(10, maxW),

@@ -98,7 +98,7 @@ public static partial class Data
     const int MaxDepth = 512;
 
     static InvalidDataException Bad(string format, long? line, long? column, string message) =>
-        new(line is { } l ? $"Not valid {format} (line {l}, column {column ?? 1}): {message}" : $"Not valid {format}: {message}");
+        new(line is { } l ? L.T("Not valid {0} (line {1}, column {2}): {3}", format, l, column ?? 1, message) : L.T("Not valid {0}: {1}", format, message));
 
     // ---------- JSON ----------
 
@@ -286,7 +286,7 @@ public static partial class Data
             for (int depth = 0; parser.MoveNext();)
             {
                 if (parser.Current is YamlDotNet.Core.Events.MappingStart or YamlDotNet.Core.Events.SequenceStart && ++depth > MaxDepth)
-                    throw new InvalidDataException($"The YAML nests more than {MaxDepth} levels deep");
+                    throw new InvalidDataException(L.T("The {0} nests more than {1} levels deep", "YAML", MaxDepth));
                 if (parser.Current is YamlDotNet.Core.Events.MappingEnd or YamlDotNet.Core.Events.SequenceEnd) depth--;
             }
             stream.Load(new StringReader(text));
@@ -309,8 +309,8 @@ public static partial class Data
 
     static JsonNode? FromYaml(YamlNode node, int depth, YamlBudget budget)
     {
-        if (depth > MaxDepth) throw new InvalidDataException("The YAML nests too deeply (or an alias contains itself)");
-        if (--budget.Left < 0) throw new InvalidDataException($"The YAML's aliases expand to more than {budget.Total:N0} values (an alias bomb?)");
+        if (depth > MaxDepth) throw new InvalidDataException(L.T("The YAML nests too deeply (or an alias contains itself)"));
+        if (--budget.Left < 0) throw new InvalidDataException(L.T("The YAML's aliases expand to more than {0:N0} values (an alias bomb?)", budget.Total));
         switch (node)
         {
             case YamlScalarNode s:
@@ -348,7 +348,7 @@ public static partial class Data
                 return o;
             }
             default:
-                throw new InvalidDataException("Unsupported YAML node: " + node.NodeType);
+                throw new InvalidDataException(L.T("Unsupported YAML node: {0}", node.NodeType.ToString()));
         }
     }
 
@@ -591,7 +591,7 @@ public static partial class Data
         // TOML is always a table at the top: a list goes under "items", a single value under "value"
         var root = tree as JsonObject ?? new JsonObject { [tree is JsonArray ? "items" : "value"] = tree?.DeepClone() };
         try { return TomlSerializer.Serialize(TomlTableOf(root, inline: false)); }
-        catch (TomlException ex) when (ex.Message.Contains("depth")) { throw new InvalidDataException("TOML can't nest more than 64 levels deep"); }
+        catch (TomlException ex) when (ex.Message.Contains("depth")) { throw new InvalidDataException(L.T("TOML can't nest more than 64 levels deep")); }
     }
 
     static TomlTable TomlTableOf(JsonObject o, bool inline)
@@ -695,7 +695,7 @@ public static partial class Data
 
     static JsonNode? ParseXml(string path)
     {
-        var root = LoadXml(path, keepComments: false).Root ?? throw new InvalidDataException("The XML has no root element");
+        var root = LoadXml(path, keepComments: false).Root ?? throw new InvalidDataException(L.T("The XML has no root element"));
         return new JsonObject { [XmlKey(root, root.Name)] = FromXml(root, 0) };
     }
 
@@ -709,7 +709,7 @@ public static partial class Data
 
     static JsonNode? FromXml(XElement e, int depth)
     {
-        if (depth > MaxDepth) throw new InvalidDataException($"The XML nests more than {MaxDepth} levels deep");
+        if (depth > MaxDepth) throw new InvalidDataException(L.T("The {0} nests more than {1} levels deep", "XML", MaxDepth));
         var text = string.Concat(e.Nodes().OfType<XText>().Select(t => t.Value));
         if (!e.HasAttributes && !e.HasElements) return e.IsEmpty ? null : Infer(text);
         var o = new JsonObject();
@@ -863,7 +863,7 @@ public static partial class Data
     {
         var doc = LoadXml(path, keepComments: true, keepWhitespace: true);
         int deepest = StripLayout(doc);
-        if (pretty && deepest > MaxDepth) throw new InvalidDataException($"The XML nests {deepest:N0} levels deep, too deep to indent (Minify still works)");
+        if (pretty && deepest > MaxDepth) throw new InvalidDataException(L.T("The XML nests {0:N0} levels deep, too deep to indent (Minify still works)", deepest));
         return SaveXml(doc, pretty);
     }
 

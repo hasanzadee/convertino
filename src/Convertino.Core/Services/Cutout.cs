@@ -51,7 +51,7 @@ public static class Cutout
             Idle.Change(TimeSpan.FromMinutes(3), Timeout.InfiniteTimeSpan);
             Gate.Release();
         }
-        job.Summary = $"Transparent PNG · {_device} · {sw.Elapsed.TotalSeconds:0.0} s";
+        job.Summary = L.T("Transparent PNG") + $" · {_device} · " + L.T("{0:0.0} s", sw.Elapsed.TotalSeconds);
     }
 
     static void CutOne(string src, string dst, CancellationToken ct, Action<double> report)
@@ -155,7 +155,7 @@ public static class Cutout
         if (!hash.Equals(ModelSha256, StringComparison.OrdinalIgnoreCase))
         {
             File.Delete(part);
-            throw new IOException("model download is corrupted (SHA-256 mismatch)");
+            throw new IOException(L.T("model download is corrupted (SHA-256 mismatch)"));
         }
         File.Move(part, ModelPath, overwrite: true);
     }

@@ -18,7 +18,7 @@ public sealed record Pages(List<PetalAction> Convert, List<PetalAction> Tools, s
     public List<PetalAction> MoreFormats { get; init; } = [];
 
     /// <summary>The rings in flip order, Convert → Tools → More tools → More formats, empty ones left out.</summary>
-    public IReadOnlyList<Ring> Rings => [.. Split("Convert", Convert), .. Split("Tools", Tools), .. Split("More tools", More), .. Split("More formats", MoreFormats)];
+    public IReadOnlyList<Ring> Rings => [.. Split(L.T("Convert"), Convert), .. Split(L.T("Tools"), Tools), .. Split(L.T("More tools"), More), .. Split(L.T("More formats"), MoreFormats)];
 
     static IEnumerable<Ring> Split(string name, List<PetalAction> petals)
     {
@@ -39,15 +39,15 @@ public static class Catalog
     {
         Id = "to-" + ext,
         Label = label ?? ext.ToUpperInvariant(),
-        Hint = hint,
-        Verb = $"Convert to {label ?? ext.ToUpperInvariant()}",
+        Hint = L.T(hint),
+        Verb = L.T("Convert to {0}", label ?? ext.ToUpperInvariant()),
         Short = $"→ {label ?? ext.ToUpperInvariant()}",
         Run = run,
     };
 
     public static PetalAction Tool(string id, string label, string icon, string verb, Func<Job, Task> run, bool interactive = false, bool quick = false) => new()
     {
-        Id = id, Label = label, Icon = icon, Verb = verb, Short = label, Run = run, Interactive = interactive, Quick = quick,
+        Id = id, Label = L.T(label), Icon = icon, Verb = L.T(verb), Short = L.T(label), Run = run, Interactive = interactive, Quick = quick,
     };
 
     static PetalAction ZipA => Tool("zip", "Zip", "zip", "Compress to .zip", Misc.Zip);
@@ -62,7 +62,7 @@ public static class Catalog
 
     static PetalAction Pack(string ext, string label, string hint, Func<Job, Task> run) => new()
     {
-        Id = "to-" + ext, Label = label, Hint = hint, Verb = $"Compress to .{ext}", Short = $"→ {label}", Run = run,
+        Id = "to-" + ext, Label = label, Hint = L.T(hint), Verb = L.T("Compress to .{0}", ext), Short = $"→ {label}", Run = run,
     };
 
     /// <summary>For the Tools ring: split presets that fit one file (none under 10 MB), then MD5 / SHA-1 / SHA-512.</summary>
@@ -72,11 +72,11 @@ public static class Catalog
             foreach (var p in FileTools.SplitPresets(Paths.SizeOf(files[0])))
                 yield return new()
                 {
-                    Id = "split-" + p.Id, Label = p.Label, Hint = p.Hint, Verb = $"Split into {p.Label} parts", Short = $"Split {p.Label}",
+                    Id = "split-" + p.Id, Label = p.Label, Hint = p.Hint, Verb = L.T("Split into {0} parts", p.Label), Short = L.T("Split {0}", p.Label),
                     Run = j => FileTools.Split(j, p.Bytes),
                 };
         foreach (var (id, label) in new[] { ("md5", "MD5"), ("sha1", "SHA-1"), ("sha512", "SHA-512") })
-            yield return Tool(id, label, "hash", $"Copy {label} hash", j => FileTools.CopyHash(j, label));
+            yield return Tool(id, label, "hash", L.T("Copy {0} hash", label), j => FileTools.CopyHash(j, label));
     }
 
     /// <summary>Every action reachable for these files (all rings), for the CLI.</summary>
@@ -90,7 +90,7 @@ public static class Catalog
     {
         var kinds = files.Select(Kinds.Of).Distinct().ToList();
         int n = files.Count;
-        string title = n == 1 ? Path.GetFileName(files[0].TrimEnd('\\', '/')) : $"{n} items";
+        string title = n == 1 ? Path.GetFileName(files[0].TrimEnd('\\', '/')) : L.N(n, "{0} item", "{0} items");
         string badge = n == 1 ? Kinds.Badge(files[0]) : n.ToString();
 
         if (kinds.Count == 1) return ForKind(kinds[0], files, title, badge);
@@ -170,7 +170,7 @@ public static class Catalog
                 }
                 else
                 {
-                    tools.Add(Tool("compress", "Compress", "compress", $"Compress {files.Count} images", Images.Compress));
+                    tools.Add(Tool("compress", "Compress", "compress", L.T("Compress {0} images", files.Count), Images.Compress));
                     tools.Add(Tool("meta", "Clean", "tag", "Strip metadata & GPS", Images.StripMetadata));
                     if (cutout != null) tools.Add(cutout);
                     tools.Add(Tool("ocr", "Text", "ocr", "Copy text (OCR)", OcrToClipboard));
@@ -183,7 +183,7 @@ public static class Catalog
                 conv.Add(Fmt("jpg", "pages", j => Pdfs.ToImages(j, "jpg")));
                 conv.Add(Fmt("txt", "text", Pdfs.ToText));
                 conv.Add(Fmt("png", "pages", j => Pdfs.ToImages(j, "png")));
-                if (!single) tools.Add(Tool("merge", "Merge", "merge", $"Merge {files.Count} PDFs", Pdfs.Merge));
+                if (!single) tools.Add(Tool("merge", "Merge", "merge", L.T("Merge {0} PDFs", files.Count), Pdfs.Merge));
                 if (Pdfs.CanCompress) tools.Add(Tool("compress", "Compress", "compress", "Make the PDF smaller", Pdfs.Compress));
                 tools.Add(Tool("pdfimages", "Images", "picture", "Extract the images", Pdfs.ExtractImages));
                 tools.Add(Tool("pagenum", "Numbers", "hash", "Add page numbers", Pdfs.PageNumbers));
@@ -367,7 +367,7 @@ public static class Catalog
         }
         var text = sb.ToString().Trim();
         Platform.Current.SetClipboardText(text);
-        job.Title = text.Length == 0 ? "No text found" : "Text copied";
+        job.Title = text.Length == 0 ? L.T("No text found") : L.T("Text copied");
         job.Summary = Ocr.Preview(text);
     }
 
@@ -377,7 +377,7 @@ public static class Catalog
         foreach (var f in job.Inputs) parts.Add(TextFiles.Decode(await File.ReadAllBytesAsync(f, job.Token)));
         var text = string.Join(Environment.NewLine + Environment.NewLine, parts);
         Platform.Current.SetClipboardText(text);
-        job.Title = "Text copied";
+        job.Title = L.T("Text copied");
         job.Summary = Ocr.Preview(text);
     }
 }

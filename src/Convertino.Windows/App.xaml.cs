@@ -81,7 +81,7 @@ public partial class App : Application
         {
             Settings.Load();
             Theme.Apply(e.Args.Length > 2 ? e.Args[2] : Settings.Current.Theme);
-            Flyout.Snapshot(e.Args[1], e.Args.Length > 3 && e.Args[3] == "demo" ? Stats.Demo() : Stats.Load());
+            Flyout.Snapshot(e.Args[1], e.Args.Length > 3 && e.Args[3] == "demo" ? Stats.Demo() : Stats.Load(), langs: e.Args.Contains("langs"));
             Shutdown();
             return;
         }
@@ -178,7 +178,7 @@ public partial class App : Application
             Dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle, () =>
             {
                 var t = Toasts.Create(Win32.Cursor);
-                t.SetDone("Convertino is running", $"Drag any file and {Settings.Current.TriggerKey.Tap()} — the flower opens under your cursor.", AppIcon.Render(84), "");
+                t.SetDone(L.T("Convertino is running"), L.T("Drag any file and {0} — the flower opens under your cursor.", Settings.Current.TriggerKey.Tap()), AppIcon.Render(84), "");
                 Toasts.Show(t);
             });
         }

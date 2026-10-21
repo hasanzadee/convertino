@@ -33,7 +33,7 @@ public static class Subtitles
             var bytes = await File.ReadAllBytesAsync(src, job.Token);
             var enc = TextFiles.Detect(bytes, out int bom);
             var cues = Parse(enc.GetString(bytes, bom, bytes.Length - bom), Kinds.Ext(src));
-            if (cues.Count == 0) throw new InvalidDataException($"No subtitles found in {Path.GetFileName(src)}");
+            if (cues.Count == 0) throw new InvalidDataException(L.T("No subtitles found in {0}", Path.GetFileName(src)));
             var dst = Paths.Beside(src, ext);
             await File.WriteAllTextAsync(dst, Write(cues, ext), new UTF8Encoding(ext is "srt" or "ass"), job.Token);
             job.Outputs.Add(dst);
@@ -41,9 +41,9 @@ public static class Subtitles
             rounded |= ext == "ass" && cues.Any(c => c.Start % 10 != 0 || c.End % 10 != 0);
             if (enc.CodePage != 65001) legacy.Add(TextFiles.Name(enc));
         }
-        var parts = new List<string> { total == 1 ? "1 cue" : $"{total} cues" };
-        if (legacy.Count > 0) parts.Add("read as " + string.Join(", ", legacy));
-        if (rounded) parts.Add("ASS keeps 1/100 s");
+        var parts = new List<string> { L.N(total, "{0} cue", "{0} cues") };
+        if (legacy.Count > 0) parts.Add(L.T("read as {0}", string.Join(", ", legacy)));
+        if (rounded) parts.Add(L.T("ASS keeps 1/100 s"));
         job.Summary = string.Join(" · ", parts);
     }
 
@@ -51,7 +51,7 @@ public static class Subtitles
     public static async Task FromVideo(Job job)
     {
         int n = job.Inputs.Count;
-        string why = "This video has no subtitle track";
+        string why = L.T("This video has no subtitle track");
         for (int i = 0; i < n; i++)
         {
             int idx = i;
@@ -60,8 +60,8 @@ public static class Subtitles
             var track = tracks?.FirstOrDefault(t => !Pictures.ContainsKey(t.Codec));
             if (tracks != null && track == null)
             {
-                why = tracks.Count == 0 ? "This video has no subtitle track"
-                    : $"This video's subtitles are pictures ({Pictures[tracks[0].Codec]}), not text, so they can't be saved as SRT";
+                why = tracks.Count == 0 ? L.T("This video has no subtitle track")
+                    : L.T("This video's subtitles are pictures ({0}), not text, so they can't be saved as SRT", Pictures[tracks[0].Codec]);
                 continue;
             }
             var lang = track?.Language is { Length: > 0 } l && l != "und" ? l : null;
@@ -90,18 +90,18 @@ public static class Subtitles
             }
             catch { TryDelete(dst); throw; }
             finally { if (ass != null) TryDelete(ass); }
-            if (Paths.SizeOf(dst) <= 3) { TryDelete(dst); why = "The video's subtitle track is empty"; continue; }
+            if (Paths.SizeOf(dst) <= 3) { TryDelete(dst); why = L.T("The video's subtitle track is empty"); continue; }
             job.Outputs.Add(dst);
             if (n == 1)
             {
-                var parts = new List<string> { track?.Title is { Length: > 0 } t ? t : lang ?? "Subtitle track" };
-                if (ass != null) parts.Add("ASS styles dropped");
-                if (tracks is { Count: > 1 }) parts.Add($"first of {tracks.Count} tracks");
+                var parts = new List<string> { track?.Title is { Length: > 0 } t ? t : lang ?? L.T("Subtitle track") };
+                if (ass != null) parts.Add(L.T("ASS styles dropped"));
+                if (tracks is { Count: > 1 }) parts.Add(L.T("first of {0} tracks", tracks.Count));
                 job.Summary = string.Join(" · ", parts);
             }
         }
-        if (job.Outputs.Count == 0) throw new InvalidOperationException(n == 1 ? why : "None of these videos has a text subtitle track");
-        if (n > 1) job.Summary = $"{job.Outputs.Count} of {n} videos had subtitles";
+        if (job.Outputs.Count == 0) throw new InvalidOperationException(n == 1 ? why : L.T("None of these videos has a text subtitle track"));
+        if (n > 1) job.Summary = L.T("{0} of {1} videos had subtitles", job.Outputs.Count, n);
     }
 
     // bitmap subtitles: turning them into text would take OCR

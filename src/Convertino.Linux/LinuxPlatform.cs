@@ -44,7 +44,7 @@ public sealed class LinuxPlatform : IPlatform
         // headless: hand it to whatever clipboard tool the session has
         foreach (var (exe, args) in new[] { ("wl-copy", ""), ("xclip", "-selection clipboard"), ("xsel", "--clipboard --input") })
             if (Paths.Which(exe) is { } p && Pipe(p, args, text)) return;
-        throw new InvalidOperationException("No clipboard available (install wl-clipboard or xclip)");
+        throw new InvalidOperationException(L.T("No clipboard available (install wl-clipboard or xclip)"));
     }
 
     public void SetClipboardFiles(IEnumerable<string> files)
@@ -82,9 +82,9 @@ public sealed class LinuxPlatform : IPlatform
         if (x11 || !wayland) tools.Add(("xclip", "-selection clipboard -t image/png -i"));
         foreach (var (exe, args) in tools)
             if (Paths.Which(exe) is { } p && PipeBytes(p, args, png)) return;
-        throw new InvalidOperationException(wayland && !x11 ? "Copy image needs wl-clipboard: sudo apt install wl-clipboard"
-            : x11 && !wayland ? "Copy image needs xclip: sudo apt install xclip"
-            : "Copy image needs wl-clipboard (Wayland) or xclip (X11)");
+        throw new InvalidOperationException(wayland && !x11 ? L.T("Copy image needs {0}: {1}", "wl-clipboard", "sudo apt install wl-clipboard")
+            : x11 && !wayland ? L.T("Copy image needs {0}: {1}", "xclip", "sudo apt install xclip")
+            : L.T("Copy image needs wl-clipboard (Wayland) or xclip (X11)"));
     }
 
     static bool PipeBytes(string exe, string args, byte[] input)

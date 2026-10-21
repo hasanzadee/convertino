@@ -55,7 +55,7 @@ public static class Pdfs
             }
         }, job.Token);
         if (pages.Count > 1) job.Outputs.Add(outDir);
-        job.Summary = pages.Count == 1 ? Images.SizeSummary(job) : $"{pages.Count} pages";
+        job.Summary = pages.Count == 1 ? Images.SizeSummary(job) : L.N(pages.Count, "{0} page", "{0} pages");
     }
 
     public static string ExtractText(string path)
@@ -101,7 +101,7 @@ public static class Pdfs
             await File.WriteAllTextAsync(dst, text, new UTF8Encoding(true), job.Token);
             job.Outputs.Add(dst);
         }
-        job.Summary = ocrUsed ? "Scanned pages — read with OCR" : Images.SizeSummary(job);
+        job.Summary = ocrUsed ? L.T("Scanned pages — read with OCR") : Images.SizeSummary(job);
     }
 
     public static async Task Ocr_(Job job)
@@ -119,7 +119,7 @@ public static class Pdfs
             }
         }
         Platform.Current.SetClipboardText(all.ToString().Trim());
-        job.Title = "Text copied";
+        job.Title = L.T("Text copied");
         job.Summary = Ocr.Preview(all.ToString());
     }
 
@@ -230,7 +230,7 @@ public static class Pdfs
             output.Save(dst);
         }, job.Token);
         job.Outputs.Add(dst);
-        job.Summary = $"{job.Inputs.Count} files → 1 PDF · {Paths.HumanSize(Paths.SizeOf(dst))}";
+        job.Summary = L.N(job.Inputs.Count, "{0} file → 1 PDF", "{0} files → 1 PDF") + $" · {Paths.HumanSize(Paths.SizeOf(dst))}";
     }
 
     public static async Task Split(Job job)
@@ -255,7 +255,7 @@ public static class Pdfs
                 }
             }, job.Token);
             job.Outputs.Add(outDir);
-            job.Summary = $"{count} pages";
+            job.Summary = L.N(count, "{0} page", "{0} pages");
         }
     }
 
@@ -272,7 +272,7 @@ public static class Pdfs
             }, job.Token);
             job.Outputs.Add(dst);
         }
-        job.Summary = "Rotated 90° clockwise";
+        job.Summary = L.T("Rotated 90° clockwise");
     }
 
     // ---------- compress (Ghostscript, when installed) ----------
@@ -321,9 +321,9 @@ public static class Pdfs
     public static async Task Compress(Job job)
     {
         var gs = Ghostscript ?? throw new InvalidOperationException(OperatingSystem.IsWindows()
-            ? "Ghostscript not found — install it with: winget install ArtifexSoftware.GhostScript"
-            : OperatingSystem.IsMacOS() ? "Ghostscript not found — install it with: brew install ghostscript"
-            : "Ghostscript not found — install it with your package manager (e.g. sudo apt install ghostscript)");
+            ? L.T("Ghostscript not found — install it with: {0}", "winget install ArtifexSoftware.GhostScript")
+            : OperatingSystem.IsMacOS() ? L.T("Ghostscript not found — install it with: {0}", "brew install ghostscript")
+            : L.T("Ghostscript not found — install it with your package manager (e.g. sudo apt install ghostscript)"));
         long before = 0, after = 0;
         int n = job.Inputs.Count, smaller = 0;
         for (int i = 0; i < n; i++)
@@ -359,8 +359,8 @@ public static class Pdfs
         }
         if (smaller == 0)
         {
-            job.Title = n == 1 ? "Already as small as it gets" : "Already as small as they get";
-            job.Summary = $"{Paths.HumanSize(before)} · Ghostscript couldn't shrink it";
+            job.Title = n == 1 ? L.T("Already as small as it gets") : L.T("Already as small as they get");
+            job.Summary = $"{Paths.HumanSize(before)} · " + L.T("Ghostscript couldn't shrink it");
             return;
         }
         int pct = before > 0 ? (int)Math.Round(100.0 * (before - after) / before) : 0;
@@ -389,7 +389,7 @@ public static class Pdfs
         if (p.ExitCode != 0)
         {
             var msg = err.ToString().Trim();
-            throw new InvalidOperationException($"{Path.GetFileNameWithoutExtension(exe)} failed ({p.ExitCode}){(msg.Length > 0 ? ": " + msg.Split('\n')[^1].Trim() : "")}");
+            throw new InvalidOperationException(L.T("{0} failed ({1})", Path.GetFileNameWithoutExtension(exe), p.ExitCode) + (msg.Length > 0 ? ": " + msg.Split('\n')[^1].Trim() : ""));
         }
     }
 
@@ -440,11 +440,11 @@ public static class Pdfs
         }
         if (total == 0)
         {
-            job.Title = "No images in this PDF";
-            job.Summary = skipped > 0 ? $"{skipped} image(s) use an encoding that can't be saved" : "Only text and vector graphics";
+            job.Title = L.T("No images in this PDF");
+            job.Summary = skipped > 0 ? L.N(skipped, "{0} image uses an encoding that can't be saved", "{0} images use an encoding that can't be saved") : L.T("Only text and vector graphics");
             return;
         }
-        job.Summary = $"{total} image{(total == 1 ? "" : "s")}" + (skipped > 0 ? $" · {skipped} skipped (unsupported encoding)" : "");
+        job.Summary = L.N(total, "{0} image", "{0} images") + (skipped > 0 ? " · " + L.N(skipped, "{0} skipped (unsupported encoding)", "{0} skipped (unsupported encoding)") : "");
     }
 
     /// <summary>The image's only filter ("DCTDecode", "JPXDecode" …), or "" when there are none or several.</summary>
@@ -469,12 +469,12 @@ public static class Pdfs
             var src = job.Inputs[i];
             int idx = i;
             var pages = await RenderPages(src, 150, job.Token, p => job.Report(idx, n, p), maxPages: 1);
-            if (pages.Count == 0) throw new InvalidOperationException("Couldn't render the first page");
+            if (pages.Count == 0) throw new InvalidOperationException(L.T("Couldn't render the first page"));
             var dst = Paths.Beside(src, "png", "(cover)");
             await File.WriteAllBytesAsync(dst, pages[0], job.Token);
             job.Outputs.Add(dst);
         }
-        job.Summary = n == 1 ? "First page · " + Paths.HumanSize(Paths.SizeOf(job.Outputs[0])) : $"{n} covers";
+        job.Summary = n == 1 ? L.T("First page") + " · " + Paths.HumanSize(Paths.SizeOf(job.Outputs[0])) : L.N(n, "{0} cover", "{0} covers");
     }
 
     // ---------- page numbers ----------
@@ -508,7 +508,7 @@ public static class Pdfs
                 doc.Save(dst);
             }, job.Token);
             job.Outputs.Add(dst);
-            job.Summary = $"{pages} page{(pages == 1 ? "" : "s")} numbered";
+            job.Summary = L.N(pages, "{0} page numbered", "{0} pages numbered");
         }
     }
 
@@ -564,6 +564,6 @@ public static class Pdfs
             }, job.Token);
             job.Outputs.Add(dst);
         }
-        job.Summary = "Author, title & XMP metadata removed";
+        job.Summary = L.T("Author, title & XMP metadata removed");
     }
 }

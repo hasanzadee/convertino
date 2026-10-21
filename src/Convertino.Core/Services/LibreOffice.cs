@@ -140,7 +140,7 @@ public sealed class LibreOffice : IOffice
         if (produced == null)
         {
             var err = (await errTask).Trim();
-            throw new IOException("LibreOffice couldn't convert this file" + (err.Length > 0 ? $": {err}" : ""));
+            throw new IOException(L.T("LibreOffice couldn't convert this file") + (err.Length > 0 ? $": {err}" : ""));
         }
         return produced;
     }

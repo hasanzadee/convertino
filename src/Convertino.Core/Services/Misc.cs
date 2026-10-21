@@ -50,7 +50,7 @@ public static class Misc
     public static Task CopyPath(Job job)
     {
         Platform.Current.SetClipboardText(string.Join(Environment.NewLine, job.Inputs));
-        job.Title = job.Inputs.Count == 1 ? "Path copied" : $"{job.Inputs.Count} paths copied";
+        job.Title = job.Inputs.Count == 1 ? L.T("Path copied") : L.N(job.Inputs.Count, "{0} path copied", "{0} paths copied");
         job.Summary = job.Inputs.Count == 1 ? job.Inputs[0] : string.Join(", ", job.Inputs.Select(Path.GetFileName));
         return Task.CompletedTask;
     }
@@ -65,8 +65,8 @@ public static class Misc
             lines.Add(job.Inputs.Count == 1 ? hash : $"{hash}  {Path.GetFileName(f)}");
         }
         Platform.Current.SetClipboardText(string.Join(Environment.NewLine, lines));
-        job.Title = "SHA-256 copied";
-        job.Summary = lines.Count == 1 ? lines[0][..24] + "…" : $"{lines.Count} hashes";
+        job.Title = L.T("SHA-256 copied");
+        job.Summary = lines.Count == 1 ? lines[0][..24] + "…" : L.N(lines.Count, "{0} hash", "{0} hashes");
     }
 
     public static async Task Base64(Job job)
@@ -82,15 +82,15 @@ public static class Misc
             _ => "application/octet-stream",
         };
         Platform.Current.SetClipboardText($"data:{mime};base64,{Convert.ToBase64String(bytes)}");
-        job.Title = "Data URI copied";
+        job.Title = L.T("Data URI copied");
         job.Summary = $"{mime} · {Paths.HumanSize(bytes.Length)}";
     }
 
     public static async Task CopyFiles(Job job)
     {
         Platform.Current.SetClipboardFiles(job.Inputs);
-        job.Title = "Copied to clipboard";
-        job.Summary = job.Inputs.Count == 1 ? Path.GetFileName(job.Inputs[0]) : $"{job.Inputs.Count} items";
+        job.Title = L.T("Copied to clipboard");
+        job.Summary = job.Inputs.Count == 1 ? Path.GetFileName(job.Inputs[0]) : L.N(job.Inputs.Count, "{0} item", "{0} items");
         await Task.CompletedTask;
     }
 
@@ -131,7 +131,7 @@ public static class Misc
     /// <summary>Markdown → temp HTML → office suite → PDF/DOCX (both lay out HTML nicely).</summary>
     public static Task MarkdownVia(Job job, string ext)
     {
-        var office = Platform.Current.Office ?? throw new InvalidOperationException("No office suite found");
+        var office = Platform.Current.Office ?? throw new InvalidOperationException(L.T("No office suite found"));
         return office.Convert(job, ext, src =>
         {
             // beside the source so relative image links keep working

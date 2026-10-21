@@ -55,13 +55,13 @@ public static partial class Archives
             await Task.Run(() => ExtractOne(job.Inputs[idx], job, f => job.Report(idx, job.Inputs.Count, Math.Min(1, f)), tally), job.Token);
         }
         job.Summary = tally.Summary();
-        if (job.Outputs.Count == 0) job.Title = "Nothing extracted";
+        if (job.Outputs.Count == 0) job.Title = L.T("Nothing extracted");
     }
 
     static void ExtractOne(string src, Job job, Action<double> report, Tally tally)
     {
         var fmt = Sniff(src);
-        if (fmt == Format.Unknown) throw new InvalidDataException($"{Path.GetFileName(src)} isn't an archive Convertino can open");
+        if (fmt == Format.Unknown) throw new InvalidDataException(L.T("{0} isn't an archive Convertino can open", Path.GetFileName(src)));
         var dir = Path.GetDirectoryName(src)!;
         var stem = Stem(src);
         var cap = Cap.For(src, dir);
@@ -195,14 +195,14 @@ public static partial class Archives
             }
             catch (IOException) when (File.Exists(dest) || Directory.Exists(dest)) { }
         }
-        throw new IOException($"No free folder name for {name}");
+        throw new IOException(L.T("No free folder name for {0}", name));
     }
 
     static bool IsPasswordError(Exception ex) =>
         ex is SharpCompress.Common.CryptographicException or System.Security.Cryptography.CryptographicException || ex.GetType().Name.Contains("Password", StringComparison.OrdinalIgnoreCase)
         || ex.Message.Contains("password", StringComparison.OrdinalIgnoreCase) || ex.Message.Contains("encrypted", StringComparison.OrdinalIgnoreCase);
 
-    static Exception Locked() => new InvalidOperationException("This archive is password-protected");
+    static Exception Locked() => new InvalidOperationException(L.T("This archive is password-protected"));
 
     static void ExtractTar(Stream s, Target t)
     {
@@ -281,8 +281,8 @@ public static partial class Archives
                 if (drive.IsReady) free = drive.AvailableFreeSpace - GB;
             }
             catch { }
-            if (free < ratio) return new(Math.Max(0, free), "unpacking it would leave less than 1 GB free on the disk");
-            return new(ratio, $"it unpacks to more than {Paths.HumanSize(ratio)}, which looks like a decompression bomb");
+            if (free < ratio) return new(Math.Max(0, free), L.T("unpacking it would leave less than 1 GB free on the disk"));
+            return new(ratio, L.T("it unpacks to more than {0}, which looks like a decompression bomb", Paths.HumanSize(ratio)));
         }
     }
 
@@ -295,10 +295,10 @@ public static partial class Archives
 
         public string Summary()
         {
-            var s = $"{Files} file{(Files == 1 ? "" : "s")} · {Paths.HumanSize(Bytes)}";
-            if (Refused > 0) s += $" · {Refused} unsafe {(Refused == 1 ? "entry" : "entries")} refused";
-            if (Links > 0) s += $" · {Links} link{(Links == 1 ? "" : "s")} skipped";
-            if (Skipped > 0) s += $" · {Skipped} skipped";
+            var s = L.N(Files, "{0} file", "{0} files") + $" · {Paths.HumanSize(Bytes)}";
+            if (Refused > 0) s += " · " + L.N(Refused, "{0} unsafe entry refused", "{0} unsafe entries refused");
+            if (Links > 0) s += " · " + L.N(Links, "{0} link skipped", "{0} links skipped");
+            if (Skipped > 0) s += " · " + L.T("{0} skipped", Skipped);
             return s;
         }
     }
@@ -432,7 +432,7 @@ public static partial class Archives
                 while ((n = from.Read(buf, 0, buf.Length)) > 0)
                 {
                     Token.ThrowIfCancellationRequested();
-                    if (Written + n > cap.Bytes) throw new TooBigException($"Stopped: {cap.Why}");
+                    if (Written + n > cap.Bytes) throw new TooBigException(L.T("Stopped: {0}", cap.Why));
                     to.Write(buf, 0, n);
                     Written += n;
                     Tally.Bytes += n;
@@ -527,7 +527,7 @@ public static partial class Archives
             }
         }, job.Token);
         long before = job.Inputs.Sum(Paths.SizeOf), after = Paths.SizeOf(dst);
-        job.Summary = $"{Paths.HumanSize(before)} → {Paths.HumanSize(after)}" + (skipped > 0 ? $" · {skipped} link{(skipped == 1 ? "" : "s")} left out" : "");
+        job.Summary = $"{Paths.HumanSize(before)} → {Paths.HumanSize(after)}" + (skipped > 0 ? " · " + L.N(skipped, "{0} link left out", "{0} links left out") : "");
     }
 
     static void Collect(string path, string name, List<Item> into)

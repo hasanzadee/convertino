@@ -101,16 +101,16 @@ public sealed class BackgroundEditor : Editor
             return row;
         }
         var sliders = new Avalonia.Controls.Primitives.UniformGrid { Columns = 3 };
-        sliders.Children.Add(S("Padding", 30, o => o.Padding, (o, v) => o with { Padding = v }));
-        sliders.Children.Add(S("Corners", 100, o => o.Corners, (o, v) => o with { Corners = v }));
-        sliders.Children.Add(S("Shadow", 100, o => o.Shadow, (o, v) => o with { Shadow = v }));
+        sliders.Children.Add(S(L.T("Padding"), 30, o => o.Padding, (o, v) => o with { Padding = v }));
+        sliders.Children.Add(S(L.T("Corners"), 100, o => o.Corners, (o, v) => o with { Corners = v }));
+        sliders.Children.Add(S(L.T("Shadow"), 100, o => o.Shadow, (o, v) => o with { Shadow = v }));
         var ratio = new StackPanel { Orientation = Orientation.Horizontal };
-        ratio.Children.Add(Kit.Label("Ratio"));
+        ratio.Children.Add(Kit.Label(L.T("Ratio")));
         foreach (var (label, r) in new (string, double?)[] { ("Auto", null), ("1:1", 1), ("4:3", 4 / 3.0), ("16:9", 16 / 9.0), ("9:16", 9 / 16.0), ("4:5", 0.8) })
             ratio.Children.Add(Kit.Chip(label, "bgratio", r == null, () => { _o = _o with { Ratio = r }; Kick(); }));
-        ratio.Children.Add(Kit.Toggle("Window frame", false, v => { _o = _o with { Frame = v }; Kick(); }));
+        ratio.Children.Add(Kit.Toggle(L.T("Window frame"), false, v => { _o = _o with { Frame = v }; Kick(); }));
         var bgRow = new DockPanel();
-        bgRow.Children.Add(Kit.Label("Background", 74));
+        bgRow.Children.Add(Kit.Label(L.T("Background"), 74));
         bgRow.Children.Add(_swatches);
         _controls = new StackPanel { Children = { bgRow, sliders, ratio } };
         RenderPreview();
@@ -132,7 +132,7 @@ public sealed class BackgroundEditor : Editor
             var rtb = new RenderTargetBitmap(new PixelSize(28, 28), new Vector(96, 96));
             using (var dc = rtb.CreateDrawingContext(true)) Backdrops[i].Paint(dc, new Rect(0, 0, 28, 28), _previewBlur);
             IBrush fill = Backdrops[i].Name == "None" ? Draw.B(Color.FromArgb(40, 128, 128, 128)) : new ImageBrush(rtb) { Stretch = Stretch.Fill };
-            _swatches.Children.Add(Kit.Swatch(fill, idx == _o.Backdrop, () => { _o = _o with { Backdrop = idx }; BuildSwatches(); Kick(); }, Backdrops[i].Name, 28));
+            _swatches.Children.Add(Kit.Swatch(fill, idx == _o.Backdrop, () => { _o = _o with { Backdrop = idx }; BuildSwatches(); Kick(); }, L.T(Backdrops[i].Name), 28));
         }
     }
 
@@ -184,7 +184,7 @@ public sealed class BackgroundEditor : Editor
 
     internal override void DevPrepare() => _o = _o with { Ratio = 16 / 9.0, Frame = true };
 
-    public override string Title => "Add Background";
+    public override string Title => L.T("Add Background");
     public override Control Preview => _preview;
     public override Control Controls => _controls;
 

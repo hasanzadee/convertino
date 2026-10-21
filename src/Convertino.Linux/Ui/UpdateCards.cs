@@ -14,7 +14,7 @@ public static class UpdateCards
     static void Ask()
     {
         var t = Toasts.Create(new ScreenPoint(0, 0));
-        t.SetChoice(Updates.AskTitle, Updates.AskText, "update", "Yes", "No", Updates.Answer, Updates.AskTip);
+        t.SetChoice(Updates.AskTitle, Updates.AskText, "update", L.T("Yes"), L.T("No"), Updates.Answer, Updates.AskTip);
         Toasts.Show(t);
     }
 

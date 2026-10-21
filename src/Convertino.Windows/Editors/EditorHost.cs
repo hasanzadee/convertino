@@ -38,7 +38,7 @@ public static class EditorHost
         var src = job.Inputs[0];
         MagickImage img;
         try { img = await Task.Run(() => Images.Load(src)); }
-        catch (Exception ex) { throw new IOException("Couldn't open this image: " + ex.Message, ex); }
+        catch (Exception ex) { throw new IOException(L.T("Couldn't open this image: {0}", ex.Message), ex); }
 
         using (img)
         {
