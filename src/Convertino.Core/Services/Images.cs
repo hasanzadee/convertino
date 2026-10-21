@@ -161,7 +161,7 @@ public static class Images
             var i = job.Inputs.Count == 1 ? Paths.SizeOf(job.Inputs[0]) : 0;
             return i > 0 ? $"{Paths.HumanSize(i)} → {Paths.HumanSize(o)}" : Paths.HumanSize(o);
         }
-        return $"{job.Outputs.Count} files";
+        return L.N(job.Outputs.Count, "{0} file", "{0} files");
     }
 
     // ---------- tools ----------
@@ -180,7 +180,7 @@ public static class Images
             after += size;
             if (dst != null) job.Outputs.Add(dst);
         }
-        if (job.Outputs.Count == 0) { job.Summary = "Already as small as it gets"; job.Title = "Nothing to squeeze"; return; }
+        if (job.Outputs.Count == 0) { job.Summary = L.T("Already as small as it gets"); job.Title = L.T("Nothing to squeeze"); return; }
         job.Summary = $"{Paths.HumanSize(before)} → {Paths.HumanSize(after)}  (−{Math.Max(0, 100 - after * 100.0 / Math.Max(1, before)):0}%)";
     }
 
@@ -262,7 +262,7 @@ public static class Images
             tags += r.tags;
             gps |= r.gps;
         }
-        job.Summary = (tags > 0 ? $"Removed {tags} tag{(tags == 1 ? "" : "s")}" : "Metadata removed") + (gps ? " · incl. GPS location" : "");
+        job.Summary = (tags > 0 ? L.N(tags, "Removed {0} tag", "Removed {0} tags") : L.T("Metadata removed")) + (gps ? " · " + L.T("incl. GPS location") : "");
     }
 
     static (string path, int tags, bool gps) StripOne(string src)
@@ -320,7 +320,7 @@ public static class Images
             img.Resize(new MagickGeometry(w, h));
             return true;
         });
-        if (job.Outputs.Count == 0) { job.Title = "Already Full HD or smaller"; job.Summary = "Fits in 1920 × 1080, nothing to shrink"; }
+        if (job.Outputs.Count == 0) { job.Title = L.T("Already Full HD or smaller"); job.Summary = L.T("Fits in 1920 × 1080, nothing to shrink"); }
     }
 
     public static Task Grayscale(Job job) => Edit(job, "grayscale", img =>

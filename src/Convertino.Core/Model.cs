@@ -13,15 +13,15 @@ public enum Kind { Image, Pdf, Word, Excel, Slides, Text, Markdown, Video, Audio
 public sealed class PetalAction
 {
     public required string Id { get; init; }
-    public required string Label { get; init; }
+    public required string Label { get; init { field = value; if (EnglishLabel.Length == 0) EnglishLabel = L.English(value); } }
     /// <summary>Small caption under a format label, e.g. "lossless".</summary>
     public string Hint { get; init; } = "";
     /// <summary>Icon key for tools ("crop", "compress" …); null for format petals. Each UI maps keys to glyphs.</summary>
     public string? Icon { get; init; }
     /// <summary>Full sentence, e.g. "Convert to PNG" — used for progress cards and drag captions.</summary>
-    public required string Verb { get; init; }
+    public required string Verb { get; init { field = value; if (EnglishVerb.Length == 0) EnglishVerb = L.English(value); } }
     /// <summary>Very short hub caption while hovering, e.g. "→ PNG".</summary>
-    public string Short { get; init; } = "";
+    public string Short { get; init { field = value; if (EnglishShort.Length == 0) EnglishShort = L.English(value); } } = "";
     /// <summary>Opens its own window instead of running as a background job.</summary>
     public bool Interactive { get; init; }
     /// <summary>Finishes instantly (clipboard etc.) — no progress card.</summary>
@@ -29,6 +29,13 @@ public sealed class PetalAction
     /// <summary>Where its results go instead of the "Save results" setting (a recipe's own choice; see <see cref="Output"/>).</summary>
     public string? Out { get; init; }
     public required Func<Job, Task> Run { get; init; }
+
+    // the English of Label / Verb / Short, caught as they're set (straight after L.T made them): Recent and stats.json save
+    // these, so they don't split per UI language, even where two English texts share one translation.
+    // Code that copies a petal into a new one passes them along (EnglishVerb = other.EnglishVerb …); set ones are kept.
+    public string EnglishLabel { get; init; } = "";
+    public string EnglishVerb { get; init; } = "";
+    public string EnglishShort { get; init; } = "";
 }
 
 public sealed class Job

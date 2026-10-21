@@ -52,6 +52,8 @@ public static class Icons
         ["keyboard"] = "M4 6h16a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2z M6 10h.01 M10 10h.01 M14 10h.01 M18 10h.01 M7 14h10",
         ["check"] = "M20 6L9 17l-5-5",
         ["search"] = "M11 3a8 8 0 1 0 0 16a8 8 0 1 0 0-16z M21 21l-4.35-4.35",
+        ["chevron"] = "M6 9l6 6 6-6",
+        ["chevronup"] = "M6 15l6-6 6 6",
         ["update"] = "M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4 M7 10l5 5 5-5 M12 15V3",
         ["download"] = "M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4 M7 10l5 5 5-5 M12 15V3",
         ["x"] = "M18 6L6 18 M6 6l12 12",

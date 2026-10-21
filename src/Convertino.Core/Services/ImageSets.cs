@@ -53,7 +53,7 @@ public static class ImageSets
     // beyond these a sheet or an animation gets unwieldy (and memory-hungry); the card says when files were left out
     const int MaxSheet = 400, MaxFrames = 60;
 
-    static string Capped(int used, int total) => used < total ? $" · first {used} of {total}" : "";
+    static string Capped(int used, int total) => used < total ? " · " + L.T("first {0} of {1}", used, total) : "";
 
     // ---------- contact sheet ----------
 
@@ -63,7 +63,7 @@ public static class ImageSets
         var files = all.Take(MaxSheet).ToList();
         var dst = await Task.Run(() => Sheet(job, files), job.Token);
         job.Outputs.Add(dst);
-        job.Summary = $"{files.Count} images · {Paths.HumanSize(Paths.SizeOf(dst))}" + Capped(files.Count, all.Count);
+        job.Summary = L.N(files.Count, "{0} image", "{0} images") + $" · {Paths.HumanSize(Paths.SizeOf(dst))}" + Capped(files.Count, all.Count);
     }
 
     static string Sheet(Job job, List<string> files)
@@ -135,7 +135,7 @@ public static class ImageSets
         var (gif, webp, frames, size) = await Task.Run(() => MakeSlideshow(job, files), job.Token);
         job.Outputs.Add(gif);
         job.Outputs.Add(webp);
-        job.Summary = $"{frames} frames · 1 s each · {size} · GIF {Paths.HumanSize(Paths.SizeOf(gif))}, WEBP {Paths.HumanSize(Paths.SizeOf(webp))}"
+        job.Summary = L.N(frames, "{0} frame", "{0} frames") + " · " + L.T("1 s each") + $" · {size} · GIF {Paths.HumanSize(Paths.SizeOf(gif))}, WEBP {Paths.HumanSize(Paths.SizeOf(webp))}"
             + Capped(files.Count, all.Count);
     }
 
@@ -145,7 +145,7 @@ public static class ImageSets
         try
         {
             var ok = thumbs.Where(t => t != null).Select(t => t!).ToList();
-            if (ok.Count < 2) throw new InvalidOperationException("Need at least two readable images");
+            if (ok.Count < 2) throw new InvalidOperationException(L.En("Need at least two readable images"));
             // every frame shares the first picture's shape; the rest are letterboxed into it
             double aspect = ok[0].Width / (double)ok[0].Height;
             uint longSide = Math.Min(1080u, ok.Max(t => Math.Max(t.Width, t.Height)));
@@ -199,11 +199,11 @@ public static class ImageSets
 
     public static async Task Compare(Job job)
     {
-        if (job.Inputs.Count != 2) throw new InvalidOperationException("Compare needs exactly two images");
+        if (job.Inputs.Count != 2) throw new InvalidOperationException(L.En("Compare needs exactly two images"));
         var r = await Task.Run(() => Diff(job.Inputs[0], job.Inputs[1]), job.Token);
-        string pct = r.differ == 0 ? "0%" : r.share < 0.0001 ? "<0.01%" : r.share < 0.01 ? $"{r.share * 100:0.##}%" : $"{r.share * 100:0.#}%";
-        job.Summary = $"{pct} of pixels differ" + (r.areas > 0 ? $" · {r.areas} area{(r.areas == 1 ? "" : "s")}" : "") + (r.scaled ? " · sizes differed" : "");
-        if (r.dst == null) { job.Title = "No differences"; return; }
+        string pct = r.differ == 0 ? "0%" : (r.share < 0.0001 ? "<" + 0.01.ToString(L.Culture) : (r.share * 100).ToString(r.share < 0.01 ? "0.##" : "0.#", L.Culture)) + "%";
+        job.Summary = L.T("{0} of pixels differ", pct) + (r.areas > 0 ? " · " + L.N(r.areas, "{0} area", "{0} areas") : "") + (r.scaled ? " · " + L.T("sizes differed") : "");
+        if (r.dst == null) { job.Title = L.T("No differences"); return; }
         job.Outputs.Add(r.dst);
     }
 
@@ -217,7 +217,7 @@ public static class ImageSets
             // a retina and a normal capture of the same thing compare fine at one size; different shapes don't
             double ra = a.Width / (double)a.Height, rb = b.Width / (double)b.Height;
             if (Math.Abs(ra / rb - 1) > 0.01)
-                throw new InvalidOperationException($"Different shapes ({a.Width}×{a.Height} and {b.Width}×{b.Height}): Compare needs two images of the same proportions");
+                throw new InvalidOperationException(L.En("Different shapes ({0} and {1}): Compare needs two images of the same proportions", $"{a.Width}×{a.Height}", $"{b.Width}×{b.Height}"));
             b.Resize(new MagickGeometry(a.Width, a.Height) { IgnoreAspectRatio = true });
         }
         var (pa, w, h) = Images.ToBgra(a);

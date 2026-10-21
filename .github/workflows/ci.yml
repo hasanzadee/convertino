@@ -89,6 +89,8 @@ jobs:
           grep -q 'to-avif' preview.log
           test -s 'smoke (2).webp'
           test -z "$(ls -A /tmp/convertino/preview 2>/dev/null)"
+      - name: UI translations
+        run: ./dist/linux-x64/convertino lang-check
       - name: Archives and file tools
         run: bash tools/files-smoke.sh dist/linux-x64/convertino
       - name: Recipes and custom commands

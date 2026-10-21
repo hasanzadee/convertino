@@ -110,11 +110,11 @@ public sealed class ToastWindow : Window
         };
         var text = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(12, 0, 6, 0), Children = { _title, _sub, _barTrack } };
 
-        _folder = IconButton("", "Show in folder");
+        _folder = IconButton("", L.T("Show in folder"));
         _folder.Click += (_, _) => { if (Outputs.Count > 0) Shell.Reveal(Outputs[0]); Dismiss(); };
         _folder.Visibility = Visibility.Collapsed;
         // the result straight back to the clipboard: a picture as a picture, text as text, anything else as files
-        _copy = IconButton(Icons.Glyph("copy") ?? "", "Copy the result");
+        _copy = IconButton(Icons.Glyph("copy") ?? "", L.T("Copy the result"));
         _copy.Click += async (_, _) =>
         {
             _life.Stop();
@@ -124,7 +124,7 @@ public sealed class ToastWindow : Window
             if (!IsMouseOver) _life.Start();
         };
         _copy.Visibility = Visibility.Collapsed;
-        _close = IconButton("", "Close");
+        _close = IconButton("", L.T("Close"));
         _close.Click += (_, _) => { if (Running) OnCancel?.Invoke(); Dismiss(); };
         _buttons = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center, Children = { _copy, _folder, _close } };
 

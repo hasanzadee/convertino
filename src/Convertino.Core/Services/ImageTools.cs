@@ -19,7 +19,7 @@ public static class ImageTools
         int n = files.Count;
         if (files.All(f => Kinds.Of(f) == Kind.Image))
         {
-            list.Add(Catalog.Tool("messenger", "Messenger", "send", n == 1 ? "Shrink for messengers" : $"Shrink {n} for messengers", Messenger));
+            list.Add(Catalog.Tool("messenger", "Messenger", "send", n == 1 ? "Shrink for messengers" : L.T("Shrink {0} for messengers", n), Messenger));
             if (n == 1)
             {
                 list.Add(Catalog.Tool("copyimg", "Copy", "image", "Copy image", CopyImage, quick: true));
@@ -34,8 +34,8 @@ public static class ImageTools
                 if (n == 2) list.Add(Catalog.Tool("compare", "Compare", "compare", "Highlight differences", ImageSets.Compare));
                 list.Add(Catalog.Tool("sheet", "Contact", "grid", "Contact sheet", ImageSets.ContactSheet));
                 list.Add(Catalog.Tool("slideshow", "Slideshow", "slideshow", "Slideshow GIF + WEBP", ImageSets.Slideshow));
-                list.Add(Catalog.Tool("square", "Square", "squareimg", $"Square {n} on a blurred fill", Square));
-                list.Add(Catalog.Tool("rounded", "Rounded", "rounded", $"Round corners of {n}", Rounded));
+                list.Add(Catalog.Tool("square", "Square", "squareimg", L.T("Square {0} on a blurred fill", n), Square));
+                list.Add(Catalog.Tool("rounded", "Rounded", "rounded", L.T("Round corners of {0}", n), Rounded));
             }
         }
         if (n == 1 && Qr.CanMake(files[0]))
@@ -63,7 +63,7 @@ public static class ImageTools
             gps |= r.gps;
             dims = r.dims;
         }
-        job.Summary = (n == 1 ? dims + " · " : "") + $"{Paths.HumanSize(before)} → {Paths.HumanSize(after)}" + (gps ? " · GPS removed" : "");
+        job.Summary = (n == 1 ? dims + " · " : "") + $"{Paths.HumanSize(before)} → {Paths.HumanSize(after)}" + (gps ? " · " + L.T("GPS removed") : "");
     }
 
     static (string dst, string dims, bool gps) MessengerOne(string src)
@@ -128,8 +128,8 @@ public static class ImageTools
             job.Outputs.Add(r.dst);
             dims = r.dims;
         }
-        if (job.Outputs.Count == 0) { job.Title = "Already square"; job.Summary = "Nothing to fill"; return; }
-        job.Summary = n == 1 ? dims : $"{job.Outputs.Count} squared" + (skipped > 0 ? $" · {skipped} already square" : "");
+        if (job.Outputs.Count == 0) { job.Title = L.T("Already square"); job.Summary = L.T("Nothing to fill"); return; }
+        job.Summary = n == 1 ? dims : L.N(job.Outputs.Count, "{0} squared", "{0} squared") + (skipped > 0 ? " · " + L.N(skipped, "{0} already square", "{0} already square") : "");
     }
 
     static (string? dst, string dims) SquareOne(string src)
@@ -174,7 +174,7 @@ public static class ImageTools
             var src = job.Inputs[i];
             job.Outputs.Add(await Task.Run(() => RoundedOne(src), job.Token));
         }
-        job.Summary = n == 1 ? Images.SizeSummary(job) : $"{n} images";
+        job.Summary = n == 1 ? Images.SizeSummary(job) : L.N(n, "{0} image", "{0} images");
     }
 
     static string RoundedOne(string src)
@@ -235,7 +235,7 @@ public static class ImageTools
         var (hex, dst) = await Task.Run(() => PaletteOne(src), job.Token);
         Platform.Current.SetClipboardText(string.Join(Environment.NewLine, hex));
         job.Outputs.Add(dst);
-        job.Title = $"{hex.Count} colours copied";
+        job.Title = L.N(hex.Count, "{0} colour copied", "{0} colours copied");
         job.Summary = string.Join("  ", hex);
     }
 
@@ -277,7 +277,7 @@ public static class ImageTools
             rgb.Add((r, g, b));
             lab.Add(Lab(r, g, b));
         }
-        if (lab.Count == 0) throw new InvalidOperationException("The image is fully transparent");
+        if (lab.Count == 0) throw new InvalidOperationException(L.En("The image is fully transparent"));
 
         const int k = 10;
         var rnd = new Random(7);
@@ -371,7 +371,7 @@ public static class ImageTools
         var dir = await Task.Run(() => FaviconSet(src), job.Token);
         job.Outputs.Add(dir);
         job.Title = Path.GetFileName(dir);
-        job.Summary = "favicon.ico (16/32/48) · 180 · 192 · 512 px + snippet";
+        job.Summary = L.T("favicon.ico (16/32/48) · 180 · 192 · 512 px + snippet");
     }
 
     static string FaviconSet(string src)
@@ -461,8 +461,8 @@ public static class ImageTools
             return (img.ToByteArray(MagickFormat.Png), $"{img.Width}×{img.Height}", big);
         }, job.Token);
         Platform.Current.SetClipboardImage(png);
-        job.Title = "Image copied";
-        job.Summary = (scaled ? $"scaled to {dims}" : dims) + " · paste it anywhere";
+        job.Title = L.T("Image copied");
+        job.Summary = (scaled ? L.T("scaled to {0}", dims) : dims) + " · " + L.T("paste it anywhere");
     }
 
     // ---------- shared ----------

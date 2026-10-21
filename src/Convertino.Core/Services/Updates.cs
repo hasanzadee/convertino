@@ -17,9 +17,9 @@ public static class Updates
     public sealed record Release(Version Version, string Url);
 
     // the one-time question, the same on every platform
-    public const string AskTitle = "Notify about updates?";
-    public const string AskText = "Checks GitHub once a day; nothing else is sent.";
-    public const string AskTip = "Let Convertino tell you when a new version is out? It checks GitHub once a day; nothing else is sent.";
+    public static string AskTitle => L.T("Notify about updates?");
+    public static string AskText => L.T("Checks GitHub once a day; nothing else is sent.");
+    public static string AskTip => L.T("Let Convertino tell you when a new version is out? It checks GitHub once a day; nothing else is sent.");
 
     /// <summary>Ask on start until answered (quitting without an answer asks again next time). Not in CI (screenshots).</summary>
     public static bool ShouldAsk => Settings.Current.CheckForUpdates == null && Environment.GetEnvironmentVariable("CI") != "true";
@@ -34,8 +34,8 @@ public static class Updates
         if (yes) Wake.Release(); // check now rather than within the hour
     }
 
-    public static string AnnounceTitle(Release r) => $"Convertino {r.Version} is out";
-    public static string AnnounceText => $"You have {Current} · click to open the release";
+    public static string AnnounceTitle(Release r) => L.T("Convertino {0} is out", r.Version.ToString());
+    public static string AnnounceText => L.T("You have {0} · click to open the release", Current.ToString());
 
     public static Version Current => Parse(Cli.Version) ?? new Version(0, 0, 0);
 
@@ -67,12 +67,12 @@ public static class Updates
         {
             var r = await Task.Run(() => Latest());
             if (r != null && r.Version > Current) return (AnnounceTitle(r), AnnounceText, r.Url);
-            return ("You're up to date", $"Convertino {Current} is the latest version", null);
+            return (L.T("You're up to date"), L.T("Convertino {0} is the latest version", Current.ToString()), null);
         }
         catch (Exception ex)
         {
             Log.Info($"update check failed: {ex.Message}");
-            return ("Couldn't check for updates", "GitHub didn't answer · try again later", null);
+            return (L.T("Couldn't check for updates"), L.T("GitHub didn't answer · try again later"), null);
         }
     }
 

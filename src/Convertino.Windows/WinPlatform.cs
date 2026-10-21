@@ -77,7 +77,7 @@ sealed class WinJobUi : IJobUi
     public IJobView Show(PetalAction action, IReadOnlyList<string> files, ScreenPoint where)
     {
         var t = Toasts.Create(new POINT(where.X, where.Y));
-        t.SetRunning(action.Verb + "…", files.Count == 1 ? System.IO.Path.GetFileName(files[0]) : $"{files.Count} files", Icons.Glyph(action.Icon) ?? "");
+        t.SetRunning(action.Verb + "…", files.Count == 1 ? System.IO.Path.GetFileName(files[0]) : L.N(files.Count, "{0} file", "{0} files"), Icons.Glyph(action.Icon) ?? "");
         Toasts.Show(t);
         return new View(t);
     }

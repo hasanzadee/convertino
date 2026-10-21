@@ -190,7 +190,7 @@ public sealed class OverlayController
 
     internal FlowerView DevView => _win.View;
     internal static string[]? DevFiles(IDataObject data) => FilesOf(data);
-    internal string DevRing => _pages == null ? "closed" : $"{_pager.Page + 1}/{_pager.Count} {_pager.Name}";
+    internal string DevRing => _pages == null ? "closed" : $"{_pager.Page + 1}/{_pager.Count} {_pager.Key}";
 
     // ---------- show / hide ----------
 
@@ -231,7 +231,7 @@ public sealed class OverlayController
         _pages = web?.Pages() ?? offer?.Pages ?? Catalog.For(files);
         _pager.Reset(_pages);
         var v = _win.View;
-        v.HubTitle = web?.HubTitle ?? offer?.HubTitle ?? (files.Count == 1 ? Paths.HumanSize(Paths.SizeOf(files[0])) : $"{files.Count} items");
+        v.HubTitle = web?.HubTitle ?? offer?.HubTitle ?? (files.Count == 1 ? Paths.HumanSize(Paths.SizeOf(files[0])) : L.N(files.Count, "{0} item", "{0} items"));
         v.HubSub = web?.HubSub ?? offer?.HubSub ?? (files.Count == 1 ? _pages.Title : Paths.HumanSize(files.Sum(Paths.SizeOf)));
         v.HubBadge = _pages.Badge;
         v.SetMode(HubMode.Info);
@@ -462,10 +462,10 @@ public sealed class OverlayController
             if (onPetal)
             {
                 var a = acts[idx];
-                if (a.Icon == null) Shell.SetDropDescription(e.Data, 1, "Convert to %1", a.Label);
+                if (a.Icon == null) Shell.SetDropDescription(e.Data, 1, L.T("Convert to {0}").Replace("{0}", "%1"), a.Label);
                 else Shell.SetDropDescription(e.Data, 1, "%1", a.Verb);
             }
-            else Shell.SetDropDescription(e.Data, 0, _pager.Count > 1 ? $"Drop on a petal · {ToolsKey()}, Tab or wheel for more" : "Drop on a petal");
+            else Shell.SetDropDescription(e.Data, 0, _pager.Count > 1 ? L.T("Drop on a petal · {0}, Tab or wheel for more", ToolsKey()) : L.T("Drop on a petal"));
         }
         return effect;
     }

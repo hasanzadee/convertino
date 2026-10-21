@@ -45,7 +45,8 @@ public sealed class Stats
             long inBytes = job.Inputs.Sum(Paths.SizeOf);
             long outBytes = job.Outputs.Sum(Paths.SizeOf);
             long saved = job.Saved ?? (job.Outputs.Count > 0 && outBytes > 0 && inBytes > outBytes ? inBytes - outBytes : 0);
-            string caption = string.IsNullOrEmpty(job.Action.Short) ? job.Action.Label : job.Action.Short;
+            // the English caption: stats.json mustn't split per UI language (the panel shows it translated)
+            string caption = string.IsNullOrEmpty(job.Action.Short) ? job.Action.EnglishLabel : job.Action.EnglishShort;
             lock (Gate)
             {
                 var s = Load();

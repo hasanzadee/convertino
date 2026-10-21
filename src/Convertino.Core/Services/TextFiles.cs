@@ -119,15 +119,15 @@ public static class TextFiles
         if (job.Outputs.Count == 0)
         {
             if (binary == n) throw new InvalidDataException(Binary(n));
-            job.Title = n == 1 ? "Already UTF-8" : "All already UTF-8";
-            job.Summary = damaged > 0 ? "A few bytes aren't valid UTF-8; left as they are" : "Nothing to change";
-            if (binary > 0) job.Summary += $" · {binary} binary skipped";
+            job.Title = n == 1 ? L.T("Already UTF-8") : L.T("All already UTF-8");
+            job.Summary = damaged > 0 ? L.T("A few bytes aren't valid UTF-8; left as they are") : L.T("Nothing to change");
+            if (binary > 0) job.Summary += " · " + L.T("{0} binary skipped", binary);
             return;
         }
         var parts = new List<string>();
         if (from.Count > 0) parts.Add($"{string.Join(", ", from)} → UTF-8");
-        if (bomAdded) parts.Add(parts.Count == 0 ? "BOM added for Excel" : "BOM added to UTF-8 CSV for Excel");
-        if (binary > 0) parts.Add($"{binary} binary skipped");
+        if (bomAdded) parts.Add(parts.Count == 0 ? L.T("BOM added for Excel") : L.T("BOM added to UTF-8 CSV for Excel"));
+        if (binary > 0) parts.Add(L.T("{0} binary skipped", binary));
         job.Summary = string.Join(" · ", parts);
     }
 
@@ -176,14 +176,14 @@ public static class TextFiles
         if (job.Outputs.Count == 0)
         {
             if (binary == n) throw new InvalidDataException(Binary(n));
-            job.Title = $"Already {label}";
-            job.Summary = binary > 0 ? $"Nothing to change · {binary} binary skipped" : "Nothing to change";
+            job.Title = L.T("Already {0}", label);
+            job.Summary = binary > 0 ? L.T("Nothing to change") + " · " + L.T("{0} binary skipped", binary) : L.T("Nothing to change");
             return;
         }
-        job.Summary = $"{changed:N0} line {(changed == 1 ? "ending" : "endings")} → {label}" + (binary > 0 ? $" · {binary} binary skipped" : "");
+        job.Summary = L.N(changed, "{0:N0} line ending → {1}", "{0:N0} line endings → {1}", label) + (binary > 0 ? " · " + L.T("{0} binary skipped", binary) : "");
     }
 
-    static string Binary(int n) => n == 1 ? "This looks like a binary file, not text; it was left untouched" : "These look like binary files, not text; they were left untouched";
+    static string Binary(int n) => n == 1 ? L.En("This looks like a binary file, not text; it was left untouched") : L.En("These look like binary files, not text; they were left untouched");
 
     // ── text & line endings ─────────────────────────────────────────────────
 

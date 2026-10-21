@@ -126,11 +126,11 @@ public sealed class RedactEditor : Editor
         _surface.ImageSize = new Size(img.Width, img.Height);
         _surface.Pixelated = Wpf.ToBitmapSource(Pixelate(preview, BlockFor(preview)));
         using (var b = (MagickImage)preview.Clone()) { b.Blur(0, Math.Max(6, Math.Max(preview.Width, preview.Height) / 90.0)); _surface.Blurred = Wpf.ToBitmapSource(b); }
-        _surface.Changed += () => _count.Text = _surface.Boxes.Count == 0 ? "Drag over anything private" : $"{_surface.Boxes.Count} area{(_surface.Boxes.Count == 1 ? "" : "s")} · right-click removes";
-        _count.Text = "Drag over anything private";
+        _surface.Changed += () => _count.Text = _surface.Boxes.Count == 0 ? L.T("Drag over anything private") : L.N(_surface.Boxes.Count, "{0} area", "{0} areas") + " · " + L.T("right-click removes");
+        _count.Text = L.T("Drag over anything private");
 
-        _detect = UiKit.Btn("Find text", async () => await DetectText());
-        _detect.ToolTip = "Box every line of text found by OCR";
+        _detect = UiKit.Btn(L.T("Find text"), async () => await DetectText());
+        _detect.ToolTip = L.T("Box every line of text found by OCR");
         var dock = new DockPanel();
         DockPanel.SetDock(_count, Dock.Right);
         dock.Children.Add(_count);
@@ -139,13 +139,13 @@ public sealed class RedactEditor : Editor
             Orientation = Orientation.Horizontal,
             Children =
             {
-                UiKit.Label("Style"),
-                UiKit.Chip("Pixelate", "rs", true, () => SetStyle(RedactStyle.Pixelate)),
-                UiKit.Chip("Blur", "rs", false, () => SetStyle(RedactStyle.Blur)),
-                UiKit.Chip("Black", "rs", false, () => SetStyle(RedactStyle.Black)),
+                UiKit.Label(L.T("Style")),
+                UiKit.Chip(L.T("Pixelate"), "rs", true, () => SetStyle(RedactStyle.Pixelate)),
+                UiKit.Chip(L.T("Blur"), "rs", false, () => SetStyle(RedactStyle.Blur)),
+                UiKit.Chip(L.T("Black"), "rs", false, () => SetStyle(RedactStyle.Black)),
                 new Border { Width = 14 },
                 _detect,
-                UiKit.Btn("Undo", () => { if (_surface.Boxes.Count > 0) { _surface.Boxes.RemoveAt(_surface.Boxes.Count - 1); _surface.Selected = -1; _surface.InvalidateVisual(); } }),
+                UiKit.Btn(L.T("Undo"), () => { if (_surface.Boxes.Count > 0) { _surface.Boxes.RemoveAt(_surface.Boxes.Count - 1); _surface.Selected = -1; _surface.InvalidateVisual(); } }),
             },
         });
         _controls = dock;
@@ -168,7 +168,7 @@ public sealed class RedactEditor : Editor
     async Task DetectText()
     {
         _detect.IsEnabled = false;
-        _detect.Content = "Reading…";
+        _detect.Content = L.T("Reading…");
         try
         {
             byte[] png;
@@ -187,10 +187,10 @@ public sealed class RedactEditor : Editor
             }
             _surface.Selected = -1;
             _surface.InvalidateVisual();
-            _count.Text = res.Lines.Count == 0 ? "No text found" : $"{_surface.Boxes.Count} areas · right-click removes";
+            _count.Text = res.Lines.Count == 0 ? L.T("No text found") : L.N(_surface.Boxes.Count, "{0} area", "{0} areas") + " · " + L.T("right-click removes");
         }
-        catch (Exception ex) { _count.Text = ex.Message; }
-        _detect.Content = "Find text";
+        catch (Exception ex) { _count.Text = L.Saved(ex.Message); }
+        _detect.Content = L.T("Find text");
         _detect.IsEnabled = true;
     }
 
@@ -200,7 +200,7 @@ public sealed class RedactEditor : Editor
         _surface.Mode = RedactStyle.Pixelate;
     }
 
-    public override string Title => "Redact";
+    public override string Title => L.T("Redact");
     public override FrameworkElement Preview => _surface;
     public override FrameworkElement Controls => _controls;
 

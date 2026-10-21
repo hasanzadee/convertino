@@ -64,11 +64,11 @@ public sealed class ToastWindow : Window
         _track = new Border { Height = 4, CornerRadius = new CornerRadius(2), Margin = new Thickness(0, 7, 0, 0), Background = B(Skin.WithA(t.SubText, .16)), Child = _bar };
         var text = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(12, 0, 6, 0), Children = { _title, _sub, _track } };
 
-        _folder = IconButton("folder", "Show in folder");
+        _folder = IconButton("folder", L.T("Show in folder"));
         _folder.Click += (_, _) => { if (Outputs.Count > 0) Platform.Current.Reveal(Outputs[0]); Dismiss(); };
         _folder.IsVisible = false;
         // the result straight back to the clipboard: a picture as a picture, text as text, anything else as files
-        _copy = IconButton("copy", "Copy the result");
+        _copy = IconButton("copy", L.T("Copy the result"));
         _copy.Click += async (_, _) =>
         {
             _life.Stop();
@@ -78,7 +78,7 @@ public sealed class ToastWindow : Window
             if (!IsPointerOver) _life.Start();
         };
         _copy.IsVisible = false;
-        _close = IconButton("x", "Close");
+        _close = IconButton("x", L.T("Close"));
         _close.Click += (_, _) => { if (Running) OnCancel?.Invoke(); Dismiss(); };
 
         var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"), Margin = new Thickness(14, 0, 10, 0) };

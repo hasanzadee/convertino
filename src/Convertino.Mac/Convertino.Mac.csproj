@@ -26,6 +26,7 @@
     <Compile Include="..\Convertino.Linux\Ui\*.cs" Link="Shared\Ui\%(Filename)%(Extension)" />
     <Compile Include="..\Convertino.Linux\Editors\*.cs" Link="Shared\Editors\%(Filename)%(Extension)" />
     <Compile Include="..\Convertino.Linux\Ipc.cs" Link="Shared\Ipc.cs" />
+    <EmbeddedResource Include="..\Convertino.Core\Lang\*.json" LogicalName="Convertino.Lang.%(Filename).json" Link="Core\Lang\%(Filename).json" />
   </ItemGroup>
 
   <ItemGroup>

@@ -122,9 +122,9 @@ public sealed class App : Application
             Dispatcher.UIThread.Post(() => _overlay.Pin(new ScreenPoint(int.Parse(px), int.Parse(py)),
                 pinFile is { Length: > 0 } ? [Path.GetFullPath(pinFile)] : null), DispatcherPriority.Background);
         }
-        // CONVERTINO_PANEL=1 opens the menu-bar panel at start, =demo with two weeks of made-up activity (screenshots)
+        // CONVERTINO_PANEL=1 opens the menu-bar panel at start, =demo with two weeks of made-up activity (screenshots), =langs also unfolds the languages
         if (Environment.GetEnvironmentVariable("CONVERTINO_PANEL") is { Length: > 0 } panel)
-            Dispatcher.UIThread.Post(() => _panel?.Open(panel == "demo" ? Stats.Demo() : null), DispatcherPriority.Background);
+            Dispatcher.UIThread.Post(() => _panel?.Open(panel is "demo" or "langs" ? Stats.Demo() : null, langs: panel == "langs"), DispatcherPriority.Background);
         if (StartupMenu.Length > 0) Dispatcher.UIThread.Post(() => _overlay.Menu(StartupMenu), DispatcherPriority.Background);
         else if (StartupVerb != null) Dispatcher.UIThread.Post(() => Verb(StartupVerb), DispatcherPriority.Background);
         else if (!Settings.Current.FirstRunDone)
@@ -153,8 +153,8 @@ public sealed class App : Application
     static void WelcomeCard(bool listen)
     {
         var tap = Settings.Current.TriggerKey.Tap();
-        if (listen) { Card("Convertino is running", $"Drag a file in Finder, {tap}"); return; }
-        var t = Card($"Drag a file, {tap}", "Not working? Allow Input Monitoring", seconds: 12);
+        if (listen) { Card(L.T("Convertino is running"), L.T("Drag a file in Finder, {0}", tap)); return; }
+        var t = Card(L.T("Drag a file, {0}", tap), L.T("Not working? Allow Input Monitoring"), seconds: 12);
         t.OnClick = OpenInputMonitoring;
     }
 
@@ -186,27 +186,27 @@ public sealed class App : Application
             return it;
         }
         // right-click / Ctrl-click (and VoiceOver, which presses the item) open this menu; the panel stays first
-        var open = new NativeMenuItem("Open panel");
+        var open = new NativeMenuItem(L.T("Open panel"));
         open.Click += (_, _) => _panel?.Open();
         menu.Items.Add(open);
-        var clip = new NativeMenuItem("Flower for the clipboard" + (s.ClipboardHotkeyOn ? $"  ({s.ClipboardKey.Label})" : ""));
+        var clip = new NativeMenuItem(L.T("Flower for the clipboard") + (s.ClipboardHotkeyOn ? $"  ({s.ClipboardKey.Label})" : ""));
         clip.Click += (_, _) => _shortcuts?.Clipboard();
         menu.Items.Add(clip);
         // after the menu has closed, or the picker would start under it
-        var area = new NativeMenuItem("Capture an area" + (s.CaptureHotkeyOn ? $"  ({s.CaptureKey.Label})" : ""));
+        var area = new NativeMenuItem(L.T("Capture an area") + (s.CaptureHotkeyOn ? $"  ({s.CaptureKey.Label})" : ""));
         area.Click += (_, _) => _shortcuts?.Capture(delayMs: 250);
         menu.Items.Add(area);
-        menu.Items.Add(new NativeMenuItem($"Convertino — drag a file, {s.TriggerKey.Tap()}") { IsEnabled = false });
+        menu.Items.Add(new NativeMenuItem(L.T("Convertino — drag a file, {0}", s.TriggerKey.Tap())) { IsEnabled = false });
         menu.Items.Add(new NativeMenuItemSeparator());
-        menu.Items.Add(Check("Enabled", s.Enabled, v => { s.Enabled = v; Hotkey.Changed(); }));
+        menu.Items.Add(Check(L.T("Enabled"), s.Enabled, v => { s.Enabled = v; Hotkey.Changed(); }));
         var themes = new NativeMenu();
         foreach (var th in Skin.All)
         {
-            var it = new NativeMenuItem(th.Name) { ToggleType = MenuItemToggleType.Radio, IsChecked = th.Name == Skin.Current.Name };
+            var it = new NativeMenuItem(L.T(th.Name)) { ToggleType = MenuItemToggleType.Radio, IsChecked = th.Name == Skin.Current.Name };
             it.Click += (_, _) => { Skin.Choose(th.Name); BuildTray(); };
             themes.Items.Add(it);
         }
-        menu.Items.Add(new NativeMenuItem("Theme") { Menu = themes });
+        menu.Items.Add(new NativeMenuItem(L.T("Theme")) { Menu = themes });
         var keys = new NativeMenu();
         foreach (var k in TriggerKeys.All)
         {
@@ -214,10 +214,23 @@ public sealed class App : Application
             it.Click += (_, _) => { s.TriggerKey = k; s.Save(); BuildTray(); };
             keys.Items.Add(it);
         }
-        menu.Items.Add(new NativeMenuItem("Open with") { Menu = keys });
-        menu.Items.Add(Check("Notifications", s.Notifications, v => s.Notifications = v));
-        menu.Items.Add(Check("Tell me about new versions", s.CheckForUpdates == true, Updates.Answer));
-        menu.Items.Add(Check("Open at login", s.LaunchAtStartup, v => { s.LaunchAtStartup = v; Platform.Current.SetAutostart(v); }));
+        menu.Items.Add(new NativeMenuItem(L.T("Open with")) { Menu = keys });
+        var langs = new NativeMenu();
+        bool auto = s.Language is null or "auto";
+        foreach (var (code, name) in new[] { ((string?)null, L.T("Auto")) }.Concat(L.All.Select(l => ((string?)l.Code, l.Name))))
+        {
+            var it = new NativeMenuItem(name)
+            {
+                ToggleType = MenuItemToggleType.Radio,
+                IsChecked = code == null ? auto : !auto && string.Equals(code, s.Language, StringComparison.OrdinalIgnoreCase),
+            };
+            it.Click += (_, _) => { s.Language = code; s.Save(); L.Use(code); BuildTray(); };
+            langs.Items.Add(it);
+        }
+        menu.Items.Add(new NativeMenuItem(L.T("Language")) { Menu = langs });
+        menu.Items.Add(Check(L.T("Notifications"), s.Notifications, v => s.Notifications = v));
+        menu.Items.Add(Check(L.T("Tell me about new versions"), s.CheckForUpdates == true, Updates.Answer));
+        menu.Items.Add(Check(L.T("Open at login"), s.LaunchAtStartup, v => { s.LaunchAtStartup = v; Platform.Current.SetAutostart(v); }));
         var recent = s.Recent.Where(r => File.Exists(r.Path) || Directory.Exists(r.Path)).Take(5).ToList();
         if (recent.Count > 0)
         {
@@ -228,23 +241,23 @@ public sealed class App : Application
                 it.Click += (_, _) => Platform.Current.Reveal(r.Path);
                 rm.Items.Add(it);
             }
-            menu.Items.Add(new NativeMenuItem("Recent") { Menu = rm });
+            menu.Items.Add(new NativeMenuItem(L.T("Recent")) { Menu = rm });
         }
         menu.Items.Add(new NativeMenuItemSeparator());
-        var perm = new NativeMenuItem("Input Monitoring…");
+        var perm = new NativeMenuItem(L.T("Input Monitoring…"));
         perm.Click += (_, _) => OpenInputMonitoring();
         menu.Items.Add(perm);
-        var updates = new NativeMenuItem("Check for updates…");
+        var updates = new NativeMenuItem(L.T("Check for updates…"));
         updates.Click += (_, _) => UpdateCards.CheckNow();
         menu.Items.Add(updates);
-        var log = new NativeMenuItem("Open log");
+        var log = new NativeMenuItem(L.T("Open log"));
         log.Click += (_, _) => Platform.Current.Open(Paths.LogFile);
         menu.Items.Add(log);
-        var quit = new NativeMenuItem("Quit Convertino");
+        var quit = new NativeMenuItem(L.T("Quit Convertino"));
         quit.Click += (_, _) => (ApplicationLifetime as IClassicDesktopStyleApplicationLifetime)?.Shutdown();
         menu.Items.Add(quit);
 
-        var tip = $"Convertino — drag a file, {s.TriggerKey.Tap()}";
+        var tip = L.T("Convertino — drag a file, {0}", s.TriggerKey.Tap());
         if (_tray == null)
         {
             using var ms = new MemoryStream();
@@ -316,7 +329,7 @@ sealed class MacJobUi : IJobUi
     public IJobView Show(PetalAction action, IReadOnlyList<string> files, ScreenPoint where)
     {
         var t = Toasts.Create(where);
-        t.SetRunning(action.Verb + "…", files.Count == 1 ? Path.GetFileName(files[0]) : $"{files.Count} files", action.Icon);
+        t.SetRunning(action.Verb + "…", files.Count == 1 ? Path.GetFileName(files[0]) : L.N(files.Count, "{0} file", "{0} files"), action.Icon);
         Toasts.Show(t);
         return new View(t);
     }

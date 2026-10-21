@@ -11,9 +11,10 @@ public static class Paths
     static string Resolve()
     {
         string dir;
-        // CONVERTINO_APPDATA=<folder>: settings, lists and the log go there instead (tests, a portable copy)
-        if (Environment.GetEnvironmentVariable("CONVERTINO_APPDATA") is { Length: > 0 } over)
-            dir = Path.GetFullPath(over);
+        // CONVERTINO_APPDATA (or CONVERTINO_HOME)=<folder>: settings, lists and the log go there instead (tests, a portable copy)
+        var over = Environment.GetEnvironmentVariable("CONVERTINO_APPDATA");
+        if (string.IsNullOrEmpty(over)) over = Environment.GetEnvironmentVariable("CONVERTINO_HOME");
+        if (!string.IsNullOrEmpty(over)) dir = Path.GetFullPath(over);
         else if (OperatingSystem.IsWindows())
             dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Convertino");
         else if (OperatingSystem.IsMacOS())
@@ -74,7 +75,8 @@ public static class Paths
         double v = bytes;
         int i = 0;
         while (v >= 1024 && i < u.Length - 1) { v /= 1024; i++; }
-        return i == 0 ? $"{bytes} B" : v >= 100 ? $"{v:0} {u[i]}" : v >= 10 ? $"{v:0.#} {u[i]}" : $"{v:0.##} {u[i]}";
+        // in the UI language's number format, like the rest of the line it lands in (units stay KB / MB)
+        return i == 0 ? $"{bytes} B" : v.ToString(v >= 100 ? "0" : v >= 10 ? "0.#" : "0.##", L.Culture) + " " + u[i];
     }
 
     public static long SizeOf(string path)
@@ -162,6 +164,8 @@ public sealed class Settings
     [JsonIgnore] public Hotkey ClipboardKey => Hotkey.Parse(ClipboardHotkey) ?? Hotkey.Clipboard;
     [JsonIgnore] public Hotkey CaptureKey => Hotkey.Parse(CaptureHotkey) ?? Hotkey.Capture;
     public bool LaunchAtStartup { get; set; } = true;
+    /// <summary>UI language code ("ru", "pt-BR" …); null follows the OS (see <see cref="L.Use"/>).</summary>
+    public string? Language { get; set; }
     public bool FirstRunDone { get; set; }
     public int JpegQuality { get; set; } = 90;
     public int CompressQuality { get; set; } = 72;
@@ -191,6 +195,7 @@ public sealed class Settings
                 Current = JsonSerializer.Deserialize<Settings>(File.ReadAllText(file)) ?? new();
         }
         catch (Exception ex) { Log.Error("settings load", ex); Current = new(); }
+        L.Use(Current.Language);
     }
 
     static readonly object SaveGate = new();

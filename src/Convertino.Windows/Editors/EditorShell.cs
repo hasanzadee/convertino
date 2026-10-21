@@ -17,7 +17,7 @@ public abstract class Editor
     public abstract string Title { get; }
     public abstract FrameworkElement Preview { get; }
     public abstract FrameworkElement Controls { get; }
-    public virtual string SaveLabel => "Save";
+    public virtual string SaveLabel => L.T("Save");
     public virtual void Reset() { }
     /// <summary>Write the result; return the output path (null = nothing saved).</summary>
     public abstract Task<string?> Save();
@@ -71,7 +71,7 @@ public sealed class EditorShell : Window
         });
 
         // title bar
-        var close = new Button { Content = "", Style = (Style)Application.Current.Resources["Convertino.IconButton"], FontSize = 11, ToolTip = "Close (Esc)" };
+        var close = new Button { Content = "", Style = (Style)Application.Current.Resources["Convertino.IconButton"], FontSize = 11, ToolTip = L.T("Close (Esc)") };
         WindowChrome.SetIsHitTestVisibleInChrome(close, true);
         close.Click += (_, _) => Close();
         var titleText = new TextBlock { Text = editor.Title, FontFamily = (FontFamily)Application.Current.Resources["Convertino.Display"], FontSize = 14, FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center };
@@ -85,9 +85,9 @@ public sealed class EditorShell : Window
         titleBar.Children.Add(new StackPanel { Orientation = Orientation.Horizontal, Children = { logo, titleText, _subtitle } });
 
         // footer
-        var reset = new Button { Content = "Reset", Style = (Style)Application.Current.Resources["Convertino.Button"] };
+        var reset = new Button { Content = L.T("Reset"), Style = (Style)Application.Current.Resources["Convertino.Button"] };
         reset.Click += (_, _) => editor.Reset();
-        var cancel = new Button { Content = "Cancel", Style = (Style)Application.Current.Resources["Convertino.Button"], Margin = new Thickness(0, 0, 8, 0) };
+        var cancel = new Button { Content = L.T("Cancel"), Style = (Style)Application.Current.Resources["Convertino.Button"], Margin = new Thickness(0, 0, 8, 0) };
         cancel.Click += (_, _) => Close();
         _save = new Button { Content = editor.SaveLabel, Style = (Style)Application.Current.Resources["Convertino.AccentButton"], MinWidth = 110 };
         _save.Click += async (_, _) => await DoSave();
@@ -171,7 +171,7 @@ public sealed class EditorShell : Window
         _saving = true;
         _save.IsEnabled = false;
         var old = _save.Content;
-        _save.Content = "Saving…";
+        _save.Content = L.T("Saving…");
         try
         {
             var path = await _editor.Save();
@@ -185,7 +185,7 @@ public sealed class EditorShell : Window
         catch (Exception ex)
         {
             Log.Error("editor save", ex);
-            MessageBox.Show(this, ex.Message, "Convertino", MessageBoxButton.OK, MessageBoxImage.Warning);
+            MessageBox.Show(this, L.Saved(ex.Message), "Convertino", MessageBoxButton.OK, MessageBoxImage.Warning);
         }
         _save.Content = old;
         _save.IsEnabled = true;

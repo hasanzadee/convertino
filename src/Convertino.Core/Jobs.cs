@@ -59,7 +59,7 @@ public static class Jobs
         }
         if (job.Silent && error == null && job.Outputs.Count == 0) { view?.Dismiss(); return; }
 
-        if (job.Outputs.Count > 0) Settings.Current.AddRecent(job.Outputs[0], action.Verb);
+        if (job.Outputs.Count > 0) Settings.Current.AddRecent(job.Outputs[0], action.EnglishVerb);
         if (error == null) _ = Task.Run(() => Stats.Record(job));
         if (!notify && error == null && !job.Failed) { view?.Dismiss(); return; }
 
@@ -67,16 +67,16 @@ public static class Jobs
         if (view == null) return;
         if (error != null)
         {
-            view.Failed("Couldn't " + Lower(action.Verb), Friendly(error), action.Icon);
+            view.Failed(L.T("Couldn't {0:l}", action.Verb), Friendly(error), action.Icon);
             return;
         }
         if (job.Failed)
         {
-            view.Failed(job.Title ?? "Couldn't " + Lower(action.Verb), job.Summary ?? "", action.Icon);
+            view.Failed(job.Title ?? L.T("Couldn't {0:l}", action.Verb), job.Summary ?? "", action.Icon);
             return;
         }
         if (job.Summary == null && job.Outputs.Count > 0) job.Summary = Services.Images.SizeSummary(job);
-        string title = job.Title ?? (job.Outputs.Count == 1 ? Path.GetFileName(job.Outputs[0]) : $"{job.Outputs.Count} files ready");
+        string title = job.Title ?? (job.Outputs.Count == 1 ? Path.GetFileName(job.Outputs[0]) : L.N(job.Outputs.Count, "{0} file ready", "{0} files ready"));
         view.Done(title, job.Summary ?? "", job.Outputs, action.Icon);
     }
 
@@ -89,16 +89,16 @@ public static class Jobs
         return job;
     }
 
-    static string Lower(string s) => s.Length > 0 ? char.ToLowerInvariant(s[0]) + s[1..] : s;
-
     public static string Friendly(Exception ex)
     {
         var e = ex is AggregateException ae && ae.InnerException != null ? ae.InnerException : ex;
         var msg = e.Message;
-        if (e is UnauthorizedAccessException) return "No permission to write next to the file";
-        if (e is IOException && msg.Contains("being used")) return "The file is open in another app";
-        if (msg.Contains("NoDecodeDelegate") || msg.Contains("no decode delegate")) return "This image format isn't supported";
-        if (e.HResult == unchecked((int)0x800401D0)) return "The clipboard is locked (another app, or the screen is locked)";   // CLIPBRD_E_CANT_OPEN
+        if (e is UnauthorizedAccessException) return L.T("No permission to write next to the file");
+        if (e is IOException && msg.Contains("being used")) return L.T("The file is open in another app");
+        if (msg.Contains("NoDecodeDelegate") || msg.Contains("no decode delegate")) return L.T("This image format isn't supported");
+        if (e.HResult == unchecked((int)0x800401D0)) return L.T("The clipboard is locked (another app, or the screen is locked)");   // CLIPBRD_E_CANT_OPEN
+        // exceptions carry English (it's what the log gets): shown in the UI language
+        msg = L.Saved(msg);
         return msg.Length > 140 ? msg[..140] + "…" : msg;
     }
 

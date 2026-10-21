@@ -13,11 +13,12 @@ public static class Cli
     public static readonly string Version = typeof(Cli).Assembly.GetName().Version?.ToString(3) ?? "1.0.0";
 
     public static bool IsCommand(string[] args) =>
-        args.Length > 0 && args[0] is "convert" or "run" or "actions" or "model" or "watch" or "preview" or "recipe" or "fetch" or "clip" or "--help" or "-h" or "help" or "--version" or "-v";
+        args.Length > 0 && args[0] is "convert" or "run" or "actions" or "model" or "watch" or "preview" or "recipe" or "fetch" or "clip" or "lang-check" or "--help" or "-h" or "help" or "--version" or "-v";
 
     public static async Task<int> Run(string[] args, TextWriter? output = null)
     {
         var o = output ?? Console.Out;
+        L.Reset(); // the command line speaks English, whatever the desktop app is set to
         try
         {
             // --out <place> for convert, run and recipe run: where results go (default: next to the original)
@@ -38,6 +39,8 @@ public static class Cli
             }
             switch (args[0])
             {
+                case "lang-check":
+                    return LangCheck.Run(args.Length > 1 ? args[1] : null, o);
                 case "--version" or "-v":
                     o.WriteLine($"Convertino {Version}");
                     return 0;
@@ -479,6 +482,7 @@ public static class Cli
               convertino fetch <url> [--to <format>]       download into Downloads (http, https, data:), then convert
               convertino clip [--to <format>] [--out <dir>] save what's on the clipboard (a picture, text or copied files)
               convertino model install                     download the offline AI model for Cut out (224 MB)
+              convertino lang-check [checkout]             untranslated UI strings per language (run in a source checkout)
               convertino --version
             """);
     }

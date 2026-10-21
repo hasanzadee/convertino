@@ -44,6 +44,7 @@ public sealed partial class TrayPanel : Window
     TextBlock? _subtitle;
     ScrollViewer? _scroll;
     bool _animate; // only the build that opens the panel plays the intro
+    bool _langOpen; // the language pills under the Language row are showing
     bool _hiding, _top;
     bool _settled; // the slide-in has played: the swatches are where a click finds them
     string? _logged;
@@ -96,9 +97,10 @@ public sealed partial class TrayPanel : Window
         Open();
     }
 
-    /// <summary>Show (or refresh) the panel; <paramref name="stats"/> replaces stats.json (CONVERTINO_PANEL=demo).</summary>
-    public void Open(Stats? stats = null)
+    /// <summary>Show (or refresh) the panel; <paramref name="stats"/> replaces stats.json (CONVERTINO_PANEL=demo), <paramref name="langs"/> unfolds the languages.</summary>
+    public void Open(Stats? stats = null, bool langs = false)
     {
+        _langOpen = langs;
         _tweens.Clear();
         _hiding = false;
         _thumbs.Clear();
@@ -254,7 +256,7 @@ public sealed partial class TrayPanel : Window
         Subtitle();
         var header = new DockPanel { LastChildFill = false };
         var close = IconButton("x", HideAnimated);
-        ToolTip.SetTip(close, "Close (Esc)");
+        ToolTip.SetTip(close, L.T("Close (Esc)"));
         DockPanel.SetDock(close, Dock.Right);
         header.Children.Add(close);
         header.Children.Add(new StackPanel { Orientation = Orientation.Horizontal, Children = { logo, title } });
@@ -263,40 +265,41 @@ public sealed partial class TrayPanel : Window
         var stats = _stats ??= Stats.Load();
         if (!stats.IsEmpty)
         {
-            stack.Children.Add(Label("Activity · 2 weeks"));
+            stack.Children.Add(Label(L.T("Activity · 2 weeks")));
             stack.Children.Add(Activity(stats));
         }
         else stack.Children.Add(Card(new StackPanel
         {
             Children =
             {
-                HowRow("file", $"Drag any file, {key.Tap()}", "the flower opens under your cursor"),
-                HowRow("flip", $"{key.KeyName()} again, Tab or wheel", "next ring; Shift+Tab goes back"),
+                HowRow("file", L.T("Drag any file, {0}", key.Tap()), L.T("the flower opens under your cursor")),
+                HowRow("flip", L.T("{0} again, Tab or wheel", key.KeyName()), L.T("next ring; Shift+Tab goes back")),
                 OperatingSystem.IsMacOS()
-                    ? HowRow("folder", "Right-click → Quick Actions", "Convertino: same menu in Finder")
-                    : HowRow("folder", "Right-click → Convertino", "same menu in your file manager"),
+                    ? HowRow("folder", L.T("Right-click → Quick Actions"), L.T("Convertino: same menu in Finder"))
+                    : HowRow("folder", L.T("Right-click → Convertino"), L.T("same menu in your file manager")),
             },
         }, new Thickness(0, 14, 0, 0)));
 
         // theme picker
-        stack.Children.Add(Label("Theme"));
+        stack.Children.Add(Label(L.T("Theme")));
         var themes = new UniformGrid { Columns = 4, Margin = new Thickness(-4, 0, -4, 0) };
         _chips.Clear();
         foreach (var th in Skin.All) themes.Children.Add(_chips[th.Name] = ThemeChip(th, th.Name == T.Name));
         stack.Children.Add(themes);
 
         // the tray menu's toggles
-        stack.Children.Add(Label("Options"));
+        stack.Children.Add(Label(L.T("Options")));
         stack.Children.Add(Card(new StackPanel
         {
             Children =
             {
-                ToggleRow("Enabled", s.Enabled, v => { s.Enabled = v; Subtitle(); Hotkey.Changed(); }),
+                ToggleRow(L.T("Enabled"), s.Enabled, v => { s.Enabled = v; Subtitle(); Hotkey.Changed(); }),
                 TriggerRow(key),
-                ToggleRow("Notifications", s.Notifications, v => s.Notifications = v),
-                ToggleRow("Live preview", s.LivePreview, v => s.LivePreview = v),
-                ToggleRow("Tell me about new versions", s.CheckForUpdates == true, Updates.Answer),
-                ToggleRow(OperatingSystem.IsMacOS() ? "Open at login" : "Start at login", s.LaunchAtStartup,
+                LanguageRow(),
+                ToggleRow(L.T("Notifications"), s.Notifications, v => s.Notifications = v),
+                ToggleRow(L.T("Live preview"), s.LivePreview, v => s.LivePreview = v),
+                ToggleRow(L.T("Tell me about new versions"), s.CheckForUpdates == true, Updates.Answer),
+                ToggleRow(OperatingSystem.IsMacOS() ? L.T("Open at login") : L.T("Start at login"), s.LaunchAtStartup,
                     v => { s.LaunchAtStartup = v; Platform.Current.SetAutostart(v); }),
             },
         }, new Thickness(0)));
@@ -322,7 +325,7 @@ public sealed partial class TrayPanel : Window
         stack.Children.Add(Card(shots, new Thickness(0)));
 
         // folders whose new files convert by themselves
-        stack.Children.Add(Label("Watch folders"));
+        stack.Children.Add(Label(L.T("Watch folders")));
         stack.Children.Add(WatchCard());
 
         // your own chains of petals, and where results go (TrayPanelRecipes.cs)
@@ -335,7 +338,7 @@ public sealed partial class TrayPanel : Window
         var recent = s.Recent.Where(r => File.Exists(r.Path) || Directory.Exists(r.Path)).Take(4).ToList();
         if (recent.Count > 0)
         {
-            stack.Children.Add(Label("Recent"));
+            stack.Children.Add(Label(L.T("Recent")));
             var list = new StackPanel();
             foreach (var r in recent) list.Children.Add(RecentRow(r));
             stack.Children.Add(Card(list, new Thickness(0)));
@@ -343,11 +346,11 @@ public sealed partial class TrayPanel : Window
 
         // footer
         var footer = new DockPanel { Margin = new Thickness(0, 14, 0, 0), LastChildFill = false };
-        var quit = FooterButton("power", "Quit", () => (Application.Current?.ApplicationLifetime as IClassicDesktopStyleApplicationLifetime)?.Shutdown());
+        var quit = FooterButton("power", L.T("Quit"), () => (Application.Current?.ApplicationLifetime as IClassicDesktopStyleApplicationLifetime)?.Shutdown());
         DockPanel.SetDock(quit, Dock.Right);
         footer.Children.Add(quit);
-        footer.Children.Add(FooterButton("log", "Log", () => Platform.Current.Open(Paths.LogFile)));
-        footer.Children.Add(FooterButton("update", "Updates", UpdateCards.CheckNow));
+        footer.Children.Add(FooterButton("log", L.T("Log"), () => Platform.Current.Open(Paths.LogFile)));
+        footer.Children.Add(FooterButton("update", L.T("Updates"), UpdateCards.CheckNow));
 
         // header and footer stay put; only the middle scrolls when the screen is short
         var body = new DockPanel { Margin = new Thickness(18, 16, 18, 14) };
@@ -382,7 +385,7 @@ public sealed partial class TrayPanel : Window
 
     TextBlock Label(string text) => new()
     {
-        Text = text.ToUpperInvariant(), FontWeight = FontWeight.SemiBold, FontSize = 10.5,
+        Text = text.ToUpper(L.Culture), FontWeight = FontWeight.SemiBold, FontSize = 10.5,
         Foreground = B(A(T.SubText, .8)), Margin = new Thickness(4, 16, 0, 7),
     };
 
@@ -409,15 +412,15 @@ public sealed partial class TrayPanel : Window
 
         // three big numbers that count up as the panel opens
         var nums = new UniformGrid { Columns = 3 };
-        nums.Children.Add(Stat(files, v => ((long)v).ToString("N0"), files == 1 ? "file" : "files", accent));
-        nums.Children.Add(Stat(saved, v => Paths.HumanSize((long)v), "saved", accent));
-        nums.Children.Add(Stat(streak, v => ((long)v).ToString(), "day streak", accent));
+        nums.Children.Add(Stat(files, v => ((long)v).ToString("N0", L.Culture), L.N(files, "file", "files"), accent));
+        nums.Children.Add(Stat(saved, v => Paths.HumanSize((long)v), L.T("saved"), accent));
+        nums.Children.Add(Stat(streak, v => ((long)v).ToString(L.Culture), L.N(streak, "day streak", "day streak"), accent));
 
         // one bar per day; hovering one swaps the date row for that day's numbers
         int max = Math.Max(1, days.Max(d => d.Day.Files));
         var bars = new Grid { Height = BarsH, Margin = new Thickness(0, 14, 0, 0), ColumnDefinitions = new ColumnDefinitions(string.Join(",", days.Select(_ => "*"))) };
-        var first = new TextBlock { Text = days[0].Date.ToString("d MMM"), FontSize = 10.5, Foreground = B(T.SubText), HorizontalAlignment = HorizontalAlignment.Left };
-        var today = new TextBlock { Text = "Today", FontSize = 10.5, Foreground = B(T.SubText), HorizontalAlignment = HorizontalAlignment.Right };
+        var first = new TextBlock { Text = L.Date(days[0].Date), FontSize = 10.5, Foreground = B(T.SubText), HorizontalAlignment = HorizontalAlignment.Left };
+        var today = new TextBlock { Text = L.T("Today"), FontSize = 10.5, Foreground = B(T.SubText), HorizontalAlignment = HorizontalAlignment.Right };
         var caption = new TextBlock { FontSize = 10.5, FontWeight = FontWeight.SemiBold, Foreground = B(T.Text), HorizontalAlignment = HorizontalAlignment.Center, IsVisible = false };
         var dates = new Grid { Margin = new Thickness(0, 5, 0, 0), Children = { first, today, caption } };
 
@@ -443,7 +446,7 @@ public sealed partial class TrayPanel : Window
             col.PointerEntered += (_, _) =>
             {
                 bar.Opacity = 1;
-                caption.Text = $"{date:ddd d MMM} · {day.Files} {(day.Files == 1 ? "file" : "files")}" + (day.Saved > 0 ? $" · {Paths.HumanSize(day.Saved)} saved" : "");
+                caption.Text = $"{L.Date(date, weekday: true)} · {L.N(day.Files, "{0} file", "{0} files")}" + (day.Saved > 0 ? " · " + L.T("{0} saved", Paths.HumanSize(day.Saved)) : "");
                 caption.IsVisible = true;
                 first.Opacity = today.Opacity = 0;
             };
@@ -470,7 +473,7 @@ public sealed partial class TrayPanel : Window
                     FontSize = 11.5,
                     Inlines = new InlineCollection
                     {
-                        new Run(name) { FontWeight = FontWeight.SemiBold, Foreground = B(T.Text) },
+                        new Run(L.Saved(name)) { FontWeight = FontWeight.SemiBold, Foreground = B(T.Text) },
                         new Run($"  ×{count}") { Foreground = B(T.SubText) },
                     },
                 };
@@ -536,7 +539,7 @@ public sealed partial class TrayPanel : Window
     void Subtitle()
     {
         var s = Settings.Current;
-        if (_subtitle != null) _subtitle.Text = s.Enabled ? $"Drag a file · {s.TriggerKey.Tap()}" : "Paused";
+        if (_subtitle != null) _subtitle.Text = s.Enabled ? L.T("Drag a file · {0}", s.TriggerKey.Tap()) : L.T("Paused");
     }
 
     static LinearGradientBrush Diagonal(Color a, Color b) => new()
@@ -556,7 +559,7 @@ public sealed partial class TrayPanel : Window
         sw.Children.Add(ring);
         var col = new StackPanel { Background = Brushes.Transparent, Cursor = new Cursor(StandardCursorType.Hand), HorizontalAlignment = HorizontalAlignment.Center };
         col.Children.Add(sw);
-        col.Children.Add(new TextBlock { Text = th.Name, FontSize = 11, Foreground = B(selected ? T.Text : T.SubText), HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 6, 0, 0) });
+        col.Children.Add(new TextBlock { Text = L.T(th.Name), FontSize = 11, Foreground = B(selected ? T.Text : T.SubText), HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 6, 0, 0) });
         if (!selected)
         {
             col.PointerEntered += (_, _) => ring.Stroke = B(A(T.SubText, .45));
@@ -589,7 +592,7 @@ public sealed partial class TrayPanel : Window
                     Foreground = B(on ? T.AccentText : T.Text), FontWeight = on ? FontWeight.SemiBold : FontWeight.Normal,
                 },
             };
-            if (k == TriggerKey.ShiftTwice) ToolTip.SetTip(pill, "Double-tap Shift while dragging: a single Shift stays free for the app you drop on");
+            if (k == TriggerKey.ShiftTwice) ToolTip.SetTip(pill, L.T("Double-tap Shift while dragging: a single Shift stays free for the app you drop on"));
             if (!on)
             {
                 pill.PointerEntered += (_, _) => pill.Background = B(A(T.SubText, .22));
@@ -606,7 +609,7 @@ public sealed partial class TrayPanel : Window
             keys.Children.Add(pill);
         }
         var row = new StackPanel { Margin = new Thickness(0, 6, 0, 6) };
-        row.Children.Add(new TextBlock { Text = "Open with", FontSize = 13, Foreground = B(T.Text) });
+        row.Children.Add(new TextBlock { Text = L.T("Open with"), FontSize = 13, Foreground = B(T.Text) });
         row.Children.Add(keys);
         return row;
     }
@@ -647,6 +650,60 @@ public sealed partial class TrayPanel : Window
         });
         toggle.Margin = new Thickness(0, 6, 0, 0);
         return new StackPanel { Margin = new Thickness(0, 0, 0, 6), Children = { toggle, keys } };
+    }
+
+    /// <summary>"Language" and the one in use; a tap unfolds a pill per language, applied on the spot (the panel rebuilds in it).</summary>
+    Control LanguageRow()
+    {
+        var s = Settings.Current;
+        bool auto = s.Language is null or "auto";
+        string name = L.All.FirstOrDefault(l => l.Code == L.Code)?.Name ?? L.Code;
+        var value = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+        value.Children.Add(new TextBlock { Text = auto ? $"{L.T("Auto")} · {name}" : name, FontSize = 12.5, Foreground = B(T.SubText), VerticalAlignment = VerticalAlignment.Center });
+        value.Children.Add(new IconView { Key = _langOpen ? "chevronup" : "chevron", Width = 12, Height = 12, Brush = B(T.SubText), Margin = new Thickness(6, 1, 0, 0), VerticalAlignment = VerticalAlignment.Center });
+        var row = new DockPanel { Background = Brushes.Transparent, Cursor = new Cursor(StandardCursorType.Hand), Margin = new Thickness(0, 6, 0, 6) };
+        DockPanel.SetDock(value, Dock.Right);
+        row.Children.Add(value);
+        row.Children.Add(new TextBlock { Text = L.T("Language"), FontSize = 13, Foreground = B(T.Text), VerticalAlignment = VerticalAlignment.Center });
+        row.PointerReleased += (_, _) => { _langOpen = !_langOpen; Rebuild(); };
+        var sp = new StackPanel { Children = { row } };
+        if (!_langOpen) return sp;
+
+        var pills = new UniformGrid { Columns = 3, Margin = new Thickness(-2, 0, -2, 6) };
+        foreach (var (code, label) in new[] { ((string?)null, L.T("Auto")) }.Concat(L.All.Select(l => ((string?)l.Code, l.Name))))
+        {
+            bool on = code == null ? auto : !auto && string.Equals(code, s.Language, StringComparison.OrdinalIgnoreCase);
+            IBrush rest = on ? Gradient(T.AccentA, T.AccentB, false) : B(A(T.SubText, .12));
+            var pill = new Border
+            {
+                CornerRadius = new CornerRadius(8), Padding = new Thickness(4, 4, 4, 5), Margin = new Thickness(2),
+                Background = rest, Cursor = new Cursor(StandardCursorType.Hand),
+                // long names ("Português (Brasil)") shrink to fit rather than lose their end
+                Child = new Viewbox
+                {
+                    StretchDirection = StretchDirection.DownOnly,
+                    Child = new TextBlock { Text = label, FontSize = 11.5, Foreground = B(on ? T.AccentText : T.Text), FontWeight = on ? FontWeight.SemiBold : FontWeight.Normal },
+                },
+            };
+            if (!on)
+            {
+                pill.PointerEntered += (_, _) => pill.Background = B(A(T.SubText, .22));
+                pill.PointerExited += (_, _) => pill.Background = rest;
+            }
+            pill.PointerReleased += (_, e) =>
+            {
+                e.Handled = true;
+                s.Language = code;
+                s.Save();
+                L.Use(code);
+                _langOpen = false;
+                Rebuild();
+                SettingsChanged?.Invoke();
+            };
+            pills.Children.Add(pill);
+        }
+        sp.Children.Add(pills);
+        return sp;
     }
 
     /// <summary>A whole-row switch; <paramref name="set"/> changes the setting, saving is done here.</summary>
@@ -698,7 +755,7 @@ public sealed partial class TrayPanel : Window
             });
         var text = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
         text.Children.Add(new TextBlock { Text = System.IO.Path.GetFileName(r.Path), FontSize = 12.5, Foreground = B(T.Text), TextTrimming = TextTrimming.CharacterEllipsis, MaxWidth = 230 });
-        text.Children.Add(new TextBlock { Text = $"{r.Label} · {Ago(r.When)}", FontSize = 11, Foreground = B(T.SubText) });
+        text.Children.Add(new TextBlock { Text = $"{L.Saved(r.Label)} · {Ago(r.When)}", FontSize = 11, Foreground = B(T.SubText) });
         var row = new Border
         {
             Background = Brushes.Transparent, CornerRadius = new CornerRadius(8), Padding = new Thickness(4), Margin = new Thickness(-4, 1, -4, 1),
@@ -713,10 +770,10 @@ public sealed partial class TrayPanel : Window
     static string Ago(DateTime t)
     {
         var d = DateTime.Now - t;
-        if (d.TotalMinutes < 1) return "just now";
-        if (d.TotalHours < 1) return $"{(int)d.TotalMinutes} min ago";
-        if (d.TotalDays < 1) return $"{(int)d.TotalHours} h ago";
-        return t.ToString("d MMM");
+        if (d.TotalMinutes < 1) return L.T("just now");
+        if (d.TotalHours < 1) return L.T("{0} min ago", (int)d.TotalMinutes);
+        if (d.TotalDays < 1) return L.T("{0} h ago", (int)d.TotalHours);
+        return L.Date(t);
     }
 
     // ---------- watch folders ----------
@@ -737,7 +794,7 @@ public sealed partial class TrayPanel : Window
             };
             var text = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
             text.Children.Add(new TextBlock { Text = System.IO.Path.GetFileName(path.TrimEnd('/', '\\')), FontSize = 12.5, Foreground = B(T.Text), TextTrimming = TextTrimming.CharacterEllipsis, MaxWidth = 210 });
-            text.Children.Add(new TextBlock { Text = $"new files → {Watches.LabelOf(wf.Action)} · in {wf.Out}" + (Directory.Exists(path) ? "" : " · missing"), FontSize = 11, Foreground = B(T.SubText) });
+            text.Children.Add(new TextBlock { Text = L.T("new files → {0} · in {1}", Watches.LabelOf(wf.Action), wf.Out) + (Directory.Exists(path) ? "" : " · " + L.T("missing")), FontSize = 11, Foreground = B(T.SubText) });
             var main = new Border
             {
                 Background = Brushes.Transparent, Cursor = new Cursor(StandardCursorType.Hand),
@@ -746,7 +803,7 @@ public sealed partial class TrayPanel : Window
             ToolTip.SetTip(main, path);
             main.PointerReleased += (_, _) => { if (Directory.Exists(path)) { Platform.Current.Open(path); HideAnimated(); } };
             var remove = IconButton("x", () => { try { Watches.Remove(path); } catch (Exception ex) { Log.Error("watch remove", ex); } Rebuild(); });
-            ToolTip.SetTip(remove, "Stop watching");
+            ToolTip.SetTip(remove, L.T("Stop watching"));
             remove.VerticalAlignment = VerticalAlignment.Center;
             var row = new DockPanel { Margin = new Thickness(0, 4, 0, 4) };
             DockPanel.SetDock(remove, Dock.Right);
@@ -759,14 +816,14 @@ public sealed partial class TrayPanel : Window
         {
             list.Children.Add(new TextBlock
             {
-                Text = $"New files in {System.IO.Path.GetFileName(dir.TrimEnd('/', '\\'))} become:", FontSize = 12.5,
+                Text = L.T("New files in {0} become:", System.IO.Path.GetFileName(dir.TrimEnd('/', '\\'))), FontSize = 12.5,
                 Foreground = B(T.Text), Margin = new Thickness(0, 6, 0, 0), TextTrimming = TextTrimming.CharacterEllipsis,
             });
             var pills = new UniformGrid { Columns = 3, Margin = new Thickness(-2, 6, -2, 2) };
             foreach (var (id, label) in Watches.Presets)
             {
                 IBrush rest = B(A(T.SubText, .12));
-                var caption = new TextBlock { Text = label, FontSize = 11.5, Foreground = B(T.Text), HorizontalAlignment = HorizontalAlignment.Center };
+                var caption = new TextBlock { Text = L.T(label), FontSize = 11.5, Foreground = B(T.Text), HorizontalAlignment = HorizontalAlignment.Center };
                 var pill = new Border
                 {
                     CornerRadius = new CornerRadius(8), Padding = new Thickness(4, 4, 4, 5), Margin = new Thickness(2),
@@ -783,10 +840,10 @@ public sealed partial class TrayPanel : Window
                 pills.Children.Add(pill);
             }
             list.Children.Add(pills);
-            list.Children.Add(new TextBlock { Text = "Results go to a Converted folder inside it.", FontSize = 11, Foreground = B(T.SubText), Margin = new Thickness(2, 2, 0, 4) });
-            list.Children.Add(FooterButton("x", "Cancel", () => { _pendingWatch = null; Rebuild(); }));
+            list.Children.Add(new TextBlock { Text = L.T("Results go to a Converted folder inside it."), FontSize = 11, Foreground = B(T.SubText), Margin = new Thickness(2, 2, 0, 4) });
+            list.Children.Add(FooterButton("x", L.T("Cancel"), () => { _pendingWatch = null; Rebuild(); }));
         }
-        else list.Children.Add(FooterButton("folder", "Watch a folder…", PickWatchFolder));
+        else list.Children.Add(FooterButton("folder", L.T("Watch a folder…"), PickWatchFolder));
         return Card(list, new Thickness(0));
     }
 
@@ -797,7 +854,7 @@ public sealed partial class TrayPanel : Window
         {
             var picked = await StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
             {
-                Title = "New files in this folder will be converted automatically", AllowMultiple = false,
+                Title = L.T("New files in this folder will be converted automatically"), AllowMultiple = false,
             });
             if (picked.Count > 0 && picked[0].TryGetLocalPath() is { } path) _pendingWatch = path;
         }
