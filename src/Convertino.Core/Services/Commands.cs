@@ -35,7 +35,7 @@ public static partial class Commands
     {
         ["in"] = input,
         ["name"] = Path.GetFileNameWithoutExtension(Path.TrimEndingDirectorySeparator(input)),
-        ["ext"] = Kinds.Ext(input),
+        ["ext"] = Path.GetExtension(input).TrimStart('.'), // as the file has it: "{name}.{ext}" of a.JPG is a.JPG itself
         ["dir"] = Path.GetDirectoryName(Path.TrimEndingDirectorySeparator(input)) ?? "",
         ["out"] = output ?? "",
     };
@@ -87,13 +87,16 @@ public static partial class Commands
         else
         {
             var exts = OperatingSystem.IsWindows() && !Path.HasExtension(p) ? new[] { ".exe", ".com" } : new[] { "" };
-            foreach (var dir in (Environment.GetEnvironmentVariable("PATH") ?? "").Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries))
+            foreach (var entry in (Environment.GetEnvironmentVariable("PATH") ?? "").Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries))
             {
+                // a relative entry would mean "relative to wherever Convertino was started": never
+                var dir = entry.Trim().Trim('"');
+                if (!Path.IsPathFullyQualified(dir)) continue;
                 foreach (var e in exts)
                 {
                     try
                     {
-                        var candidate = Path.Combine(dir.Trim().Trim('"'), p + e);
+                        var candidate = Path.Combine(dir, p + e);
                         if (File.Exists(candidate)) { found = candidate; break; }
                     }
                     catch { }
@@ -106,9 +109,10 @@ public static partial class Commands
             problem = $"{Path.GetFileName(p)} not found";
             return null;
         }
-        if (OperatingSystem.IsWindows() && Path.GetExtension(found).ToLowerInvariant() is ".bat" or ".cmd")
+        // Windows opens "run.bat." or "run.bat " as run.bat: only real programs are let through, nothing cmd.exe would run
+        if (OperatingSystem.IsWindows() && Path.GetExtension(found.TrimEnd('.', ' ')).ToLowerInvariant() is not (".exe" or ".com"))
         {
-            problem = "Batch files can't be run safely";
+            problem = "Only .exe and .com programs can run";
             return null;
         }
         return found;
@@ -120,8 +124,8 @@ public static partial class Commands
         {
             job.Failed = true;
             job.Title = problem;
-            job.Summary = problem.StartsWith("Batch")
-                ? "cmd.exe would read & | ^ in file names as commands: point \"program\" at an .exe (or powershell.exe -File …)"
+            job.Summary = problem.StartsWith("Only")
+                ? "Batch files and scripts would go through cmd.exe, which reads & | ^ in file names as commands: point \"program\" at an .exe (powershell.exe -File …, python.exe …)"
                 : $"Install it, or give its full path in recipes.json ({c.Name})";
             return;
         }
@@ -132,8 +136,16 @@ public static partial class Commands
             job.Report(i, n);
             var input = job.Inputs[i];
             var output = OutputFor(c, input);
-            bool existed = output != null && (File.Exists(output) || Directory.Exists(output));
-            var stamp = existed ? File.GetLastWriteTimeUtc(output!) : default;
+            string where = n > 1 ? Path.GetFileName(input) + ": " : "";
+            // a result is only ever something this run creates: what was already there is never taken as one, so
+            // nothing of the user's is moved by "Save results" or deleted when the job is cancelled
+            if (output != null && Refused(output, job.Inputs) is { } why)
+            {
+                job.Failed = true;
+                job.Title = $"{c.Name} wasn't run";
+                job.Summary = where + why;
+                return;
+            }
             var vars = Vars(input, output);
             var psi = new ProcessStartInfo(exe)
             {
@@ -149,10 +161,9 @@ public static partial class Commands
 
             var (code, last) = await Execute(c, psi, job.Token, () =>
             {
-                // stopped half-way: what it wrote is incomplete
-                if (output != null && !existed) TryDelete(output);
+                // stopped half-way: what it wrote (it wasn't there before) is incomplete
+                if (output != null) TryDelete(output);
             });
-            string where = n > 1 ? Path.GetFileName(input) + ": " : "";
             if (code == null)
             {
                 job.Failed = true;
@@ -168,7 +179,7 @@ public static partial class Commands
                 return;
             }
             if (output == null) continue;
-            if (!File.Exists(output) && !Directory.Exists(output) || existed && File.GetLastWriteTimeUtc(output) == stamp)
+            if (!File.Exists(output) && !Directory.Exists(output))
             {
                 job.Failed = true;
                 job.Title = $"{c.Name} made nothing";
@@ -178,6 +189,26 @@ public static partial class Commands
             job.Outputs.Add(output);
         }
         if (job.Outputs.Count == 0) job.Title = $"{c.Name} finished";
+    }
+
+    /// <summary>
+    /// Why this result path can't be used, or null: it has to be new. Not a file or folder that's already there (the
+    /// program would write over it; with {out} in the arguments a free name is picked instead), and not an input or a
+    /// folder holding one ("output": "{dir}").
+    /// </summary>
+    static string? Refused(string output, IReadOnlyList<string> inputs)
+    {
+        var cmp = OperatingSystem.IsLinux() ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
+        var o = Path.TrimEndingDirectorySeparator(Path.GetFullPath(output));
+        foreach (var i in inputs)
+        {
+            var f = Path.TrimEndingDirectorySeparator(Path.GetFullPath(i));
+            if (string.Equals(o, f, cmp)) return $"\"output\" is the file itself ({Path.GetFileName(f)}): leave it out for a command that changes files in place";
+            if (f.StartsWith(o + Path.DirectorySeparatorChar, cmp)) return $"\"output\" is the folder the file is in ({o})";
+        }
+        if (File.Exists(o) || Directory.Exists(o))
+            return $"{Path.GetFileName(o)} is already there: put {{out}} in \"args\" so it gets a free name, or change \"output\"";
+        return null;
     }
 
     /// <summary>Run to the end: the exit code (null after the timeout) and the last line it printed, errors first.</summary>

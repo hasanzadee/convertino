@@ -45,7 +45,7 @@ public static class Jobs
         catch (OperationCanceledException) { job.Silent = true; }
         catch (Exception ex) { error = ex; Log.Error($"job {action.Id}", ex); }
         // "Save results": into a subfolder or a fixed folder instead of beside the original
-        if (error == null && !cts.IsCancellationRequested && !job.Failed) await Task.Run(() => Output.Place(job));
+        if (error == null && !cts.IsCancellationRequested) await Task.Run(() => Output.Place(job));
         finished = true;
         Log.Info($"job {action.Id} {(error == null ? "ok" : "failed")} in {sw.ElapsedMilliseconds} ms → {string.Join(" | ", job.Outputs)}");
 

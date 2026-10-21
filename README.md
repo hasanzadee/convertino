@@ -203,7 +203,7 @@ Make one in the panel (**Recipes → New recipe…**: pick a kind of file, add s
 convertino recipe add Web-ready --steps fithd,to-webp,meta           # for images: worked out from the steps
 convertino recipe add "Email PDF" --steps to-pdf,compress --for jpg,png,heic --out Mail
 convertino recipe list
-convertino recipe run Web-ready *.jpg                                  # or: convertino run recipe-web-ready *.jpg
+convertino recipe run Web-ready *.jpg --out Web                        # or: convertino run recipe-web-ready *.jpg
 convertino recipe remove Web-ready
 ```
 
@@ -227,8 +227,8 @@ Steps are the petal ids `convertino actions <file>` lists. Each one has to work 
 }
 ```
 
-- **`program`** is a name on `PATH` or a full path. **`args`** is a list, one entry per argument, with `{in}` (the file's full path), `{name}` (its name without the extension), `{ext}`, `{dir}` and `{out}` filled in. The arguments are handed to the program as they are, never through a shell, so a file called `a & del *.jpg` is only a name. For the same reason Windows batch files (`.bat`, `.cmd`) are refused: run an `.exe`, or e.g. `powershell.exe` with `-File script.ps1 {in}`.
-- **`output`** names the file it makes, relative to the file's folder; `{out}` is that path, with ` (2)` added if the name is taken (with `{out}` in `args` but no `output`, it's `name (Command).ext`). Leave both out for a command that makes no file. A command that makes a file can also be a recipe step (`cmd-<name>`).
+- **`program`** is a name on `PATH` or a full path. **`args`** is a list, one entry per argument, with `{in}` (the file's full path), `{name}` (its name without the extension), `{ext}`, `{dir}` and `{out}` filled in. The arguments are handed to the program as they are, never through a shell, so a file called `a & del *.jpg` is only a name. For the same reason Windows only runs `.exe` and `.com` programs (batch files and scripts would go through `cmd.exe`): for a script, run e.g. `powershell.exe` with `-File script.ps1 {in}`, or `python.exe`.
+- **`output`** names the file it makes, relative to the file's folder; `{out}` is that path, with ` (2)` added if the name is taken (with `{out}` in `args` but no `output`, it's `name (Command).ext`). Leave both out for a command that makes no file, or that changes the file in place. A result has to be new: a command whose `output` is the file itself, the folder it's in, or a file that's already there (and no `{out}` in `args` to pick a free name) isn't run, so nothing of yours is ever treated as its result, moved or removed. A command that makes a file can also be a recipe step (`cmd-<name>`).
 - **`for`** takes extensions (`"png"`) or kinds (`"image"`, `"video"`, `"audio"`, `"pdf"`, `"document"`, `"text"`, `"data"`…); without it a command is offered for any file. **`timeout`** is in seconds (300 by default). The program runs once per file; what it prints goes to the log, and a non-zero exit shows its last line on the card.
 - **`icon`**: `recipe`, `terminal`, `globe`, `send`, `squareimg`, `compress`, `picture`, `volume`, `zip`, or any other petal's icon.
 
@@ -236,7 +236,7 @@ Steps are the petal ids `convertino actions <file>` lists. Each one has to work 
 
 ### Where results go
 
-**Save results** in the panel: *Beside it* (the default), in a *Subfolder* of the original's folder (`Converted`, or a name you type), or in a *Fixed folder*. It applies to every petal that makes a new file, on a drop and on the command line; a taken name gets ` (2)`. Editors, clipboard petals and *Extract here* / *Join* keep their place, and watch folders keep their own `Converted` folder. A recipe can choose its own: `"out": "Mail"` (a subfolder), `"beside"`, or a full folder path; `--out` on the command line.
+**Save results** in the panel: *Beside it* (the default), in a *Subfolder* of the original's folder (`Converted`, or a name you type), or in a *Fixed folder*. It applies to every petal that makes a new file when you drop on it; a taken name gets ` (2)`. On the command line results stay next to the original unless you say otherwise with `--out <subfolder|full path>` (`convert`, `run`, `recipe run`). Editors, clipboard petals and *Extract here* / *Join* keep their place, and watch folders keep their own `Converted` folder. A recipe can choose its own: `"out": "Mail"` (a subfolder), `"beside"`, or a full folder path (`recipe add … --out`).
 
 ## Command line
 

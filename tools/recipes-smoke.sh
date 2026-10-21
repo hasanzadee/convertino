@@ -7,7 +7,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 C="$(cd "$(dirname "$1")" && pwd)/$(basename "$1")"
-W="$(mktemp -d)"
+W="$(cd "$(mktemp -d)" && pwd -P)"   # the real path (macOS: /private/var/…), as the app reports it
 export CONVERTINO_APPDATA="$W/appdata"
 TMP="${TMPDIR:-/tmp}"
 cd "$W"
@@ -25,6 +25,11 @@ cat > "$CONVERTINO_APPDATA/recipes.json" <<'JSON'
     { "name": "Fails", "program": "sh", "args": ["-c", "echo boom >&2; exit 3"] },
     { "name": "Slow", "program": "sleep", "args": ["30"], "timeout": 1 },
     { "name": "Missing", "program": "convertino-no-such-program", "args": ["{in}"] },
+    { "name": "Echo", "program": "echo", "args": ["echoed", "{in}"] },
+    // results have to be new: these three are refused before anything runs
+    { "name": "InPlace", "for": ["txt"], "program": "cp", "args": ["{in}", "{dir}/x.bak"], "output": "{name}.{ext}" },
+    { "name": "WholeDir", "for": ["txt"], "program": "true", "args": [], "output": "{dir}" },
+    { "name": "Existing", "for": ["txt"], "program": "touch", "args": ["{dir}/keep.me"], "output": "keep.me" },
   ],
 }
 JSON
@@ -36,6 +41,7 @@ if "$C" recipe add Broken --steps path,to-webp; then fail "a clipboard step in t
 if "$C" recipe add Broken --steps to-pdf,square; then fail "Square after PDF was saved"; fi
 if "$C" recipe add Broken --steps fithd,crop; then fail "an editor was saved as a step"; fi
 if "$C" recipe add Broken --steps no-such-petal; then fail "an unknown petal was saved"; fi
+if "$C" recipe add Broken --steps to-jpg,square --for pdf; then fail "a step after PDF pages (a picture or a folder) was saved"; fi
 "$C" recipe list | tee list.log
 grep -q "Full HD → WEBP → Clean" list.log
 grep -q "convertino-no-such-program not found" list.log
@@ -74,6 +80,17 @@ if out=$("$C" run cmd-slow photo.png); then fail "the timeout didn't stop it"; f
 echo "$out"; echo "$out" | grep -q "took too long"
 test $(( $(date +%s) - start )) -lt 20
 
+echo "== a command's result is always new: never the file, its folder or something already there"
+printf 'x' > note.txt
+printf 'mine' > keep.me
+if out=$("$C" run cmd-inplace note.txt); then fail "a command writing over its own file ran"; fi
+echo "$out"; echo "$out" | grep -q "is the file itself"
+if out=$("$C" run cmd-wholedir note.txt); then fail "a command whose result is the folder ran"; fi
+echo "$out"; echo "$out" | grep -q "folder the file is in"
+if out=$("$C" run cmd-existing note.txt); then fail "a command writing over an existing file ran"; fi
+echo "$out"; echo "$out" | grep -q "already there"
+test "$(cat note.txt)" = x && test "$(cat keep.me)" = mine && test ! -e x.bak || fail "a refused command touched files"
+
 echo "== a command as a step, and a step that fails"
 "$C" recipe add Copy-webp --steps cmd-copy,to-webp
 "$C" recipe run Copy-webp photo.png
@@ -84,14 +101,35 @@ echo "$out"; echo "$out" | grep -q "stopped at step 2"
 test ! -e "photo (Boom).webp"
 no_work_left
 
-echo "== Save results: a subfolder, then a fixed folder"
+echo "== a last step that makes no file gets the real files; nothing changed, nothing made"
+"$C" recipe add Webp-echo --steps to-webp,cmd-echo
+"$C" recipe run Webp-echo photo.png
+test -s "photo (Webp-echo).webp"
+grep -q "echoed $W/photo (Webp-echo).webp" "$CONVERTINO_APPDATA/convertino.log" || fail "the last step didn't get the final file"
+"$C" recipe add Echo-only --steps cmd-echo --for png
+"$C" recipe run Echo-only photo.png
+grep -q "echoed $W/photo.png" "$CONVERTINO_APPDATA/convertino.log" || fail "a recipe that changes nothing didn't hand on the original"
+test ! -e "photo (Echo-only).png"
+"$C" recipe add Webp --steps to-webp
+cp "photo (Web-ready).webp" again.webp
+"$C" recipe run Webp again.webp | tee same.log
+grep -q "nothing to change" same.log
+test ! -e "again (Webp).webp"
+no_work_left
+
+echo "== Save results: the panel's setting is for drops; on the command line --out says where"
 echo '{ "SaveTo": "subfolder", "SaveSubfolder": "Results" }' > "$CONVERTINO_APPDATA/settings.json"
 "$C" convert photo.png --to avif
-test -s Results/photo.avif && test ! -e photo.avif
+test -s photo.avif && test ! -e Results
+"$C" convert photo.png --to gif --out Results
+test -s Results/photo.gif
 mkdir -p "$W/fixed"
-echo "{ \"SaveTo\": \"folder\", \"SaveFolder\": \"$W/fixed\" }" > "$CONVERTINO_APPDATA/settings.json"
-"$C" recipe run Web-ready photo.png
+"$C" recipe run Web-ready photo.png --out "$W/fixed"
 test -s "$W/fixed/photo (Web-ready).webp"
+cp photo.png "$W/fixed/pic.png"
+"$C" convert "$W/fixed/pic.png" --to webp --out "$W/fixed"
+test -s "$W/fixed/pic.webp" && test ! -e "$W/fixed/pic (2).webp" || fail "a result already in the folder was renamed"
+if "$C" convert photo.png --to webp --out ../up; then fail "--out took a relative path"; fi
 rm "$CONVERTINO_APPDATA/settings.json"
 
 echo "== an unreadable recipes.json is kept, not overwritten"

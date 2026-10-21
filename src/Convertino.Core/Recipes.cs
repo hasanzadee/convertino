@@ -79,13 +79,17 @@ public static class Recipes
     /// <summary>recipes.json exists but can't be read: nothing from it is offered, and the next save keeps it as .bad-…</summary>
     public static bool Broken { get; private set; }
 
-    /// <summary>The file, or null when recipes.json exists but can't be read (so nobody overwrites it by accident).</summary>
+    /// <summary>
+    /// The file, or null when recipes.json isn't valid JSON (so nobody overwrites it by accident). When it can't be read
+    /// right now (a sync tool or an editor holds it, no access) this throws instead: that isn't a broken file.
+    /// </summary>
     static RecipeFile? TryLoad()
     {
+        if (!File.Exists(FilePath)) return new();
+        var text = File.ReadAllText(FilePath);
         try
         {
-            if (!File.Exists(FilePath)) return new();
-            var file = JsonSerializer.Deserialize<RecipeFile>(File.ReadAllText(FilePath), Json) ?? new();
+            var file = JsonSerializer.Deserialize<RecipeFile>(text, Json) ?? new();
             file.Recipes = (file.Recipes ?? []).Where(r => r != null && !string.IsNullOrWhiteSpace(r.Name)).ToList();
             foreach (var r in file.Recipes)
             {
@@ -102,7 +106,7 @@ public static class Recipes
             }
             return file;
         }
-        catch (Exception ex) { Log.Error("recipes load", ex); return null; }
+        catch (JsonException ex) { Log.Error("recipes load", ex); return null; }
     }
 
     static (DateTime, long) Stamp()
@@ -122,7 +126,14 @@ public static class Recipes
         {
             var stamp = Stamp();
             if (_cache != null && stamp == _stamp) return _cache;
-            var file = TryLoad();
+            RecipeFile? file;
+            try { file = TryLoad(); }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                // held by something else for a moment: keep what we had, read it again next time
+                Log.Error("recipes read", ex);
+                return _cache ?? new();
+            }
             Broken = file == null;
             _cache = file ?? new();
             _stamp = stamp;
@@ -133,28 +144,43 @@ public static class Recipes
     // the CLI and the app can both edit the file: one at a time, each with its own temp file
     static T Edit<T>(Func<RecipeFile, T> change)
     {
-        using var gate = new Mutex(false, "Convertino.Recipes." + Environment.UserName);
-        bool owned = false;
-        try { owned = gate.WaitOne(5000); } catch (AbandonedMutexException) { owned = true; }
-        try
+        using var gate = Lock();
+        RecipeFile? file;
+        for (int attempt = 1; ; attempt++)
         {
-            var file = TryLoad();
-            if (file == null)
-            {
-                // keep the unreadable file for the user instead of silently replacing their recipes
-                var bad = FilePath + $".bad-{DateTime.Now:yyyyMMdd-HHmmss}";
-                File.Copy(FilePath, bad, true);
-                Log.Info($"recipes: unreadable recipes.json kept as {bad}");
-                file = new();
-            }
-            var result = change(file);
-            var tmp = $"{FilePath}.{Environment.ProcessId}.tmp";
-            File.WriteAllText(tmp, JsonSerializer.Serialize(file, Json));
-            File.Move(tmp, FilePath, true);
-            lock (CacheGate) _cache = null;
-            return result;
+            // held by something else for a moment: try again, and in the end fail rather than take it for broken
+            try { file = TryLoad(); break; }
+            catch (Exception ex) when ((ex is IOException or UnauthorizedAccessException) && attempt < 5) { Thread.Sleep(250); }
         }
-        finally { if (owned) gate.ReleaseMutex(); }
+        if (file == null)
+        {
+            // keep the unreadable file for the user instead of silently replacing their recipes
+            var bad = FilePath + $".bad-{DateTime.Now:yyyyMMdd-HHmmss}";
+            File.Copy(FilePath, bad, true);
+            Log.Info($"recipes: unreadable recipes.json kept as {bad}");
+            file = new();
+        }
+        var result = change(file);
+        var tmp = $"{FilePath}.{Environment.ProcessId}.tmp";
+        File.WriteAllText(tmp, JsonSerializer.Serialize(file, Json));
+        File.Move(tmp, FilePath, true);
+        lock (CacheGate) _cache = null;
+        return result;
+    }
+
+    /// <summary>
+    /// recipes.json.lock, held open exclusively while the file is edited. A lock file and not a named mutex: on Linux
+    /// and macOS those are per login session, so the CLI in a terminal and the app wouldn't see each other's.
+    /// </summary>
+    static FileStream? Lock()
+    {
+        var until = DateTime.UtcNow.AddSeconds(5);
+        while (true)
+        {
+            try { return new FileStream(FilePath + ".lock", FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None); }
+            catch (IOException) when (DateTime.UtcNow < until) { Thread.Sleep(50); }
+            catch (Exception ex) { Log.Error("recipes lock", ex); return null; } // go on without it rather than not at all
+        }
     }
 
     /// <summary>Create recipes.json (empty lists) if it isn't there, for "Open recipes.json".</summary>
@@ -192,7 +218,10 @@ public static class Recipes
 
     public static string IdOf(Recipe r) => "recipe-" + Slug(r.Name);
     public static string IdOf(CustomCommand c) => "cmd-" + Slug(c.Name);
-    static string IdOf(string nameOrId) => nameOrId.StartsWith("recipe-", StringComparison.Ordinal) ? nameOrId : "recipe-" + Slug(nameOrId);
+    public static string IdOf(string nameOrId) => nameOrId.StartsWith("recipe-", StringComparison.Ordinal) ? nameOrId : "recipe-" + Slug(nameOrId);
+
+    /// <summary>A recipe's petal: it puts its results in place itself.</summary>
+    public static bool IsRecipe(PetalAction a) => a.Id.StartsWith("recipe-", StringComparison.Ordinal);
 
     static string Slug(string name)
     {
@@ -323,7 +352,12 @@ public static class Recipes
         var id = a.Id;
         if (a.Quick) return NoFile;
         if (id.StartsWith("cmd-")) return file.Commands.FirstOrDefault(c => IdOf(c) == id) is { } c ? Commands.Makes(c, type) : null;
-        if (id.StartsWith("to-")) return id[3..];
+        if (id.StartsWith("to-"))
+        {
+            // a document's pages: one picture or a folder of them, depending on how many it has
+            bool pages = Kinds.Of("x." + type) is Kind.Pdf or Kind.Word or Kind.Slides && Kinds.Of("x." + id[3..]) == Kind.Image;
+            return pages ? null : id[3..];
+        }
         if (Same.Contains(id)) return type;
         if (Fixed.TryGetValue(id, out var t)) return t;
         return id switch
@@ -568,6 +602,7 @@ public static class Recipes
     {
         var file = Load();
         int n = r.Steps.Count;
+        if (Interlocked.Exchange(ref _swept, 1) == 0) _ = Task.Run(Sweep);
         var root = Path.Combine(Paths.Temp, "recipe-" + Guid.NewGuid().ToString("N")[..12]);
         try
         {
@@ -583,7 +618,7 @@ public static class Recipes
                     var d = Paths.UniqueDir(work, name);
                     await Task.Run(() =>
                     {
-                        Output.CopyDir(f, d, job.Token);
+                        Output.CopyDir(f, d, job.Token, skip: root); // a folder that holds the temp folder mustn't copy into itself
                         foreach (var x in Directory.EnumerateFiles(d, "*", SearchOption.AllDirectories)) Writable(x);
                     }, job.Token);
                     current.Add(d);
@@ -596,11 +631,12 @@ public static class Recipes
                 }
             }
 
-            bool finished = false;
+            bool finished = false, changed = false;
             for (int s = 0; s < n; s++)
             {
                 job.Token.ThrowIfCancellationRequested();
                 job.Report(s, n);
+                Directory.SetLastWriteTimeUtc(root, DateTime.UtcNow); // still in use: Sweep leaves it alone
                 var id = r.Steps[s];
                 var action = StepsFor(current, file).FirstOrDefault(a => a.Id == id);
                 if (action == null && current.All(c => IsFormat(id, TypeOf(c)))) continue; // already that format
@@ -611,10 +647,11 @@ public static class Recipes
                     return;
                 }
                 bool last = s == n - 1;
-                // a clipboard petal at the end gets the finished files where they stay (a copied path has to keep working)
-                if (last && action.Quick)
+                // a last step that makes no file (the clipboard, a command that opens or uploads it) gets the results
+                // where they stay, so a copied path keeps working; or the originals, when no step changed anything
+                if (last && (action.Quick || Makes(action, TypeOf(current[0]), file) == NoFile))
                 {
-                    current = Finish(r, job, current, root);
+                    current = changed ? Finish(r, job, current, root) : [.. job.Inputs];
                     finished = true;
                 }
                 int at = s;
@@ -633,15 +670,21 @@ public static class Recipes
                     return;
                 }
                 var made = step.Outputs.Where(o => File.Exists(o) || Directory.Exists(o)).ToList();
-                if (last && (action.Quick || made.Count > 0))
+                if (last && (finished || made.Count > 0))
                 {
                     job.Title = step.Title;
-                    if (action.Quick) job.Summary = step.Summary;
+                    if (finished) job.Summary = step.Summary;
                 }
                 // a step with nothing to do ("already as small as it gets") hands its files on as they are
-                if (made.Count > 0 && !finished) current = made;
+                if (made.Count > 0 && !finished)
+                {
+                    current = made;
+                    changed = true;
+                }
             }
-            if (!finished) Finish(r, job, current, root);
+            // nothing changed at all: no copy of the original under the recipe's name
+            if (!finished && changed) Finish(r, job, current, root);
+            else if (!finished) job.Title = $"{r.Name}: nothing to change";
             job.Report(1);
         }
         finally
@@ -649,6 +692,20 @@ public static class Recipes
             try { if (Directory.Exists(root)) Directory.Delete(root, true); }
             catch (Exception ex) { Log.Error($"recipe {r.Name}: cleanup", ex); }
         }
+    }
+
+    static int _swept;
+
+    /// <summary>Work folders of recipes that never finished (the app was killed, Ctrl+C), once a day old.</summary>
+    static void Sweep()
+    {
+        try
+        {
+            foreach (var d in Directory.EnumerateDirectories(Paths.Temp, "recipe-*"))
+                if (Directory.GetLastWriteTimeUtc(d) < DateTime.UtcNow.AddDays(-1))
+                    try { Directory.Delete(d, true); } catch { }
+        }
+        catch (Exception ex) { Log.Error("recipes sweep", ex); }
     }
 
     /// <summary>A copy of a read-only original is read-only too: the work folder couldn't be removed on Windows, nor a result that is that copy.</summary>
@@ -660,6 +717,18 @@ public static class Recipes
 
     static void Stop(Job job, Recipe r, int step, string label, string why)
     {
+        // results already put in place for a last step that then failed: a recipe that stopped leaves nothing behind
+        // (the outputs are only ever what this run created; the originals are never among them)
+        foreach (var o in job.Outputs)
+        {
+            try
+            {
+                if (File.Exists(o)) File.Delete(o);
+                else if (Directory.Exists(o)) Directory.Delete(o, true);
+            }
+            catch (Exception ex) { Log.Error($"recipe {r.Name}: remove {o}", ex); }
+        }
+        job.Outputs.Clear();
         job.Failed = true;
         job.Title = $"{r.Name} stopped at step {step + 1}: {label}";
         job.Summary = why;

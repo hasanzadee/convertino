@@ -267,8 +267,11 @@ public sealed partial class Flyout
         };
         try
         {
+            // saving replaces a recipe of the same name: from here that has to be the one being changed, not another
+            if (Recipes.Find(r.Name) is { } other && (d.Was == null || Recipes.IdOf(other) != Recipes.IdOf(d.Was)))
+                throw new ArgumentException($"There's already a recipe called {other.Name}");
             Recipes.Save(r);
-            if (d.Was != null && Recipes.Find(d.Was) is { } old && Recipes.IdOf(old) != Recipes.IdOf(r)) Recipes.Remove(d.Was); // renamed
+            if (d.Was != null && Recipes.IdOf(d.Was) != Recipes.IdOf(r)) Recipes.Remove(d.Was); // renamed
             _draft = null;
         }
         catch (ArgumentException ex) { d.Error = ex.Message; }

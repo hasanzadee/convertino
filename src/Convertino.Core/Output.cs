@@ -54,8 +54,13 @@ public static class Output
     /// <summary>Petals whose results stay where they are made.</summary>
     static bool Keeps(PetalAction a) => a.Interactive || a.Quick || a.Id is "extract" or "join";
 
-    /// <summary>Where a petal's results go: its own choice (a recipe's), else the setting; always beside for those that keep their place.</summary>
-    public static string For(PetalAction a) => Keeps(a) ? Beside : Valid(a.Out) ?? Global;
+    /// <summary>
+    /// Where a petal's results go: <paramref name="chosen"/> (--out), else its own choice (a recipe's), else
+    /// <paramref name="fallback"/> (default: the setting; the command line passes "beside"). Always beside for those
+    /// that keep their place.
+    /// </summary>
+    public static string For(PetalAction a, string? fallback = null, string? chosen = null) =>
+        Keeps(a) ? Beside : Valid(chosen) ?? Valid(a.Out) ?? fallback ?? Global;
 
     /// <summary>The folder that results of a file in <paramref name="sourceDir"/> go to.</summary>
     public static string DirFor(string? place, string sourceDir) =>
@@ -63,13 +68,14 @@ public static class Output
 
     /// <summary>
     /// Move a finished job's results to <see cref="Job.Place"/> and point <see cref="Job.Outputs"/> at their new homes.
-    /// Only results that sit beside an input are moved (a recipe puts its own in place); a name that's taken gets " (2)".
-    /// A result that can't be moved stays where it is.
+    /// Only results that sit beside an input are moved, and only if that isn't already the place (a fixed folder the
+    /// original is in); a recipe puts its own results in place. A name that's taken gets " (2)". A result that can't be
+    /// moved stays where it is.
     /// </summary>
     public static void Place(Job job)
     {
         var place = job.Place;
-        if (place is null or Beside || job.Outputs.Count == 0 || Keeps(job.Action)) return;
+        if (place is null or Beside || job.Outputs.Count == 0 || Keeps(job.Action) || Recipes.IsRecipe(job.Action)) return;
         var cmp = OperatingSystem.IsLinux() ? StringComparer.Ordinal : StringComparer.OrdinalIgnoreCase;
         var dirs = job.Inputs.Select(i => Path.GetDirectoryName(Path.TrimEndingDirectorySeparator(i)) ?? "").ToHashSet(cmp);
         var inputs = job.Inputs.ToHashSet(cmp);
@@ -77,8 +83,9 @@ public static class Output
         {
             var o = job.Outputs[i];
             var dir = Path.GetDirectoryName(Path.TrimEndingDirectorySeparator(o)) ?? "";
-            if (!dirs.Contains(dir) || inputs.Contains(o)) continue;
-            try { job.Outputs[i] = MoveInto(o, DirFor(place, dir)); }
+            var target = DirFor(place, dir);
+            if (!dirs.Contains(dir) || inputs.Contains(o) || cmp.Equals(Path.TrimEndingDirectorySeparator(Path.GetFullPath(target)), dir)) continue;
+            try { job.Outputs[i] = MoveInto(o, target); }
             catch (Exception ex) { Log.Error($"save results to {place}", ex); }
         }
     }
@@ -93,10 +100,18 @@ public static class Output
         {
             var dst = Paths.UniqueDir(dir, name);
             try { Directory.Move(path, dst); }
-            catch (IOException) when (!SameRoot(path, dst))
+            catch (IOException)
             {
-                CopyDir(path, dst);
-                Directory.Delete(path, true);
+                // another drive, or on Linux / macOS another file system (EXDEV: /tmp is often tmpfs): copy, then
+                // remove the original; a half-made copy goes again
+                try { CopyDir(path, dst); }
+                catch
+                {
+                    try { if (Directory.Exists(dst)) Directory.Delete(dst, true); } catch { }
+                    throw;
+                }
+                try { Directory.Delete(path, true); }
+                catch (Exception ex) { Log.Error($"move {path}: the copy is done, the original stays", ex); }
             }
             return dst;
         }
@@ -105,11 +120,8 @@ public static class Output
         return file;
     }
 
-    static bool SameRoot(string a, string b) =>
-        string.Equals(Path.GetPathRoot(Path.GetFullPath(a)), Path.GetPathRoot(Path.GetFullPath(b)), StringComparison.OrdinalIgnoreCase);
-
-    /// <summary>Copy a folder tree, leaving out links (they could point anywhere).</summary>
-    public static void CopyDir(string src, string dst, CancellationToken ct = default)
+    /// <summary>Copy a folder tree, leaving out links (they could point anywhere) and <paramref name="skip"/> (the folder being copied into, when it's inside).</summary>
+    public static void CopyDir(string src, string dst, CancellationToken ct = default, string? skip = null)
     {
         Directory.CreateDirectory(dst);
         foreach (var f in Directory.EnumerateFiles(src))
@@ -121,7 +133,8 @@ public static class Output
         foreach (var d in Directory.EnumerateDirectories(src))
         {
             if (new DirectoryInfo(d).LinkTarget != null) continue;
-            CopyDir(d, Path.Combine(dst, Path.GetFileName(d)), ct);
+            if (skip != null && string.Equals(Path.GetFullPath(d), Path.GetFullPath(skip), OperatingSystem.IsLinux() ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase)) continue;
+            CopyDir(d, Path.Combine(dst, Path.GetFileName(d)), ct, skip);
         }
     }
 }
