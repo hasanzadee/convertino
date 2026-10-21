@@ -16,6 +16,8 @@ public static class Icons
         // image tools
         ["send"] = "", ["image"] = "", ["squareimg"] = "", ["rounded"] = "", ["palette"] = "",
         ["globe"] = "", ["qr"] = "", ["grid"] = "", ["slideshow"] = "", ["compare"] = "",
+        // drops out of a browser
+        ["download"] = "\uE896",
     };
 
     public static string? Glyph(string? key) => key != null && Map.TryGetValue(key, out var g) ? g : null;

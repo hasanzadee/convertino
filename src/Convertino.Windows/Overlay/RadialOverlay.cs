@@ -76,6 +76,8 @@ public sealed class OverlayController
     bool _helperEntered;
     RECT _placed;
     int _session;
+    // a drag out of a browser: links, pictures or virtual files instead of paths
+    WebDrop? _web;
 
     public OverlayController(GlobalInput input)
     {
@@ -160,6 +162,7 @@ public sealed class OverlayController
     }
 
     internal FlowerView DevView => _win.View;
+    internal static string[]? DevFiles(IDataObject data) => FilesOf(data);
     internal string DevRing => _pages == null ? "closed" : $"{_pager.Page + 1}/{_pager.Count} {_pager.Name}";
 
     // ---------- show / hide ----------
@@ -193,15 +196,15 @@ public sealed class OverlayController
         return new RECT { Left = x, Top = y, Right = x + size, Bottom = y + size };
     }
 
-    void Bloom(IReadOnlyList<string> files)
+    void Bloom(IReadOnlyList<string> files, WebDrop? web = null)
     {
         _seedTimeout.Stop();
         _files = files;
-        _pages = Catalog.For(files);
+        _pages = web?.Pages() ?? Catalog.For(files);
         _pager.Reset(_pages);
         var v = _win.View;
-        v.HubTitle = files.Count == 1 ? Paths.HumanSize(Paths.SizeOf(files[0])) : $"{files.Count} items";
-        v.HubSub = files.Count == 1 ? _pages.Title : Paths.HumanSize(files.Sum(Paths.SizeOf));
+        v.HubTitle = web?.HubTitle ?? (files.Count == 1 ? Paths.HumanSize(Paths.SizeOf(files[0])) : $"{files.Count} items");
+        v.HubSub = web?.HubSub ?? (files.Count == 1 ? _pages.Title : Paths.HumanSize(files.Sum(Paths.SizeOf)));
         v.HubBadge = _pages.Badge;
         v.SetMode(HubMode.Info);
         v.SetPages(_pager.Count, 0);
@@ -257,6 +260,7 @@ public sealed class OverlayController
         _input.Paging = null;
         _files = [];
         _pages = null;
+        _web = null;
         _pager.Clear();
     }
 
@@ -290,8 +294,10 @@ public sealed class OverlayController
         if (_state == State.Seed)
         {
             var files = FilesOf(e.Data);
-            if (files == null || files.Length == 0) { e.Effects = DragDropEffects.None; Hide(); return; }
-            Bloom(files);
+            _web = ComDrag.Read(e.Data, files); // null for an ordinary file drag
+            if (_web != null) Bloom(_web.Files, _web);
+            else if (files == null || files.Length == 0) { e.Effects = DragDropEffects.None; Hide(); return; }
+            else Bloom(files);
         }
         UpdateHover(e.GetPosition(_win));
         _described = int.MinValue;
@@ -334,6 +340,8 @@ public sealed class OverlayController
         if (_helperEntered) { Shell.HelperDrop(e.Data, Win32.Cursor, (int)e.Effects); _helperEntered = false; }
         if (_state != State.Drag) { Hide(); return; }
         int idx = _win.View.HitTestPetal(e.GetPosition(_win));
+        // a browser's virtual files and pictures live only as long as the drop: copy them out now
+        if (_web != null && idx >= 0 && idx < _win.View.CurrentActions.Count) _web.Grab(new ComDrag(e.Data));
         // the OLE Drop call is synchronous for Explorer — return immediately, work async
         Launch(idx);
     }
@@ -392,6 +400,8 @@ public sealed class OverlayController
         if (idx < 0 || idx >= actions.Count) { Hide(); return; }
         var action = actions[idx];
         var files = _files;
+        // from a browser: the file first (out of the drag, or downloaded), kept in Downloads, then the petal on it there
+        if (_web != null) action = _web.Wrap(action);
         var where = Win32.Cursor;
         _state = State.Leaving;
         _input.Paging = null;

@@ -99,6 +99,18 @@ static class Dev
     }
 
     /// <summary>
+    /// Convertino.exe --browser-drop-selftest outDir: drags laid out the way Chrome, Edge and Firefox lay them out (virtual
+    /// files as HGLOBAL or IStream, DownloadURL, x-moz-url, CF_HTML, their CF_HDROP temp copies, raw PNG / DIB) handed to WPF
+    /// as foreign OLE data objects, read by the overlay's own code and dropped on petals against a local web server
+    /// (<see cref="WebSelfTest"/>). Nothing is shown, nothing leaves localhost, results go to outDir\Downloads. Returns the failures.
+    /// </summary>
+    public static Task<int> BrowserDropSelfTest(string outDir) => WebSelfTest.Run(outDir, "windows", c =>
+    {
+        var data = new DataObject(new FakeBrowserDrag(c));
+        return (new ComDrag(data), OverlayController.DevFiles(data));
+    });
+
+    /// <summary>
     /// Convertino.exe --paging-selftest outDir: feeds the real hook callbacks (GlobalInput) the WM_MOUSEWHEEL, VK_TAB and Shift
     /// data Windows sends mid-drag and checks that the real overlay (OverlayController) cycles every ring, that Tab and the
     /// wheel over the flower are swallowed and nothing else is (Alt/Win/Ctrl+Tab, the wheel elsewhere, half a Tab press). Touches nothing on the desktop: no hooks are installed, no

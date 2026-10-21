@@ -68,6 +68,13 @@ public partial class App : Application
             return;
         }
 
+        if (e.Args.Length == 2 && e.Args[0] == "--browser-drop-selftest")
+        {
+            AttachConsole(-1);
+            Shutdown(await Dev.BrowserDropSelfTest(System.IO.Path.GetFullPath(e.Args[1])));
+            return;
+        }
+
         if (e.Args.Length >= 2 && e.Args[0] == "--snapshot")
         {
             Settings.Load();

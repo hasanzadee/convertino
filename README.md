@@ -34,6 +34,7 @@ Converting a file usually means opening an app, finding *Export…*, picking a f
 |---|---|
 | ✿ **Rings** | **Convert** (formats), **Tools** (editors & actions) and, for images, **More tools** (one tap: Half, Full HD, B&W) and **More formats** (TIFF, ICO, BMP, JPEG XL, QOI…). Tap the key again, press <kbd>Tab</kbd> or turn the mouse wheel mid-drag to flip between them. |
 | 🖼 **Images** | PNG · JPG · WEBP · AVIF · GIF · PDF · TIFF · ICO · BMP · JPEG XL · QOI, from anything ImageMagick reads (HEIC, PSD, RAW, SVG…); **Half**, **Full HD** (fit in 1920 × 1080) and **B&W** in one tap |
+| 🌐 **From the browser** | Drag a picture, a file or a link straight out of Chrome, Edge, Firefox or Safari and tap <kbd>Shift</kbd>: **Save** it, convert it, edit it — or for a link **Download**, **QR** and **Shortcut**. Results land in Downloads, marked as coming from the internet |
 | 📄 **Documents** | PDF ⇄ DOCX, DOCX/XLSX/PPTX → PDF, slides → PNG, Markdown → HTML/PDF/DOCX (Microsoft Office or LibreOffice) |
 | 🧾 **Data** | JSON ⇄ YAML ⇄ TOML ⇄ XML, JSON / CSV ⇄ XLSX (every sheet), CSV / XLSX → Markdown and HTML tables, JSON Lines, Pretty / Minify for JSON, XML and CSS; no office suite needed ([rules](docs/data-formats.md)) |
 | 🎞 **Video & audio** | MP4 · WEBM · GIF · MOV · MKV · MP3 · WAV · FLAC · OGG · OPUS · M4A, plus compress, 720p, mute, grab frame, loudness, trim silence |
@@ -154,6 +155,20 @@ The wheel flips the rings while the pointer is over the flower; a touchpad swipe
 
 While dragging over a petal, the caption under the Explorer drag image says what will happen (*Convert to DOCX*, *Crop*…). Convertino always copies — even though <kbd>Shift</kbd> normally means *move*, the source file is never touched.
 
+### Dragging from the browser
+
+Drag a picture, a file link or any link out of a web page, tap <kbd>Shift</kbd> and the flower opens just like for a file. Its petals are picked before anything is downloaded, from what the drag says (the picture's type, the file name, the link's extension): a picture gets **Save** followed by the image rings, a PDF link gets **Save** and the PDF petals, and a link to a page gets **Download** · **QR** (a QR code of the link) · **Shortcut** (`.url` on Windows, `.webloc` on macOS, a `.desktop` link on Linux).
+
+Drop on a petal and Convertino takes the file the browser hands over with the drag (most pictures need no download at all), or downloads it: http, https and `data:` only, up to 2 GB, no cookies or passwords sent, every redirect checked, with progress and cancel on the card. The real type is read from the file itself, so a `photo.jpg` that is a PNG becomes `photo.png`, and file names from the server lose folders, device names (`CON`) and look-alike tricks. The file is kept in your **Downloads** folder and the petal's result lands beside it; both are marked as coming from the internet (Mark-of-the-Web on Windows, quarantine on macOS, `user.xdg.origin.url` on Linux). A page that needs a sign-in says so: *save the file first* and drag it from there.
+
+| Browser | Windows | Linux (X11) | macOS *(beta)* |
+|---|---|---|---|
+| **Chrome · Edge** | pictures (taken from the drag), links, attachments that pages offer for dragging (`DownloadURL`) | pictures, links | pictures (file promise, else the picture's address), links |
+| **Firefox** | pictures (taken from the drag), links | pictures (taken from the drag), links | pictures, links |
+| **Safari** | | | pictures (file promise, else the picture's address), links |
+
+On Windows, files dragged out of Outlook (attachments) open the flower the same way.
+
 <div align="center">
 <img src="docs/addbg-example.png" width="720" alt="Example output of the Add BG editor: a screenshot on a gradient with a window frame, rounded corners and shadow" />
 <br/><sub>Add BG: any screenshot on a gradient, with padding, corners, shadow and an optional window frame</sub>
@@ -184,6 +199,8 @@ While dragging over a petal, the caption under the Explorer drag image says what
 | **Folder** | Zip · 7Z · TAR.GZ · Duplicates · Path · Copy | |
 | **Anything else** | Zip · Path · SHA-256 · Base64 | Split into 25 / 50 / 100 MB… *(files over 10 MB)* · MD5 · SHA-1 · SHA-512 |
 | **Several files** | the ring for their kind, plus Duplicates; mixed kinds: Zip · 7Z · TAR.GZ · Duplicates · Path · Copy | |
+| **Picture or file from a browser** | Save, then the ring for its kind | the ring for its kind |
+| **Link from a browser** | Download · QR · Shortcut | |
 
 Images (one or several) also get **More tools**: Half · Full HD · B&W, and **More formats**: HEIC *(where the codec allows)* · TIFF · ICO · BMP · JXL · QOI. Half, Full HD and B&W keep the source's format and write beside it: `photo (2016x1512).jpg`, `photo (1920x1080).jpg`, `photo (grayscale).jpg`. Full HD only ever shrinks (portrait images fit in 1080 × 1920), and animated GIF / WebP stay animated. No ring shows more than 10 petals; a longer list carries on in a second ring of the same name.
 
@@ -210,6 +227,8 @@ convertino menu photo.png notes.md                # open the flower for them (us
 convertino model install | status | remove        # the AI cut-out model
 convertino watch ~/Inbox --to pdf                 # convert every new file there, until Ctrl+C
 convertino watch add ~/Inbox --to webp            # same, run by the desktop app (also: watch list | remove)
+convertino fetch https://example.com/a.heic --to jpg   # download into Downloads (same checks as a browser drop), then convert
+convertino fetch https://example.com/report --out .    # --out: another folder; the name comes from the server or the link
 ```
 
 On Windows the executable is `Convertino.exe` (in `%LOCALAPPDATA%\Programs\Convertino`); on macOS the installer puts a `convertino` wrapper for `~/Applications/Convertino.app` in `~/.local/bin`.

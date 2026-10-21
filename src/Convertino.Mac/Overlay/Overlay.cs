@@ -55,6 +55,8 @@ public sealed class OverlayController
     readonly RingPager _pager = new();
     int _session;
     PixelRect _rect;
+    // a drag out of a browser: links, pictures or file promises instead of paths
+    WebDrop? _web;
     bool _pinned = Environment.GetEnvironmentVariable("CONVERTINO_PIN") != null;
 
     public TopLevel Host => _win;
@@ -214,15 +216,15 @@ public sealed class OverlayController
         return ms.ToArray();
     }
 
-    void Bloom(IReadOnlyList<string> files)
+    void Bloom(IReadOnlyList<string> files, WebDrop? web = null)
     {
         _seedTimeout.Stop();
         _files = files;
-        _pages = Catalog.For(files);
+        _pages = web?.Pages() ?? Catalog.For(files);
         _pager.Reset(_pages);
         var v = _win.View;
-        v.HubTitle = files.Count == 1 ? Paths.HumanSize(Paths.SizeOf(files[0])) : $"{files.Count} items";
-        v.HubSub = files.Count == 1 ? _pages.Title : Paths.HumanSize(files.Sum(Paths.SizeOf));
+        v.HubTitle = web?.HubTitle ?? (files.Count == 1 ? Paths.HumanSize(Paths.SizeOf(files[0])) : $"{files.Count} items");
+        v.HubSub = web?.HubSub ?? (files.Count == 1 ? _pages.Title : Paths.HumanSize(files.Sum(Paths.SizeOf)));
         v.HubBadge = _pages.Badge;
         v.SetMode(HubMode.Info);
         v.SetPages(_pager.Count, 0);
@@ -274,6 +276,7 @@ public sealed class OverlayController
         if (_input != null) _input.Hot = false;
         _files = [];
         _pages = null;
+        _web = null;
         _pager.Clear();
         if (wasActive) MacWindow.Deactivate();
     }
@@ -302,8 +305,10 @@ public sealed class OverlayController
         if (_state == State.Seed)
         {
             var files = FilesOf(e);
-            if (files == null || files.Count == 0) { e.DragEffects = DragDropEffects.None; Hide(); return; }
-            Bloom(files);
+            _web = MacDrag.Read(files); // null for an ordinary file drag
+            if (_web != null) Bloom(_web.Files, _web);
+            else if (files == null || files.Count == 0) { e.DragEffects = DragDropEffects.None; Hide(); return; }
+            else Bloom(files);
         }
         Feedback(e);
     }
@@ -334,7 +339,10 @@ public sealed class OverlayController
         _releaseTimer.Stop();
         if (_state != State.Drag) { Hide(); return; }
         e.DragEffects = DragDropEffects.Copy;
-        Launch(_win.View.HitTestPetal(e.GetPosition(_win)));
+        int idx = _win.View.HitTestPetal(e.GetPosition(_win));
+        // what a browser drags lives only as long as the drop (file promises must be asked for now)
+        if (_web != null && idx >= 0 && idx < _win.View.CurrentActions.Count && MacDrag.Drag() is { } drag) _web.Grab(drag);
+        Launch(idx);
     }
 
     // ---------- click mode ----------
@@ -353,6 +361,8 @@ public sealed class OverlayController
         if (idx < 0 || idx >= actions.Count) { Hide(); return; }
         var action = actions[idx];
         var files = _files;
+        // from a browser: the file first (out of the drag, or downloaded), kept in Downloads, then the petal on it there
+        if (_web != null) action = _web.Wrap(action);
         var where = new ScreenPoint(_rect.X + _rect.Width / 2, _rect.Y + _rect.Height / 2);
         _state = State.Leaving;
         _seedTimeout.Stop();
