@@ -22,10 +22,10 @@ public sealed class Offer
     public void Closed(bool used)
     {
         if (TempInput != null) TryDelete(TempInput);
-        if (!used && Scratch != null) TryDelete(Scratch);
+        if (Scratch != null) ClipFlower.Release(Scratch, used);
     }
 
-    static void TryDelete(string p)
+    internal static void TryDelete(string p)
     {
         try { File.Delete(p); } catch (Exception ex) { Log.Error("offer cleanup", ex); }
     }
@@ -47,6 +47,9 @@ public static class ClipFlower
 
     static (string Hash, string Path)? _lastPicture;
 
+    /// <summary>Pasted pictures no petal has used yet, and how many open flowers show each (the shortcut pressed again while one closes).</summary>
+    static readonly Dictionary<string, int> Unused = [];
+
     /// <summary>The flower for this clipboard content, or null when there is nothing to offer.</summary>
     public static Offer? For(ClipContent? content) => content switch
     {
@@ -67,13 +70,39 @@ public static class ClipFlower
 
     static Offer ForPicture(byte[] png)
     {
-        // the same picture twice in a row (the shortcut pressed again): one file
         var hash = Convert.ToHexString(SHA256.HashData(png));
-        if (_lastPicture is { } last && last.Hash == hash && File.Exists(last.Path)) return PictureOffer(last.Path, "Clipboard", scratch: false);
-        var path = Captures.NewPath("Clipboard", "png");
-        File.WriteAllBytes(path, png);
-        _lastPicture = (hash, path);
-        return PictureOffer(path, "Clipboard", scratch: true);
+        string path;
+        bool scratch;
+        lock (Unused)
+        {
+            // the same picture twice in a row (the shortcut pressed again): one file, still removed if no flower uses it
+            if (_lastPicture is { } last && last.Hash == hash && File.Exists(last.Path))
+            {
+                path = last.Path;
+                scratch = Unused.ContainsKey(path);
+            }
+            else
+            {
+                path = Captures.NewPath("Clipboard", "png");
+                File.WriteAllBytes(path, png);
+                _lastPicture = (hash, path);
+                scratch = true;
+            }
+            if (scratch) Unused[path] = Unused.GetValueOrDefault(path) + 1;
+        }
+        return PictureOffer(path, "Clipboard", scratch);
+    }
+
+    /// <summary>A flower showing a pasted picture closed: a used picture is kept for good, an unused one goes when no other flower shows it.</summary>
+    internal static void Release(string path, bool used)
+    {
+        lock (Unused)
+        {
+            if (!Unused.TryGetValue(path, out int n)) return;
+            if (!used && n > 1) { Unused[path] = n - 1; return; }
+            Unused.Remove(path);
+            if (!used) Offer.TryDelete(path);
+        }
     }
 
     static Offer PictureOffer(string png, string what, bool scratch)

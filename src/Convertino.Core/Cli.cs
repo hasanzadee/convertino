@@ -178,7 +178,22 @@ public static class Cli
         {
             case Services.ClipContent.Files f:
             {
-                if (to != null) return await RunAction("to-" + to, f.Paths, o);
+                if (to != null)
+                {
+                    if (outDir == null) return await RunAction("to-" + to, f.Paths, o);
+                    var action = Catalog.All(f.Paths).FirstOrDefault(a => a.Id == "to-" + to && !a.Interactive);
+                    if (action == null) { o.WriteLine($"the copied files don't convert to {to}. Try: convertino actions {string.Join(' ', f.Paths.Select(Quote))}"); return 2; }
+                    var job = await Jobs.RunHeadless(action, f.Paths);
+                    foreach (var p in job.Outputs)
+                    {
+                        // results land beside their sources; --out moves them there
+                        var dst = Directory.Exists(p) ? Paths.UniqueDir(outDir, Path.GetFileName(p)) : Paths.Unique(outDir, Path.GetFileNameWithoutExtension(p), Path.GetExtension(p));
+                        if (File.Exists(p)) File.Move(p, dst); else if (Directory.Exists(p)) Directory.Move(p, dst);
+                        o.WriteLine(dst);
+                    }
+                    if (!string.IsNullOrEmpty(job.Summary)) o.WriteLine(job.Summary);
+                    return job.Failed ? 1 : 0;
+                }
                 foreach (var p in f.Paths)
                 {
                     if (outDir == null || !File.Exists(p)) { o.WriteLine(p); continue; }

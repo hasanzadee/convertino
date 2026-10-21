@@ -68,7 +68,7 @@ public sealed class App : Application
             // no drag needed: the clipboard's flower (Control+Option+X) and an area capture (Control+Option+A)
             var overlay = _overlay;
             MacInput pointer = _input;
-            _shortcuts = new ClipShortcuts(new CarbonHotkeys(), overlay.Open, () => MacPlatform.CaptureArea(() => pointer.Pointer));
+            _shortcuts = new ClipShortcuts(new CarbonHotkeys(), overlay.Open, () => MacPlatform.CaptureArea(() => pointer.Pointer), overlay.CloseIfOpen);
         }
         if (!selftest)
         {

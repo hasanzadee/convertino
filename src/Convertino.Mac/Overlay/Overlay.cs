@@ -132,7 +132,7 @@ public sealed class OverlayController
     {
         if (files.Count == 0) return;
         Log.Info($"menu: {files.Count} item(s)");
-        if (_state != State.Hidden) { _state = State.Leaving; FinishHide(); }
+        if (_state != State.Hidden) { _state = State.Leaving; FinishHide(); _offer?.Closed(used: false); _offer = null; }
         var pt = _input?.Pointer ?? CenterOfPrimary();
         ShowAt(pt, State.Click);
         Bloom(files);
@@ -152,6 +152,14 @@ public sealed class OverlayController
         _offer = offer;
         Bloom(offer.Files, offer);
         _win.Activate();
+    }
+
+    /// <summary>Close the flower if it is open (before a screen capture, so it isn't in the picture); true if it was.</summary>
+    public bool CloseIfOpen()
+    {
+        if (!Visible) return false;
+        Hide();
+        return true;
     }
 
     ScreenPoint CenterOfPrimary()

@@ -95,11 +95,8 @@ public sealed class LinuxPlatform : IPlatform
     {
         if (ClipboardHost?.Clipboard is { } cb)
         {
-            try
-            {
-                var c = await Dispatcher.UIThread.InvokeAsync(() => ReadAvalonia(cb));
-                if (c != null) return c;
-            }
+            try { return await Dispatcher.UIThread.InvokeAsync(() => ReadAvalonia(cb)); }
+            // the session's tools may still manage
             catch (Exception ex) { Log.Error("clipboard (Avalonia)", ex); }
         }
         return await Task.Run(ReadWithTools);

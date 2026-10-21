@@ -161,6 +161,14 @@ public sealed class OverlayController
         Bloom(offer.Files, offer);
     }
 
+    /// <summary>Close the flower if it is open (before a screen capture, so it isn't in the picture); true if it was.</summary>
+    public bool CloseIfOpen()
+    {
+        if (!Visible) return false;
+        Hide();
+        return true;
+    }
+
     // ---------- dev (Convertino.exe --paging-selftest) ----------
 
     /// <summary>Open the flower for files as if mid-drag over <paramref name="at"/>, without showing its window.</summary>

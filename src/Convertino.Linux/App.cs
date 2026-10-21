@@ -83,7 +83,7 @@ public sealed class App : Application
                 _input.Escape += () => RegionCapture.Active?.Cancel();
             }
             var capInput = _input;
-            _shortcuts = new ClipShortcuts(_hotkeys, overlay.Open, () => RegionCapture.Run(capInput, overlay.Host, unmanaged));
+            _shortcuts = new ClipShortcuts(_hotkeys, overlay.Open, () => RegionCapture.Run(capInput, overlay.Host, unmanaged), overlay.CloseIfOpen);
         }
         if (!selftest)
         {

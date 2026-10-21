@@ -16,6 +16,7 @@ public sealed class Shortcuts : IDisposable
 
     readonly OverlayController _overlay;
     readonly Hotkeys _keys = new();
+    bool _capturing; // from the first await on, so a quick second press can't start another capture
 
     public Shortcuts(OverlayController overlay, GlobalInput input)
     {
@@ -65,10 +66,12 @@ public sealed class Shortcuts : IDisposable
     /// <summary>Freeze the screens, let the user drag an area, save it to Pictures\Convertino, bloom its flower where the mouse came up.</summary>
     public async void Capture(int delayMs)
     {
-        if (!Settings.Current.Enabled || RegionCapture.Active != null) return;
+        if (!Settings.Current.Enabled || _capturing || RegionCapture.Active != null) return;
+        _capturing = true;
         try
         {
             if (delayMs > 0) await Task.Delay(delayMs);
+            if (_overlay.CloseIfOpen()) await Task.Delay(320); // gone before the screens are frozen
             var r = await RegionCapture.Run();
             if (r == null) return;
             var path = Captures.NewPath("Screenshot", "png");
@@ -82,6 +85,7 @@ public sealed class Shortcuts : IDisposable
             Log.Error("capture", ex);
             Card("Couldn't capture the screen", Jobs.Friendly(ex), "capture");
         }
+        finally { _capturing = false; }
     }
 
     static string Describe(ClipContent? c) => c switch

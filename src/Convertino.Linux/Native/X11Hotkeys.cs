@@ -24,14 +24,16 @@ public sealed unsafe class X11Hotkeys : IHotkeys, IDisposable
     [DllImport(Lib)] static extern int XPending(IntPtr dpy);
     [DllImport(Lib)] static extern int XNextEvent(IntPtr dpy, byte* ev);
     [DllImport(Lib)] static extern IntPtr XSetErrorHandler(IntPtr handler);
+    [DllImport(Lib)] static extern int XkbSetDetectableAutoRepeat(IntPtr dpy, int detectable, out int supported);
 
     const uint ShiftMask = 1, LockMask = 2, ControlMask = 4, Mod1Mask = 8, Mod2Mask = 16, Mod4Mask = 64;
-    const int KeyPress = 2, GrabModeAsync = 1, BadAccess = 10;
+    const int KeyPress = 2, KeyRelease = 3, GrabModeAsync = 1, BadAccess = 10;
     static readonly uint[] LockVariants = [0, LockMask, Mod2Mask, LockMask | Mod2Mask];
 
     readonly Action<Action> _post;
     readonly object _gate = new();
     readonly List<(int Code, uint Mods, Action Action)> _keys = [];
+    readonly Dictionary<int, (ulong Press, ulong Release)> _times = []; // X times of each grabbed key's last press and release (event thread only)
     IntPtr _dpy;
     Thread? _thread;
     volatile bool _run = true;
@@ -42,6 +44,8 @@ public sealed unsafe class X11Hotkeys : IHotkeys, IDisposable
     {
         _dpy = XOpenDisplay(IntPtr.Zero);
         if (_dpy == IntPtr.Zero) return false;
+        // a held shortcut auto-repeats: with this, as presses only (no fake releases between them), so one hold fires once
+        try { XkbSetDetectableAutoRepeat(_dpy, 1, out _); } catch (EntryPointNotFoundException) { }
         _thread = new Thread(Loop) { IsBackground = true, Name = "Convertino X11 shortcuts" };
         _thread.Start();
         return true;
@@ -132,10 +136,19 @@ public sealed unsafe class X11Hotkeys : IHotkeys, IDisposable
                 while (_run && XPending(_dpy) > 0)
                 {
                     XNextEvent(_dpy, ev);
-                    if (*(int*)ev != KeyPress) continue;
+                    int type = *(int*)ev;
                     // XKeyEvent on LP64: state at 80, keycode at 84
-                    uint state = *(uint*)(ev + 80) & ~(LockMask | Mod2Mask);
                     int code = (int)*(uint*)(ev + 84);
+                    ulong time = *(ulong*)(ev + 56);
+                    _times.TryGetValue(code, out var t);
+                    if (type == KeyRelease) { _times[code] = (t.Press, time); continue; }
+                    if (type != KeyPress) continue;
+                    _times[code] = (time, t.Release);
+                    // a held key auto-repeats: as presses only (detectable auto-repeat), or as a release + press at the same
+                    // moment where the server can't. Either is the same keystroke; a lost release mutes it for 1.5 s at most.
+                    bool repeat = t.Press != 0 && (t.Release > t.Press ? time - t.Release <= 30 : time - t.Press < 1500);
+                    if (repeat) continue;
+                    uint state = *(uint*)(ev + 80) & ~(LockMask | Mod2Mask);
                     foreach (var k in _keys)
                         if (k.Code == code && k.Mods == (state & (ShiftMask | ControlMask | Mod1Mask | Mod4Mask))) fire = k.Action;
                 }

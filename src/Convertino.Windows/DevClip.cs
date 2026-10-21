@@ -103,7 +103,19 @@ static class DevClip
         {
             Thread.Sleep(1100); // a second later: the PNG must come out byte for byte the same
             var again = ClipFlower.For(ClipReader.Read(cases[2].Data));
-            Check(again?.Files[0] == lastPicture.Files[0] && again.Scratch == null, $"same picture again → same file ({Path.GetFileName(lastPicture.Files[0])}), kept");
+            var f = lastPicture.Files[0];
+            Check(again?.Files[0] == f && again.Scratch == f, $"same picture again → same file ({Path.GetFileName(f)})");
+            // two flowers on one unused picture (the shortcut pressed again while the first closes): it goes with the last one
+            again?.Closed(used: false);
+            bool kept = File.Exists(f);
+            lastPicture.Closed(used: false);
+            Check(kept && !File.Exists(f), "shared unused picture outlives the first flower, removed with the second");
+            // used once: kept for good, even if another flower on it closes unused afterwards
+            var used = ClipFlower.For(ClipReader.Read(cases[2].Data))!;
+            var other = ClipFlower.For(ClipReader.Read(cases[2].Data))!;
+            used.Closed(used: true);
+            other.Closed(used: false);
+            Check(used.Files[0] == other.Files[0] && File.Exists(used.Files[0]), $"a picture a petal used stays ({Path.GetFileName(used.Files[0])})");
         }
 
         // text petals write real files into the captures folder

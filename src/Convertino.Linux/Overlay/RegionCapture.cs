@@ -29,6 +29,7 @@ public sealed class RegionCapture
     readonly double _scale;
     readonly Window _win;
     readonly RegionView _view;
+    readonly WriteableBitmap _frozen;
     readonly TaskCompletionSource<(string, ScreenPoint?)?> _done = new();
     PixelPoint _cursor;
     PixelPoint? _start;
@@ -72,6 +73,7 @@ public sealed class RegionCapture
         using (var fb = bmp.Lock())
             for (int y = 0; y < virt.Height; y++)
                 System.Runtime.InteropServices.Marshal.Copy(px, y * virt.Width * 4, fb.Address + y * fb.RowBytes, virt.Width * 4);
+        _frozen = bmp;
         _view = new RegionView(this, bmp);
         _win = new Window
         {
@@ -126,6 +128,7 @@ public sealed class RegionCapture
     {
         if (Active == this) Active = null;
         _win.Close();
+        _frozen.Dispose();
     }
 
     async void Finish(PixelRect area)

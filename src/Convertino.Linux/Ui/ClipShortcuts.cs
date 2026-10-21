@@ -22,16 +22,19 @@ public sealed class ClipShortcuts
     readonly IHotkeys? _keys;
     readonly Action<Offer, ScreenPoint?> _open;
     readonly Func<Task<(string Png, ScreenPoint? At)?>> _capture;
+    readonly Func<bool> _closeFlower;
     bool _capturing;
 
     /// <param name="keys">Null where global shortcuts can't work (Wayland without X11 focus, no display): only the menu items and "convertino menu --clipboard / --capture" do.</param>
     /// <param name="open">Show the flower for an offer, at a point or at the pointer.</param>
     /// <param name="capture">Let the user pick an area; the saved PNG and where the pick ended, null when cancelled; throws with a message for the card.</param>
-    public ClipShortcuts(IHotkeys? keys, Action<Offer, ScreenPoint?> open, Func<Task<(string Png, ScreenPoint? At)?>> capture)
+    /// <param name="closeFlower">Close an open flower before a capture (true if one was open).</param>
+    public ClipShortcuts(IHotkeys? keys, Action<Offer, ScreenPoint?> open, Func<Task<(string Png, ScreenPoint? At)?>> capture, Func<bool> closeFlower)
     {
         _keys = keys;
         _open = open;
         _capture = capture;
+        _closeFlower = closeFlower;
         Current = this;
         Hotkey.SettingsChanged += () => Apply(announce: true);
         Apply(announce: true);
@@ -89,6 +92,7 @@ public sealed class ClipShortcuts
         try
         {
             if (delayMs > 0) await Task.Delay(delayMs);
+            if (_closeFlower()) await Task.Delay(320); // gone before the screen is frozen
             var shot = await _capture();
             if (shot is not { } r) return;
             Log.Info($"capture saved: {r.Png}");

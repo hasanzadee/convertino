@@ -58,8 +58,8 @@ public static class ClipReader
     {
         foreach (var f in new[] { "PNG", "image/png" })
             if (Bytes(d, f) is { Length: > 8 } png) return png;
-        // CF_DIB, then CF_DIBV5 ("Format17"); Windows makes each from the other, and from CF_BITMAP
-        foreach (var f in new[] { DataFormats.Dib, "Format17" })
+        // CF_DIB, then CF_DIBV5 (id 17: WPF maps its name to that id only once asked by number); Windows makes each from the other, and from CF_BITMAP
+        foreach (var f in new[] { DataFormats.Dib, DataFormats.GetDataFormat(17).Name })
             if (Bytes(d, f) is { Length: > 40 } dib)
                 try { return Captures.DibToPng(dib); }
                 catch (Exception ex) { Log.Error($"clipboard {f}", ex); }
