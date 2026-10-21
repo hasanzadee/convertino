@@ -51,6 +51,7 @@ Converting a file usually means opening an app, finding *Export…*, picking a f
 | 🧰 **Image tools** | One tap, no questions: **Messenger** (≤ 2560 px JPEG, GPS gone), **Square** (blurred fill), **Rounded** (corners + shadow), **Palette**, **Favicon** set, **Copy** the picture itself, **Read QR** / make a **QR** from a text or link file; for several images **Contact sheet**, **Slideshow** (GIF + WEBP) and **Compare** |
 | 📦 **Everything else** | Copy path, data URI |
 | 🎨 **Themes** | Catppuccin **Mocha** & **Latte**, **Sunset**, **Graphite** |
+| 🌍 **Languages** | English · Русский · Azərbaycanca · Türkçe · Українська · Deutsch · Español · Français · Português (Brasil) · 简体中文 · 日本語 — follows your system language, switch any time under **Language** in the panel or the tray / menu-bar menu |
 | 📊 **Activity** | The tray / menu-bar panel charts your last two weeks: files handled, space saved, day streak, favourite actions |
 | ⌨️ **CLI** | `convertino convert IMG_0042.HEIC --to jpg` — the same engine without the UI |
 
@@ -147,6 +148,8 @@ convertino model install
 | Right-click → **Convertino** *(Linux file managers)* | Same flower for the selected files |
 | Right-click → **Quick Actions → Convertino** *(macOS Finder)* | Same flower for the selected files |
 | Click the result card | Open the file · folder icon reveals it · × cancels a running job |
+
+The interface speaks your system's language when there's a translation for it (English otherwise). To pick another one, open **Language** in the tray panel or the tray / menu-bar menu: the panel, the menus and the next flower switch at once, no restart. The command line always speaks English.
 
 <kbd>Shift</kbd> is the default. To use another key, pick it under **Open with** in the tray panel or the tray / menu-bar menu: <kbd>Shift</kbd>, <kbd>Shift</kbd> twice, <kbd>Ctrl</kbd> or <kbd>Alt</kbd> (<kbd>⌃ Control</kbd> / <kbd>⌥ Option</kbd> on macOS). The gestures above then use that key.
 

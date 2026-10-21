@@ -123,7 +123,7 @@ public static class Watches
         ui.Post(() =>
         {
             // Recent is read by the panels on the UI thread: change it there too
-            if (job.Outputs.Count > 0) Settings.Current.AddRecent(job.Outputs[0], L.English(job.Action.Verb));
+            if (job.Outputs.Count > 0) Settings.Current.AddRecent(job.Outputs[0], job.Action.EnglishVerb);
             if (!Settings.Current.Notifications || job.Outputs.Count == 0) return;
             var view = ui.Show(job.Action, job.Inputs, new ScreenPoint(0, 0));
             var title = job.Title ?? (job.Outputs.Count == 1 ? System.IO.Path.GetFileName(job.Outputs[0]) : L.N(job.Outputs.Count, "{0} file ready", "{0} files ready"));

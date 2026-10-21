@@ -58,6 +58,8 @@ jobs:
           printf 'a :hover { color : red } /* x */\n' > site.css
           ./dist/linux-x64/convertino run minify site.css
           grep -qx 'a :hover{color:red}' 'site (min).css'
+      - name: UI translations
+        run: ./dist/linux-x64/convertino lang-check
       - name: Archives and file tools
         run: bash tools/files-smoke.sh dist/linux-x64/convertino
 

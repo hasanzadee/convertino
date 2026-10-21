@@ -497,7 +497,8 @@ public sealed class Flyout : Window
             {
                 CornerRadius = new CornerRadius(8), Padding = new Thickness(4, 4, 4, 5), Margin = new Thickness(2), Cursor = Cursors.Hand,
                 Background = on ? new LinearGradientBrush(T.AccentA, T.AccentB, 0) : B(A(T.SubText, .12)),
-                Child = new TextBlock { Text = label, FontFamily = TextF, FontSize = 11.5, Foreground = B(on ? T.AccentText : T.Text), HorizontalAlignment = HorizontalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis },
+                // long names ("Português (Brasil)") shrink to fit rather than lose their end
+                Child = new Viewbox { StretchDirection = StretchDirection.DownOnly, Child = new TextBlock { Text = label, FontFamily = TextF, FontSize = 11.5, Foreground = B(on ? T.AccentText : T.Text) } },
             };
             pill.MouseLeftButtonUp += (_, e) =>
             {

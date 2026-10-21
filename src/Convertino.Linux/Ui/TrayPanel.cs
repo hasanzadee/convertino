@@ -613,10 +613,11 @@ public sealed class TrayPanel : Window
             {
                 CornerRadius = new CornerRadius(8), Padding = new Thickness(4, 4, 4, 5), Margin = new Thickness(2),
                 Background = rest, Cursor = new Cursor(StandardCursorType.Hand),
-                Child = new TextBlock
+                // long names ("Português (Brasil)") shrink to fit rather than lose their end
+                Child = new Viewbox
                 {
-                    Text = label, FontSize = 11.5, HorizontalAlignment = HorizontalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis,
-                    Foreground = B(on ? T.AccentText : T.Text), FontWeight = on ? FontWeight.SemiBold : FontWeight.Normal,
+                    StretchDirection = StretchDirection.DownOnly,
+                    Child = new TextBlock { Text = label, FontSize = 11.5, Foreground = B(on ? T.AccentText : T.Text), FontWeight = on ? FontWeight.SemiBold : FontWeight.Normal },
                 },
             };
             if (!on)

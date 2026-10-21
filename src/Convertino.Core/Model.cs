@@ -13,20 +13,26 @@ public enum Kind { Image, Pdf, Word, Excel, Slides, Text, Markdown, Video, Audio
 public sealed class PetalAction
 {
     public required string Id { get; init; }
-    public required string Label { get; init; }
+    public required string Label { get; init { field = value; EnglishLabel = L.English(value); } }
     /// <summary>Small caption under a format label, e.g. "lossless".</summary>
     public string Hint { get; init; } = "";
     /// <summary>Icon key for tools ("crop", "compress" …); null for format petals. Each UI maps keys to glyphs.</summary>
     public string? Icon { get; init; }
     /// <summary>Full sentence, e.g. "Convert to PNG" — used for progress cards and drag captions.</summary>
-    public required string Verb { get; init; }
+    public required string Verb { get; init { field = value; EnglishVerb = L.English(value); } }
     /// <summary>Very short hub caption while hovering, e.g. "→ PNG".</summary>
-    public string Short { get; init; } = "";
+    public string Short { get; init { field = value; EnglishShort = L.English(value); } } = "";
     /// <summary>Opens its own window instead of running as a background job.</summary>
     public bool Interactive { get; init; }
     /// <summary>Finishes instantly (clipboard etc.) — no progress card.</summary>
     public bool Quick { get; init; }
     public required Func<Job, Task> Run { get; init; }
+
+    // the English of Label / Verb / Short, caught as they're set (straight after L.T made them): Recent and stats.json save
+    // these, so they don't split per UI language, even where two English texts share one translation
+    public string EnglishLabel { get; private init; } = "";
+    public string EnglishVerb { get; private init; } = "";
+    public string EnglishShort { get; private init; } = "";
 }
 
 public sealed class Job
