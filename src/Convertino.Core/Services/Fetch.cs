@@ -65,7 +65,9 @@ public static class Fetch
     {
         var host = ctx.DnsEndPoint.Host;
         IPAddress[] addrs = IPAddress.TryParse(host, out var literal) ? [literal] : await Dns.GetHostAddressesAsync(host, ct);
-        bool proxy = ctx.InitialRequestMessage.RequestUri is { } ru && HttpClient.DefaultProxy.GetProxy(ru) is { } p
+        // the connection is to the proxy only when one is in use for this address (a bypassed address can come back as itself)
+        bool proxy = ctx.InitialRequestMessage.RequestUri is { } ru && !HttpClient.DefaultProxy.IsBypassed(ru) && HttpClient.DefaultProxy.GetProxy(ru) is { } p
+                     && !string.Equals(p.Host, ru.Host, StringComparison.OrdinalIgnoreCase)
                      && string.Equals(p.Host, host, StringComparison.OrdinalIgnoreCase) && p.Port == ctx.DnsEndPoint.Port;
         bool localOk = proxy || (ctx.InitialRequestMessage.Options.TryGetValue(LocalOk, out var ok) && ok);
         if (!localOk) addrs = addrs.Where(a => !IsLocal(a)).ToArray();
