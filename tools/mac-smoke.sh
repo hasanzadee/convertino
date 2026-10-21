@@ -40,6 +40,9 @@ test -s "smoke (2).webp"
 step "archives and file tools"
 bash "$ROOT/tools/files-smoke.sh" "$D"
 
+step "recipes and custom commands"
+bash "$ROOT/tools/recipes-smoke.sh" "$D"
+
 step "PDF: PDFsharp writes, CoreGraphics renders"
 "$D" convert smoke.png --to pdf && test -s smoke.pdf
 "$D" convert smoke.pdf --to jpg && test -s smoke.jpg

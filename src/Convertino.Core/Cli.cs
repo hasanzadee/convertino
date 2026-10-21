@@ -13,13 +13,29 @@ public static class Cli
     public static readonly string Version = typeof(Cli).Assembly.GetName().Version?.ToString(3) ?? "1.0.0";
 
     public static bool IsCommand(string[] args) =>
-        args.Length > 0 && args[0] is "convert" or "run" or "actions" or "model" or "watch" or "preview" or "--help" or "-h" or "help" or "--version" or "-v";
+        args.Length > 0 && args[0] is "convert" or "run" or "actions" or "model" or "watch" or "preview" or "recipe" or "--help" or "-h" or "help" or "--version" or "-v";
 
     public static async Task<int> Run(string[] args, TextWriter? output = null)
     {
         var o = output ?? Console.Out;
         try
         {
+            // --out <place> for convert, run and recipe run: where results go (default: next to the original)
+            string? outPlace = null;
+            if (args[0] is "convert" or "run" || args is ["recipe", "run", ..])
+            {
+                int at = Array.IndexOf(args, "--out");
+                if (at > 0)
+                {
+                    if (at == args.Length - 1 || Output.Valid(args[at + 1]) is not { } valid)
+                    {
+                        o.WriteLine("--out takes beside, a subfolder name (Converted) or a full folder path");
+                        return 2;
+                    }
+                    outPlace = valid;
+                    args = [.. args.Take(at), .. args.Skip(at + 2)];
+                }
+            }
             switch (args[0])
             {
                 case "--version" or "-v":
@@ -35,6 +51,7 @@ public static class Cli
                     var p = Catalog.For(files);
                     o.WriteLine($"{p.Title}");
                     o.WriteLine("  convert: " + string.Join("  ", p.Convert.Select(a => $"{a.Id}")));
+                    if (p.Recipes.Count > 0) o.WriteLine("  recipes: " + string.Join("  ", p.Recipes.Select(a => a.Id)));
                     if (p.Tools.Count > 0) o.WriteLine("  tools:   " + string.Join("  ", p.Tools.Select(a => a.Interactive ? $"({a.Id})" : a.Id)));
                     if (p.More.Count > 0) o.WriteLine("  more:    " + string.Join("  ", p.More.Select(a => a.Interactive ? $"({a.Id})" : a.Id)));
                     if (p.MoreFormats.Count > 0) o.WriteLine("  formats: " + string.Join("  ", p.MoreFormats.Select(a => a.Id)));
@@ -47,7 +64,7 @@ public static class Cli
                     if (to < 0 || to == args.Length - 1) { o.WriteLine("usage: convertino convert <files…> --to <format>"); return 2; }
                     var fmt = args[to + 1].TrimStart('.').ToLowerInvariant();
                     var rest = args.Skip(1).Where((_, i) => i + 1 != to && i + 1 != to + 1);
-                    return await RunAction("to-" + fmt, rest, o);
+                    return await RunAction("to-" + fmt, rest, o, outPlace);
                 }
                 case "model":
                 {
@@ -73,11 +90,13 @@ public static class Cli
                 }
                 case "run":
                     if (args.Length < 3) { o.WriteLine("usage: convertino run <action-id> <files…>"); return 2; }
-                    return await RunAction(args[1], args.Skip(2), o);
+                    return await RunAction(args[1], args.Skip(2), o, outPlace);
                 case "watch":
                     return await Watch(args.Skip(1).ToArray(), o);
                 case "preview":
                     return await PreviewCmd(args.Skip(1).ToArray(), o);
+                case "recipe":
+                    return await Recipe(args.Skip(1).ToArray(), o, outPlace);
             }
         }
         catch (Exception ex)
@@ -89,7 +108,7 @@ public static class Cli
         return 2;
     }
 
-    static async Task<int> RunAction(string id, IEnumerable<string> paths, TextWriter o)
+    static async Task<int> RunAction(string id, IEnumerable<string> paths, TextWriter o, string? outPlace = null)
     {
         var files = Files(paths, o);
         if (files == null) return 2;
@@ -100,7 +119,14 @@ public static class Cli
             return 2;
         }
         if (action.Interactive) { o.WriteLine($"'{id}' opens an editor — use the desktop app (drag + Shift)."); return 2; }
-        var job = await Jobs.RunHeadless(action, files);
+        return await RunJob(action, files, o, outPlace);
+    }
+
+    /// <summary>Results stay next to the original unless --out (or the recipe itself) says otherwise: the panel's "Save results" is for drops.</summary>
+    static async Task<int> RunJob(PetalAction action, List<string> files, TextWriter o, string? outPlace)
+    {
+        var job = await Jobs.RunHeadless(action, files, place: Output.For(action, Output.Beside, outPlace));
+        Output.Place(job); // what a run that failed half-way did make goes there too
         foreach (var f in job.Outputs) o.WriteLine(f);
         if (!string.IsNullOrEmpty(job.Title)) o.WriteLine(job.Title);
         if (!string.IsNullOrEmpty(job.Summary)) o.WriteLine(job.Summary);
@@ -152,6 +178,82 @@ public static class Cli
         if (!string.IsNullOrEmpty(job.Summary)) o.WriteLine(job.Summary);
         return 0;
     }
+    const string RecipeUsage = """
+        usage: convertino recipe list
+               convertino recipe add <name> --steps <a,b,c> [--for <jpg,png|image>] [--out <beside|subfolder|full path>] [--icon <key>]
+               convertino recipe remove <name>
+               convertino recipe run <name> <files…> [--out <beside|subfolder|full path>]
+        steps are petal ids from "convertino actions", e.g. fithd,to-webp,meta
+        """;
+
+    static async Task<int> Recipe(string[] a, TextWriter o, string? outPlace)
+    {
+        if (a.Length == 0) { o.WriteLine(RecipeUsage); return 2; }
+        switch (a[0])
+        {
+            case "list":
+            {
+                var book = Recipes.Load();
+                if (Recipes.Broken) o.WriteLine($"{Recipes.FilePath} can't be read - fix it, or the next change starts it afresh (the old one is kept as .bad-…)");
+                if (book.Recipes.Count == 0 && book.Commands.Count == 0)
+                    o.WriteLine("no recipes yet - add one with: convertino recipe add Web-ready --steps fithd,to-webp,meta");
+                foreach (var r in book.Recipes)
+                {
+                    var (steps, problem) = Recipes.Describe(r);
+                    o.WriteLine($"{r.Name}  ({Recipes.IdOf(r)})  →  {string.Join(" → ", steps)}   for {Recipes.ForText(r.For)}"
+                        + (r.Out != null ? $", results {Output.Describe(r.Out)}" : ""));
+                    if (problem != null) o.WriteLine($"    can't run: {problem}");
+                }
+                foreach (var c in book.Commands)
+                    o.WriteLine($"{c.Name}  ({Recipes.IdOf(c)})  runs {c.Program} {string.Join(' ', c.Args.Select(Quote))}   for {Recipes.ForText(c.For)}"
+                        + (Services.Commands.Resolve(c.Program, out var why) == null ? $"   [{why}]" : ""));
+                return 0;
+            }
+            case "add":
+            {
+                if (a.Length < 2 || a[1].StartsWith("--")) { o.WriteLine(RecipeUsage); return 2; }
+                var r = new Recipe { Name = a[1] };
+                for (int i = 2; i < a.Length; i++)
+                {
+                    string? Next() => i + 1 < a.Length ? a[++i] : null;
+                    switch (a[i])
+                    {
+                        case "--steps": r.Steps = List(Next()); break;
+                        case "--for": r.For = List(Next()); break;
+                        case "--out": r.Out = Next(); break;
+                        case "--icon": r.Icon = Next(); break;
+                        default: o.WriteLine($"unknown option {a[i]}"); o.WriteLine(RecipeUsage); return 2;
+                    }
+                }
+                try { r = Recipes.Save(r); }
+                catch (ArgumentException ex) { o.WriteLine($"can't save {r.Name}: {ex.Message}"); return 2; }
+                o.WriteLine($"saved {r.Name} ({Recipes.IdOf(r)}): {string.Join(" → ", Recipes.Describe(r).Steps)}, for {Recipes.ForText(r.For)}"
+                    + $", results {Output.Describe(r.Out ?? Output.Global)}");
+                o.WriteLine("it's on the Recipes ring of the flower now (one flip from Convert)");
+                return 0;
+            }
+            case "remove":
+            {
+                if (a.Length < 2) { o.WriteLine(RecipeUsage); return 2; }
+                bool removed = Recipes.Remove(a[1]);
+                o.WriteLine(removed ? $"removed {a[1]}" : $"no recipe called {a[1]}");
+                return removed ? 0 : 2;
+            }
+            case "run":
+            {
+                if (a.Length < 3) { o.WriteLine(RecipeUsage); return 2; }
+                if (Recipes.Find(a[1]) is not { } r) { o.WriteLine($"no recipe called {a[1]} - see: convertino recipe list"); return 2; }
+                var files = Files(a.Skip(2), o);
+                if (files == null) return 2;
+                if (Recipes.PetalFor(r, files, out var problem) is not { } action) { o.WriteLine($"can't run {r.Name} here: {problem}"); return 2; }
+                return await RunJob(action, files, o, outPlace);
+            }
+        }
+        o.WriteLine(RecipeUsage);
+        return 2;
+    }
+
+    static List<string> List(string? csv) => (csv ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
 
     const string WatchUsage = """
         usage: convertino watch <folder> --to <format> | --run <action> [--out <subfolder>]   watch in the foreground (Ctrl+C stops)
@@ -256,6 +358,9 @@ public static class Cli
               convertino watch <folder> --to <format>      convert every new file in a folder (also: watch add|list|remove)
               convertino preview <images…> [--full]        what each petal would give: estimated, then exact sizes
                                   [--take <petal>]             … and "drop" on one: its finished run moved beside the image
+              convertino recipe add <name> --steps a,b,c   chain petals into one, e.g. --steps fithd,to-webp,meta
+                                                           (also: recipe list|remove|run; custom commands: recipes.json)
+              … --out <subfolder|full path>                convert, run, recipe run: put results there (default: next to the original)
               convertino model install                     download the offline AI model for Cut out (224 MB)
               convertino --version
             """);

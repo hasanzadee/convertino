@@ -65,6 +65,11 @@ public static class Icons
         ["flip"] = "M12 3v18 M16 7l4 5-4 5 M8 7l-4 5 4 5",
         ["log"] = "M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z M14 2v6h6 M16 13H8 M16 17H8 M10 9H8",
         ["power"] = "M18.36 6.64a9 9 0 1 1-12.73 0 M12 2v10",
+        ["recipe"] = "M13 2L3 14h9l-1 8 10-12h-9l1-8z",
+        ["terminal"] = "M4 17l6-6-6-6 M12 19h8",
+        ["down"] = "M6 9l6 6 6-6",
+        ["up"] = "M18 15l-6-6-6 6",
+        ["plus"] = "M12 5v14 M5 12h14",
     };
 
     static readonly Dictionary<string, Geometry> Cache = [];

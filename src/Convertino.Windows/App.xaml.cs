@@ -82,7 +82,7 @@ public partial class App : Application
         {
             Settings.Load();
             Theme.Apply(e.Args.Length > 2 ? e.Args[2] : Settings.Current.Theme);
-            Flyout.Snapshot(e.Args[1], e.Args.Length > 3 && e.Args[3] == "demo" ? Stats.Demo() : Stats.Load());
+            Flyout.Snapshot(e.Args[1], e.Args.Length > 3 && e.Args[3] == "demo" ? Stats.Demo() : Stats.Load(), e.Args.Length > 4 ? e.Args[4] : null);
             Shutdown();
             return;
         }

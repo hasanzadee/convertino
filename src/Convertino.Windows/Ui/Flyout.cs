@@ -14,7 +14,7 @@ using Convertino.Services;
 namespace Convertino.Ui;
 
 /// <summary>Quick-settings style panel that pops up from the tray icon.</summary>
-public sealed class Flyout : Window
+public sealed partial class Flyout : Window
 {
     const double W = 340, Pad = 18;
     readonly TranslateTransform _slide = new();
@@ -22,6 +22,7 @@ public sealed class Flyout : Window
     readonly ImageBrush _backdrop = new() { Stretch = Stretch.Fill };
     DateTime _hiddenAt;
     Stats? _stats;
+    ScrollViewer? _scroll;
     bool _animate; // only the build that opens the panel plays the activity intro
 
     public Flyout()
@@ -100,13 +101,18 @@ public sealed class Flyout : Window
         _hiding = false;
     }
 
-    /// <summary>Dev: render the panel to a PNG over a soft wallpaper (Convertino.exe --panel out.png [theme] [demo]).</summary>
-    public static void Snapshot(string outPath, Stats stats)
+    /// <summary>
+    /// Dev: render the panel to a PNG over a soft wallpaper (Convertino.exe --panel out.png [theme] [demo] [recipes|builder]):
+    /// recipes unfolds the Recipes card, builder also opens its builder on a sample chain.
+    /// </summary>
+    public static void Snapshot(string outPath, Stats stats, string? recipes = null)
     {
         const double scale = 2;
-        var f = new Flyout { _stats = stats };
+        var f = new Flyout { _stats = stats, _recipesOpen = recipes is "recipes" or "builder" };
+        if (recipes == "builder") f._draft = new RecipeDraft { Steps = ["fithd", "to-webp"], Name = "Web-ready", Icon = "globe", Picking = true };
         var wall = new DrawingVisual();
-        double w = W + Pad * 2, h = 1000;
+        const double wallH = 1600; // an unfolded card makes the panel taller than a screen
+        double w = W + Pad * 2, h = wallH;
         using (var dc = wall.RenderOpen())
             dc.DrawDrawing(Convertino.Editors.BackgroundEditor.Backdrops[0].Paint(new Rect(0, 0, w, h), null));
         var wallBmp = new System.Windows.Media.Imaging.RenderTargetBitmap((int)w, (int)h, 96, 96, PixelFormats.Pbgra32);
@@ -123,12 +129,12 @@ public sealed class Flyout : Window
         h = root.DesiredSize.Height;
         root.Arrange(new Rect(0, 0, w, h));
         root.UpdateLayout();
-        f._backdrop.ImageSource = new System.Windows.Media.Imaging.CroppedBitmap(blurred, new Int32Rect((int)Pad, (int)Pad, (int)(w - Pad * 2), (int)Math.Min(1000 - Pad, h - Pad * 2)));
+        f._backdrop.ImageSource = new System.Windows.Media.Imaging.CroppedBitmap(blurred, new Int32Rect((int)Pad, (int)Pad, (int)(w - Pad * 2), (int)Math.Min(wallH - Pad, h - Pad * 2)));
         root.UpdateLayout();
 
         var rtb = new System.Windows.Media.Imaging.RenderTargetBitmap((int)(w * scale), (int)(h * scale), 96 * scale, 96 * scale, PixelFormats.Pbgra32);
         var bg = new DrawingVisual();
-        using (var dc = bg.RenderOpen()) dc.DrawImage(wallBmp, new Rect(0, 0, w, 1000));
+        using (var dc = bg.RenderOpen()) dc.DrawImage(wallBmp, new Rect(0, 0, w, wallH));
         rtb.Render(bg);
         rtb.Render(root);
         var enc = new System.Windows.Media.Imaging.PngBitmapEncoder();
@@ -220,6 +226,12 @@ public sealed class Flyout : Window
         stack.Children.Add(Label("Watch folders"));
         stack.Children.Add(WatchCard());
 
+        // your own chains of petals, and where results go (FlyoutRecipes.cs)
+        stack.Children.Add(Label("Recipes"));
+        stack.Children.Add(RecipesCard());
+        stack.Children.Add(Label("Save results"));
+        stack.Children.Add(SaveCard());
+
         // recent
         var recent = s.Recent.Where(r => File.Exists(r.Path) || Directory.Exists(r.Path)).Take(4).ToList();
         if (recent.Count > 0)
@@ -244,14 +256,18 @@ public sealed class Flyout : Window
         DockPanel.SetDock(footer, Dock.Bottom);
         body.Children.Add(header);
         body.Children.Add(footer);
-        body.Children.Add(new ScrollViewer
+        // a rebuild while open (a click in a card) stays scrolled where it was
+        double? offset = IsVisible ? _scroll?.VerticalOffset : null;
+        var scroll = new ScrollViewer
         {
             Content = stack,
             VerticalScrollBarVisibility = ScrollBarVisibility.Hidden,
             HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
             PanningMode = PanningMode.VerticalOnly,
             Focusable = false,
-        });
+        };
+        body.Children.Add(_scroll = scroll);
+        if (offset is { } y) scroll.Loaded += (_, _) => scroll.ScrollToVerticalOffset(y);
 
         var layers = new Grid
         {

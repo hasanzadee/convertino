@@ -54,7 +54,7 @@ static class Dev
         view.Appear();
         view.SetMode(HubMode.Info);
         var rings = pages.Rings.ToList();
-        string name = kind switch { "tools" => "Tools", "more" => "More tools", "formats" => "More formats", _ => "Convert" };
+        string name = kind switch { "tools" => "Tools", "more" => "More tools", "formats" => "More formats", "recipes" => "Recipes", _ => "Convert" };
         int page = Math.Max(0, rings.FindIndex(r => r.Name == name));
         view.SetPages(rings.Count, page);
         view.SetPetals(rings[page].Petals, 1);
@@ -126,6 +126,7 @@ static class Dev
         var at = new RECT { Left = 100, Top = 100, Right = 560, Bottom = 560 };
         var report = new List<string>();
         int failed = 0;
+        Recipes.Enabled = false; // the sample picture's four rings, whatever recipes.json holds
 
         void Pump() => Application.Current.Dispatcher.Invoke(() => { }, DispatcherPriority.Background);
         void Step(string what, Func<IntPtr> act, bool swallowed, string ring, int pauseMs = 260)
@@ -205,6 +206,13 @@ static class Dev
         bool splitOk = got == "Tools (8) · Tools 2 (8) · Tools 3 (7)";
         if (!splitOk) failed++;
         report.Add($"{(splitOk ? "PASS" : "FAIL")}  {"23 tools",-36} → {got}");
+
+        // your recipes get a ring of their own, one flip from Convert
+        var mine = new Pages([.. many.Take(2)], [.. many.Take(3)], "", "") { Recipes = [.. many.Take(1)], More = [.. many.Take(1)] }.Rings;
+        got = string.Join(" · ", mine.Select(r => r.Name));
+        bool mineOk = got == "Convert · Recipes · Tools · More tools";
+        if (!mineOk) failed++;
+        report.Add($"{(mineOk ? "PASS" : "FAIL")}  {"recipes ring",-36} → {got}");
 
         report.Add(failed == 0 ? "ALL PASS" : $"{failed} FAILED");
         File.WriteAllLines(Path.Combine(outDir, "results.txt"), report);

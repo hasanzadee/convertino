@@ -29,6 +29,7 @@ public static class Jobs
             Where = where,
             Token = cts.Token,
             OnProgress = p => ui.Post(() => { lastProgress = p; view?.Progress(p); }),
+            Place = Output.For(action),
         };
 
         // only show a progress card if the work is noticeable
@@ -45,6 +46,8 @@ public static class Jobs
         }
         catch (OperationCanceledException) { job.Silent = true; }
         catch (Exception ex) { error = ex; Log.Error($"job {action.Id}", ex); }
+        // "Save results": into a subfolder or a fixed folder instead of beside the original
+        if (error == null && !cts.IsCancellationRequested) await Task.Run(() => Output.Place(job));
         finished = true;
         Log.Info($"job {action.Id} {(error == null ? "ok" : "failed")} in {sw.ElapsedMilliseconds} ms → {string.Join(" | ", job.Outputs)}");
 
@@ -78,9 +81,9 @@ public static class Jobs
     }
 
     /// <summary>Headless run for the command line. Returns the job (outputs / summary) or throws.</summary>
-    public static async Task<Job> RunHeadless(PetalAction action, IReadOnlyList<string> files, Action<double>? progress = null)
+    public static async Task<Job> RunHeadless(PetalAction action, IReadOnlyList<string> files, Action<double>? progress = null, string? place = null)
     {
-        var job = new Job { Inputs = files.Select(Path.GetFullPath).ToList(), Action = action, OnProgress = progress };
+        var job = new Job { Inputs = files.Select(Path.GetFullPath).ToList(), Action = action, OnProgress = progress, Place = place };
         await Task.Run(() => action.Run(job));
         if (job.Summary == null && job.Outputs.Count > 0) job.Summary = Services.Images.SizeSummary(job);
         return job;

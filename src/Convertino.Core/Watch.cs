@@ -303,23 +303,7 @@ public sealed class Watcher : IDisposable
         var job = await Jobs.RunHeadless(action, [path]);
         // results move into the Out subfolder: the watched folder stays an inbox and nothing we write re-triggers us
         Directory.CreateDirectory(_outDir);
-        for (int i = 0; i < job.Outputs.Count; i++)
-        {
-            var o = job.Outputs[i];
-            var name = Path.GetFileName(o);
-            if (Directory.Exists(o))
-            {
-                var dst = Paths.UniqueDir(_outDir, name);
-                Directory.Move(o, dst);
-                job.Outputs[i] = dst;
-            }
-            else if (File.Exists(o))
-            {
-                var dst = Paths.Unique(_outDir, Path.GetFileNameWithoutExtension(name), Path.GetExtension(name));
-                File.Move(o, dst);
-                job.Outputs[i] = dst;
-            }
-        }
+        for (int i = 0; i < job.Outputs.Count; i++) job.Outputs[i] = Output.MoveInto(job.Outputs[i], _outDir);
         Log.Info($"watch: {Path.GetFileName(path)} → {string.Join(" | ", job.Outputs)}");
         _done(job);
     }

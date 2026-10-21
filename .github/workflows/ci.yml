@@ -22,6 +22,12 @@ jobs:
           Copy-Item packaging/linux/icons/convertino-256.png smoke.png
           $p = Start-Process dist/win-x64/Convertino.exe -ArgumentList 'convert','smoke.png','--to','webp' -Wait -PassThru
           if (-not (Test-Path smoke.webp)) { throw "conversion failed ($($p.ExitCode))" }
+          $env:CONVERTINO_APPDATA = Join-Path $PWD 'ci-appdata'
+          $p = Start-Process dist/win-x64/Convertino.exe -ArgumentList 'recipe','add','Web-ready','--steps','fithd,to-webp,meta' -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "recipe add failed ($($p.ExitCode))" }
+          $p = Start-Process dist/win-x64/Convertino.exe -ArgumentList 'recipe','run','Web-ready','smoke.png' -Wait -PassThru
+          if (-not (Test-Path 'smoke (Web-ready).webp')) { throw "recipe run failed ($($p.ExitCode))" }
+          if (Get-ChildItem (Join-Path $env:TEMP 'convertino') -Filter 'recipe-*' -ErrorAction SilentlyContinue) { throw "a recipe work folder was left behind" }
 
   linux:
     runs-on: ubuntu-latest
@@ -65,6 +71,8 @@ jobs:
           test -z "$(ls -A /tmp/convertino/preview 2>/dev/null)"
       - name: Archives and file tools
         run: bash tools/files-smoke.sh dist/linux-x64/convertino
+      - name: Recipes and custom commands
+        run: bash tools/recipes-smoke.sh dist/linux-x64/convertino
 
   macos:
     strategy:

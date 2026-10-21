@@ -11,7 +11,10 @@ public static class Paths
     static string Resolve()
     {
         string dir;
-        if (OperatingSystem.IsWindows())
+        // CONVERTINO_APPDATA=<folder>: settings, lists and the log go there instead (tests, a portable copy)
+        if (Environment.GetEnvironmentVariable("CONVERTINO_APPDATA") is { Length: > 0 } over)
+            dir = Path.GetFullPath(over);
+        else if (OperatingSystem.IsWindows())
             dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Convertino");
         else if (OperatingSystem.IsMacOS())
             dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Library", "Application Support", "Convertino");
@@ -161,6 +164,10 @@ public sealed class Settings
     public DateTime LastUpdateCheck { get; set; }
     /// <summary>The newest version already announced, so the same release isn't shown again.</summary>
     public string? LastNotifiedVersion { get; set; }
+    /// <summary>Where results go (<see cref="Output"/>): "beside" the original, a "subfolder" of its folder named <see cref="SaveSubfolder"/>, or one fixed "folder".</summary>
+    public string SaveTo { get; set; } = "beside";
+    public string SaveSubfolder { get; set; } = "Converted";
+    public string SaveFolder { get; set; } = "";
     public List<RecentItem> Recent { get; set; } = [];
 
     [JsonIgnore] public static Settings Current { get; private set; } = new();
