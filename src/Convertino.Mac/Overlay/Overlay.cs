@@ -55,6 +55,9 @@ public sealed class OverlayController
     readonly RingPager _pager = new();
     int _session;
     PixelRect _rect;
+    // live preview: the petals' results worked out while the flower is open
+    Preview? _ahead;
+    string? _aheadHover;
     bool _pinned = Environment.GetEnvironmentVariable("CONVERTINO_PIN") != null;
 
     public TopLevel Host => _win;
@@ -66,7 +69,7 @@ public sealed class OverlayController
         _win.AddHandler(DragDrop.DragOverEvent, OnDragOver);
         _win.AddHandler(DragDrop.DragLeaveEvent, OnDragLeave);
         _win.AddHandler(DragDrop.DropEvent, OnDrop);
-        _win.PointerMoved += (_, e) => { if (_state == State.Click) _win.View.SetHover(_win.View.HitTestPetal(e.GetPosition(_win))); };
+        _win.PointerMoved += (_, e) => { if (_state == State.Click) { _win.View.SetHover(_win.View.HitTestPetal(e.GetPosition(_win))); SyncAhead(); } };
         _win.PointerReleased += OnClick;
         // over the flower itself (click mode; macOS also routes the wheel here during a drag). The pager drops repeats
         // when a global watcher reports the same press or notch too.
@@ -150,6 +153,7 @@ public sealed class OverlayController
         _releaseTimer.Stop();
         _leaveTimer.Stop();
         var v = _win.View;
+        DisposeAhead();
         v.Reset();
         // Avalonia reports macOS screens in points (Scaling = 1), the same space as the Quartz cursor
         var screen = _win.Screens.ScreenFromPoint(new PixelPoint(pt.X, pt.Y)) ?? _win.Screens.Primary;
@@ -236,6 +240,48 @@ public sealed class OverlayController
         {
             if (session == _session && t.Result != null) Dispatcher.UIThread.Post(() => { v.Thumb = t.Result; v.InvalidateVisual(); });
         });
+        StartAhead(files, session);
+    }
+
+    // ---------- live preview ----------
+
+    void StartAhead(IReadOnlyList<string> files, int session)
+    {
+        DisposeAhead();
+        // Preview.For reads the pictures' headers: off the UI thread (a slow share mustn't stall the bloom)
+        Task.Run(() => Preview.For(files)).ContinueWith(t => Dispatcher.UIThread.Post(() =>
+        {
+            var pv = t.Result;
+            if (pv == null) return;
+            if (session != _session || _pages == null || _state is not (State.Drag or State.Click)) { pv.Dispose(); return; }
+            _ahead = pv;
+            var v = _win.View;
+            v.Ahead = pv;
+            pv.Changed += () => Dispatcher.UIThread.Post(() => { if (ReferenceEquals(_ahead, pv)) v.AheadChanged(); });
+            pv.Show(_pager.Current);
+            _aheadHover = null;
+            SyncAhead();
+        }));
+    }
+
+    /// <summary>Tell the preview which petal the cursor is on — only when that changes, since it restarts the dwell.</summary>
+    void SyncAhead()
+    {
+        if (_ahead == null) return;
+        var acts = _win.View.CurrentActions;
+        int i = _win.View.HoverIndex;
+        var a = i >= 0 && i < acts.Count ? acts[i] : null;
+        if (a?.Id == _aheadHover) return;
+        _aheadHover = a?.Id;
+        _ahead.Hover(a);
+    }
+
+    void DisposeAhead()
+    {
+        _ahead?.Dispose();
+        _ahead = null;
+        _aheadHover = null;
+        _win.View.Ahead = null;
     }
 
     /// <summary>Show the next (+1) or previous (−1) ring; 0 = the input didn't ask for a flip.</summary>
@@ -246,6 +292,8 @@ public sealed class OverlayController
         if (Diag) Log.Info($"ring {_pager.Page + 1}/{_pager.Count} {_pager.Name} ({why})");
         _win.View.SetPages(_pager.Count, _pager.Page, _pager.Name);
         _win.View.SetPetals(_pager.Current, dir);
+        _ahead?.Show(_pager.Current);
+        SyncAhead();
         Glass(_pager.Current.Count);
     }
 
@@ -264,6 +312,7 @@ public sealed class OverlayController
 
     async void FinishHide()
     {
+        DisposeAhead();
         bool wasActive = _win.IsActive;
         _win.View.Reset();
         _glass?.FadeTo(0, 0);
@@ -318,6 +367,7 @@ public sealed class OverlayController
     {
         int idx = _win.View.HitTestPetal(e.GetPosition(_win));
         _win.View.SetHover(idx);
+        SyncAhead();
         // never MOVE: the source file must stay where it is
         e.DragEffects = idx >= 0 ? DragDropEffects.Copy : DragDropEffects.None;
     }
@@ -325,6 +375,7 @@ public sealed class OverlayController
     void OnDragLeave(object? sender, DragEventArgs e)
     {
         _win.View.SetHover(-1);
+        SyncAhead();
         if (_state == State.Drag) _leaveTimer.Start();
     }
 
@@ -353,6 +404,9 @@ public sealed class OverlayController
         if (idx < 0 || idx >= actions.Count) { Hide(); return; }
         var action = actions[idx];
         var files = _files;
+        // worked out already (or still working on it)? the job picks that up instead of starting over
+        var ready = _ahead?.Take(action);
+        DisposeAhead();
         var where = new ScreenPoint(_rect.X + _rect.Width / 2, _rect.Y + _rect.Height / 2);
         _state = State.Leaving;
         _seedTimeout.Stop();
@@ -365,6 +419,6 @@ public sealed class OverlayController
             _win.View.Collapse();
             _ = Task.Delay(220).ContinueWith(_ => Dispatcher.UIThread.Post(() => { if (session == _session) FinishHide(); }));
         }
-        await Jobs.Start(action, files, where);
+        await Jobs.Start(action, files, where, ready);
     }
 }

@@ -34,12 +34,13 @@ static class Dev
     }
 
     /// <summary>
-    /// Convertino.exe --snapshot out.png [theme] [img|tools|more|formats|pdf|video] [hover]: one ring of the flower as a PNG.
-    /// img, tools, more and formats are the four rings of an image (Convert, Tools, More tools, More formats).
+    /// Convertino.exe --snapshot out.png [theme] [img|tools|more|formats|pdf|video] [hover] [quick|exact] [file]: one ring of the flower as a PNG.
+    /// img, tools, more and formats are the four rings of an image (Convert, Tools, More tools, More formats);
+    /// quick / exact also run the live preview first (estimates and the hub's look, or the full runs' exact sizes).
     /// </summary>
-    public static void Snapshot(string outPath, string kind, int hover)
+    public static void Snapshot(string outPath, string kind, int hover, string? ahead = null, string? file = null)
     {
-        var sample = kind switch
+        var sample = file ?? kind switch
         {
             "pdf" => @"C:\Windows\Help\sample.pdf",
             "video" => @"C:\x\clip.mp4",
@@ -57,8 +58,17 @@ static class Dev
         int page = Math.Max(0, rings.FindIndex(r => r.Name == name));
         view.SetPages(rings.Count, page);
         view.SetPetals(rings[page].Petals, 1);
+        Preview? pv = null;
+        if (ahead is "quick" or "exact") Settings.Current.LivePreview = true;
+        if (ahead is "quick" or "exact" && (pv = Preview.For([sample])) != null)
+        {
+            Task.Run(() => pv.Settle(rings[page].Petals, ahead == "exact")).GetAwaiter().GetResult(); // not on the dispatcher: Settle awaits
+            view.Ahead = pv;
+        }
         view.SetHover(hover);
         Render(view, outPath);
+        pv?.Dispose();
+        pv?.Closed.Wait(10_000);
     }
 
     /// <summary>The flower over a fake warm wallpaper (like the macOS demo), at 2×, animations settled.</summary>
@@ -107,6 +117,7 @@ static class Dev
     public static void PagingSelfTest(string outDir)
     {
         Directory.CreateDirectory(outDir);
+        Settings.Current.LivePreview = false; // paging only: no background runs for the sample picture
         const int VK_LSHIFT = 0xA0, VK_LCONTROL = 0xA2, VK_CONTROL = 0x11, VK_LWIN = 0x5B, VK_TAB = 0x09, VK_ESCAPE = 0x1B;
         var input = new GlobalInput(Application.Current.Dispatcher); // never started: no hooks
         var held = new HashSet<int>();

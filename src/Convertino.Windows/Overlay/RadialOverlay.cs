@@ -76,6 +76,9 @@ public sealed class OverlayController
     bool _helperEntered;
     RECT _placed;
     int _session;
+    // live preview: the petals' results worked out while the flower is open
+    Preview? _ahead;
+    string? _aheadHover;
 
     public OverlayController(GlobalInput input)
     {
@@ -87,7 +90,7 @@ public sealed class OverlayController
         _win.Drop += OnDrop;
         _win.MouseMove += OnMouseMove;
         _win.MouseLeftButtonUp += OnClick;
-        _win.MouseLeave += (_, _) => { if (_state == State.Click) _win.View.SetHover(-1); };
+        _win.MouseLeave += (_, _) => { if (_state == State.Click) { _win.View.SetHover(-1); SyncAhead(); } };
 
         _seedTimeout.Tick += (_, _) => { _seedTimeout.Stop(); if (_state == State.Seed) Hide(); };
         _releaseTimer.Tick += (_, _) => { _releaseTimer.Stop(); if (_state is State.Seed or State.Drag) Hide(); };
@@ -169,6 +172,7 @@ public sealed class OverlayController
         _session++;
         _releaseTimer.Stop();
         _leaveTimer.Stop();
+        DisposeAhead();
         _win.View.Reset();
         var r = ComputeRect(pt);
         _win.View.Backdrop = Native.Backdrop.Capture(r, 4, 7, 1.45);
@@ -216,6 +220,48 @@ public sealed class OverlayController
         {
             if (session == _session && t.Result != null) { v.Thumb = t.Result; v.InvalidateVisual(); }
         }, TaskScheduler.FromCurrentSynchronizationContext());
+        StartAhead(files, session);
+    }
+
+    // ---------- live preview ----------
+
+    void StartAhead(IReadOnlyList<string> files, int session)
+    {
+        DisposeAhead();
+        // Preview.For reads the pictures' headers: off the UI thread (a slow share mustn't stall the bloom)
+        Task.Run(() => Preview.For(files)).ContinueWith(t =>
+        {
+            var pv = t.Result;
+            if (pv == null) return;
+            if (session != _session || _pages == null || _state is not (State.Drag or State.Click)) { pv.Dispose(); return; }
+            _ahead = pv;
+            var v = _win.View;
+            v.Ahead = pv;
+            pv.Changed += () => _win.Dispatcher.BeginInvoke(() => { if (ReferenceEquals(_ahead, pv)) v.AheadChanged(); });
+            pv.Show(_pager.Current);
+            _aheadHover = null;
+            SyncAhead();
+        }, TaskScheduler.FromCurrentSynchronizationContext());
+    }
+
+    /// <summary>Tell the preview which petal the cursor is on — only when that changes, since it restarts the dwell.</summary>
+    void SyncAhead()
+    {
+        if (_ahead == null) return;
+        var acts = _win.View.CurrentActions;
+        int i = _win.View.HoverIndex;
+        var a = i >= 0 && i < acts.Count ? acts[i] : null;
+        if (a?.Id == _aheadHover) return;
+        _aheadHover = a?.Id;
+        _ahead.Hover(a);
+    }
+
+    void DisposeAhead()
+    {
+        _ahead?.Dispose();
+        _ahead = null;
+        _aheadHover = null;
+        _win.View.Ahead = null;
     }
 
     /// <summary>Show the next (+1) or previous (−1) ring; 0 = the input didn't ask for a flip.</summary>
@@ -226,6 +272,7 @@ public sealed class OverlayController
         Log.Info($"ring {_pager.Page + 1}/{_pager.Count} {_pager.Name} ({why})");
         _win.View.SetPages(_pager.Count, _pager.Page, _pager.Name);
         _win.View.SetPetals(_pager.Current, dir);
+        _ahead?.Show(_pager.Current);
         UpdateHover(Mouse.GetPosition(_win));
     }
 
@@ -247,6 +294,7 @@ public sealed class OverlayController
 
     async void FinishHide()
     {
+        DisposeAhead();
         _win.View.Reset();
         // let WPF push an empty frame into the layered window before hiding,
         // otherwise the old flower flashes for a frame next time it's shown
@@ -320,6 +368,7 @@ public sealed class OverlayController
         _described = int.MinValue;
         if (_helperEntered) { Shell.HelperLeave(); _helperEntered = false; }
         _win.View.SetHover(-1);
+        SyncAhead();
         if (_state == State.Drag) _leaveTimer.Start();
     }
 
@@ -357,6 +406,7 @@ public sealed class OverlayController
     {
         int idx = _win.View.HitTestPetal(pos);
         _win.View.SetHover(idx);
+        SyncAhead();
     }
 
     int _described = int.MinValue;
@@ -393,6 +443,9 @@ public sealed class OverlayController
         var action = actions[idx];
         var files = _files;
         var where = Win32.Cursor;
+        // worked out already (or still working on it)? the job picks that up instead of starting over
+        var ready = _ahead?.Take(action);
+        DisposeAhead();
         _state = State.Leaving;
         _input.Paging = null;
         _seedTimeout.Stop();
@@ -404,6 +457,6 @@ public sealed class OverlayController
             _win.View.Collapse();
             _ = Task.Delay(220).ContinueWith(_ => { if (session == _session) FinishHide(); }, TaskScheduler.FromCurrentSynchronizationContext());
         }
-        await Jobs.Start(action, files, new ScreenPoint(where.X, where.Y));
+        await Jobs.Start(action, files, new ScreenPoint(where.X, where.Y), ready);
     }
 }

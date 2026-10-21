@@ -3,7 +3,8 @@ namespace Convertino;
 /// <summary>Runs a petal's action in the background and drives its progress card.</summary>
 public static class Jobs
 {
-    public static async Task Start(PetalAction action, IReadOnlyList<string> files, ScreenPoint where)
+    /// <param name="ready">The flower's run of this petal, if it already started one while the petal was hovered (<see cref="Preview"/>).</param>
+    public static async Task Start(PetalAction action, IReadOnlyList<string> files, ScreenPoint where, Preview.Handoff? ready = null)
     {
         var ui = Platform.Current.Ui;
         var cts = new CancellationTokenSource();
@@ -38,7 +39,8 @@ public static class Jobs
         var sw = System.Diagnostics.Stopwatch.StartNew();
         try
         {
-            if (action.Interactive) await action.Run(job);
+            if (ready != null && await ready.Into(job)) { }
+            else if (action.Interactive) await action.Run(job);
             else await Task.Run(() => action.Run(job), cts.Token);
         }
         catch (OperationCanceledException) { job.Silent = true; }

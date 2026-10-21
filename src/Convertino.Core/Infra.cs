@@ -154,6 +154,8 @@ public sealed class Settings
     public bool FirstRunDone { get; set; }
     public int JpegQuality { get; set; } = 90;
     public int CompressQuality { get; set; } = 72;
+    /// <summary>Work petals out ahead while the flower is open: a look at the result in the hub, real sizes on the petals, instant results on drop.</summary>
+    public bool LivePreview { get; set; } = true;
     /// <summary>Daily check for a newer release: null until the user answers the one-time card, and nothing goes out before.</summary>
     public bool? CheckForUpdates { get; set; }
     public DateTime LastUpdateCheck { get; set; }
