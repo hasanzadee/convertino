@@ -1,6 +1,6 @@
 <Project>
   <!-- one version for every app and the shared core (the CLI version string comes from the core assembly) -->
   <PropertyGroup>
-    <Version>1.3.0</Version>
+    <Version>1.4.0</Version>
   </PropertyGroup>
 </Project>
