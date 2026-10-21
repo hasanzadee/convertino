@@ -24,6 +24,7 @@ static class DevClip
         var captures = Path.Combine(outDir, "captures");
         if (Directory.Exists(captures)) Directory.Delete(captures, true);
         Captures.FolderOverride = captures;
+        Captures.SweepPending(); // what earlier runs left
         var report = new List<string>();
         int failed = 0;
         void Check(bool ok, string what)
@@ -50,7 +51,7 @@ static class DevClip
         var cases = new (string Name, DataObject Data, string Expect, Func<Offer?, bool> Ok)[]
         {
             ("png", Data(("PNG", new MemoryStream(Png(desktop, 640, 400, alpha: true)))), "Image",
-                o => o != null && o.Pages.FirstRing == "Quick" && Ids(o).StartsWith("copyimg ocr readqr annotate") && o.Scratch != null),
+                o => o != null && o.Pages.FirstRing == "Quick" && Ids(o).StartsWith("copyimg ocr readqr annotate") && Path.GetDirectoryName(o.Files[0]) == Captures.Pending),
             ("dib32", Data((DataFormats.Dib, new MemoryStream(Dib(desktop, 500, 320, 32)))), "Image",
                 o => o != null && o.HubTitle == "500×320"),
             ("dib24", Data((DataFormats.Dib, new MemoryStream(Dib(desktop, 333, 211, 24)))), "Image",
@@ -70,6 +71,13 @@ static class DevClip
             // Office puts a picture of the copied cells beside their text: the text is what was meant
             ("office", Data((DataFormats.UnicodeText, "Total\t42"), ("Csv", new MemoryStream("Total,42"u8.ToArray())), (DataFormats.Dib, new MemoryStream(Dib(desktop, 120, 40, 24)))), "Text",
                 o => o != null && o.Pages.Badge == "TEXT"),
+            // password managers mark their copies (KeePass, Bitwarden, 1Password …): shown as "Hidden text", no preview, no JSON/CSV sniffing
+            ("secret", Data((DataFormats.UnicodeText, "hunter2-correct-horse"), ("ExcludeClipboardContentFromMonitorProcessing", new MemoryStream(new byte[4]))), "Text",
+                o => o != null && o.HubTitle == "Hidden text" && o.HubSub == "21 chars" && Ids(o) == "clip-txt clip-md clip-qr"),
+            ("no-history", Data((DataFormats.UnicodeText, "hunter2-correct-horse"), ("CanIncludeInClipboardHistory", new MemoryStream(new byte[4]))), "Text",
+                o => o != null && o.HubTitle == "Hidden text"),
+            ("long-link", Data((DataFormats.UnicodeText, "https://example.com/?q=" + new string('a', 3000))), "Text",
+                o => o != null && o.Pages.Badge == "URL" && !Ids(o).Contains("clip-qr")),
             ("empty", Data(), "nothing", o => o == null),
         };
 
@@ -93,48 +101,60 @@ static class DevClip
             Render(offer, Path.Combine(outDir, $"clip-{name}.png"));
         }
 
-        // a pasted picture is saved to the captures folder with a time-stamped name; the same picture again (the last one) reuses it
+        // a pasted picture waits in a private temp folder; a petal moves it into the captures folder, time-stamped
         if (offers.TryGetValue("png", out var pngOffer))
         {
-            var f = pngOffer.Files[0];
-            Check(Path.GetDirectoryName(f) == captures && Regex.IsMatch(Path.GetFileName(f), @"^Clipboard \d{4}-\d\d-\d\d \d\d\.\d\d\.\d\d\.png$"), $"pasted picture saved as {Path.GetFileName(f)}");
+            var waiting = pngOffer.Files[0];
+            var f = pngOffer.Use()[0];
+            pngOffer.Closed(used: true);
+            Check(Path.GetDirectoryName(waiting) == Captures.Pending && !File.Exists(waiting) && Path.GetDirectoryName(f) == captures && File.Exists(f)
+                  && Regex.IsMatch(Path.GetFileName(f), @"^Clipboard \d{4}-\d\d-\d\d \d\d\.\d\d\.\d\d( \(\d+\))?\.png$"),
+                $"pasted picture waits in temp, a petal moves it to {Path.GetFileName(f)}");
         }
         if (offers.TryGetValue("dib24", out var lastPicture))
         {
             Thread.Sleep(1100); // a second later: the PNG must come out byte for byte the same
             var again = ClipFlower.For(ClipReader.Read(cases[2].Data));
             var f = lastPicture.Files[0];
-            Check(again?.Files[0] == f && again.Scratch == f, $"same picture again → same file ({Path.GetFileName(f)})");
+            Check(again?.Files[0] == f, $"same picture again → same file ({Path.GetFileName(f)})");
             // two flowers on one unused picture (the shortcut pressed again while the first closes): it goes with the last one
             again?.Closed(used: false);
             bool kept = File.Exists(f);
             lastPicture.Closed(used: false);
-            Check(kept && !File.Exists(f), "shared unused picture outlives the first flower, removed with the second");
+            Check(kept && !File.Exists(f) && !Directory.EnumerateFiles(captures, "Clipboard*").Any(p => p.EndsWith(Path.GetFileName(f))),
+                "shared unused picture outlives the first flower, removed with the second, never in Pictures");
             // used once: kept for good, even if another flower on it closes unused afterwards
             var used = ClipFlower.For(ClipReader.Read(cases[2].Data))!;
             var other = ClipFlower.For(ClipReader.Read(cases[2].Data))!;
+            var moved = used.Use()[0];
             used.Closed(used: true);
             other.Closed(used: false);
-            Check(used.Files[0] == other.Files[0] && File.Exists(used.Files[0]), $"a picture a petal used stays ({Path.GetFileName(used.Files[0])})");
+            Check(other.Use()[0] == moved && File.Exists(moved) && Path.GetDirectoryName(moved) == captures, $"a picture a petal used stays ({Path.GetFileName(moved)})");
         }
 
-        // text petals write real files into the captures folder
+        // text stays in memory: petals write only their own result, into the captures folder
+        int tempTexts() => Directory.EnumerateFiles(Path.GetTempPath(), "clipboard-*.txt").Count() + Directory.EnumerateFiles(Paths.Temp, "clipboard-*.txt").Count();
         if (offers.TryGetValue("text", out var textOffer))
+        {
+            Check(!File.Exists(textOffer.Files[0]) && tempTexts() == 0, "clipboard text not written anywhere before a petal runs");
             foreach (var id in new[] { "clip-txt", "clip-md", "clip-qr" }) RunPetal(textOffer, id, Check);
+        }
         if (offers.TryGetValue("json", out var jsonOffer)) RunPetal(jsonOffer, "clip-json", Check, f => File.ReadAllText(f).Contains("\n  \"name\": \"Convertino\""));
         if (offers.TryGetValue("cells", out var cellsOffer)) RunPetal(cellsOffer, "clip-csv", Check, f => File.ReadAllText(f).Contains("\"Pears, ripe\",5"));
+        // a password manager's copy: shown as "Hidden text", never quoted on a card
+        foreach (var name in new[] { "secret", "no-history" })
+            if (offers.TryGetValue(name, out var secret))
+            {
+                var job = RunPetal(secret, "clip-txt", Check, f => File.ReadAllText(f) == "hunter2-correct-horse");
+                Check(job?.Summary is { } said && !said.Contains("hunter2"), $"{name}: the card says \"{job?.Summary}\"");
+            }
 
-        // cleanup: a pasted picture nobody used goes away, the temp text always does
+        // cleanup: a pasted picture nobody used goes away
         if (offers.TryGetValue("dib32", out var unused))
         {
             var f = unused.Files[0];
             unused.Closed(used: false);
             Check(!File.Exists(f), "unused pasted picture removed when the flower closes");
-        }
-        if (textOffer != null)
-        {
-            textOffer.Closed(used: true);
-            Check(!File.Exists(textOffer.Files[0]), "temp text removed after its petal ran");
         }
 
         // a screen capture: crop of the (made-up) frozen desktop → Screenshot … .png → the image flower, Quick ring first
@@ -147,7 +167,7 @@ static class DevClip
             var path = Captures.NewPath("Screenshot", "png");
             File.WriteAllBytes(path, Captures.BgraToPng(cut, cw, ch));
             var shot = ClipFlower.ForScreenshot(path);
-            Check(shot.HubTitle == "760×440" && shot.Scratch == null && Ids(shot).StartsWith("copyimg ocr readqr annotate crop redact to-jpg to-webp to-pdf"),
+            Check(shot.HubTitle == "760×440" && shot.Use()[0] == path && Ids(shot).StartsWith("copyimg ocr readqr annotate crop redact to-jpg to-webp to-pdf"),
                 $"screenshot 760×440 → {Path.GetFileName(path)} · {string.Join(" · ", shot.Pages.Rings.Select(r => $"{r.Name} ({r.Petals.Count})"))}");
             Render(shot, Path.Combine(outDir, "screenshot.png"));
         }
@@ -155,6 +175,8 @@ static class DevClip
         // shortcuts: parsing, labels, the panel's choices
         Check(Hotkey.Parse("Win+Shift+X") == new Hotkey(HotMods.Super | HotMods.Shift, "X") && Hotkey.Parse("win+shift+x")!.Value.Label == "Win+Shift+X", "Win+Shift+X parses, shows as Win+Shift+X");
         Check(Hotkey.Parse("Ctrl+Alt+F12")?.ToString() == "Ctrl+Alt+F12" && Hotkey.Parse("Shift") == null && Hotkey.Parse("Ctrl+X+Y") == null && Hotkey.Parse("Super+F25") == null, "Ctrl+Alt+F12 ok; Shift, Ctrl+X+Y, F25 rejected");
+        Check(Hotkey.Parse("Shift+A") == null && Hotkey.Parse("Alt+E") == null && Hotkey.Parse("Shift+Alt+Q") == null && Hotkey.Parse("Shift+F5") != null && Hotkey.Parse("Ctrl+Alt+X") != null,
+            "Shift / Alt only + a letter rejected (they type characters); Shift+F5, Ctrl+Alt+X ok");
         Check(Hotkey.Clipboard.Next(false) == new Hotkey(HotMods.Super | HotMods.Shift, "Z") && Hotkey.Clipboard.Next(false).Next(false) == Hotkey.Clipboard, "clipboard shortcut cycles X → Z → X");
         Check(new Settings().ClipboardKey.Label == "Win+Shift+X" && new Settings().CaptureKey.Label == "Win+Shift+A" && new Settings { ClipboardHotkey = "nonsense" }.ClipboardKey == Hotkey.Clipboard,
             "defaults Win+Shift+X / Win+Shift+A; garbage in settings → default");
@@ -179,10 +201,10 @@ static class DevClip
     /// <summary>Convertino.exe --capture-selftest out.png: the capture overlay mid-drag (1.5× monitor) and idle (1×), over a made-up desktop.</summary>
     public static void CaptureSelfTest(string outPath) => RegionCapture.DevRender(outPath, Desktop(1600, 1000));
 
-    static void RunPetal(Offer offer, string id, Action<bool, string> check, Func<string, bool>? content = null)
+    static Job? RunPetal(Offer offer, string id, Action<bool, string> check, Func<string, bool>? content = null)
     {
         var action = offer.Pages.Rings.SelectMany(r => r.Petals).FirstOrDefault(a => a.Id == id);
-        if (action == null) { check(false, $"{id}: no such petal"); return; }
+        if (action == null) { check(false, $"{id}: no such petal"); return null; }
         try
         {
             // off the UI thread: RunHeadless resumes on the context it started on, which this wait blocks
@@ -190,8 +212,9 @@ static class DevClip
             var f = job.Outputs.FirstOrDefault();
             bool ok = f != null && File.Exists(f) && new FileInfo(f).Length > 0 && Path.GetDirectoryName(f) == Captures.Folder && (content?.Invoke(f) ?? true);
             check(ok, $"{id,-10} → {(f == null ? "nothing" : Path.GetFileName(f))}");
+            return job;
         }
-        catch (Exception ex) { check(false, $"{id}: {ex.Message}"); }
+        catch (Exception ex) { check(false, $"{id}: {ex.Message}"); return null; }
     }
 
     static DataObject Data(params (string Format, object Value)[] items)

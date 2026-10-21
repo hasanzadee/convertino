@@ -8,34 +8,31 @@ namespace Convertino.Services;
 /// <summary>A flower that doesn't come from a drag (the clipboard, a screenshot): its files, its rings, what the hub says.</summary>
 public sealed class Offer
 {
+    /// <summary>What the flower works on. For clipboard text nothing is on disk (the petals carry the text); for a pasted picture, a private temp file until <see cref="Use"/>.</summary>
     public required IReadOnlyList<string> Files { get; init; }
     public required Pages Pages { get; init; }
     /// <summary>Big and small hub lines; null = the usual size and file name.</summary>
     public string? HubTitle { get; init; }
     public string? HubSub { get; init; }
-    /// <summary>Made only for this flower (a pasted picture): removed when it closes without a petal picked.</summary>
-    public string? Scratch { get; init; }
-    /// <summary>The clipboard text handed to the petals as a temp file: removed when the flower is done with it.</summary>
-    public string? TempInput { get; init; }
+    /// <summary>The pasted picture this flower shows, while it waits in <see cref="Captures.Pending"/>.</summary>
+    internal ClipFlower.Pasted? Pasted { get; init; }
 
-    /// <summary>The flower closed; <paramref name="used"/> = a petal ran and its job is over.</summary>
+    /// <summary>A petal was picked: the files to hand it. A pasted picture moves into Pictures/Convertino now, so the result lands next to it there.</summary>
+    public IReadOnlyList<string> Use() => Pasted is { } p ? [ClipFlower.Keep(p)] : Files;
+
+    /// <summary>The flower closed (its job, if a petal ran, is over): a pasted picture nobody used is removed.</summary>
     public void Closed(bool used)
     {
-        if (TempInput != null) TryDelete(TempInput);
-        if (Scratch != null) ClipFlower.Release(Scratch, used);
-    }
-
-    internal static void TryDelete(string p)
-    {
-        try { File.Delete(p); } catch (Exception ex) { Log.Error("offer cleanup", ex); }
+        if (Pasted is { } p) ClipFlower.Release(p);
     }
 }
 
 /// <summary>
 /// "Convertino without dragging a file": the flower for whatever is on the clipboard and for a screen capture.
-/// Copied files get their normal flower, a picture is saved into <see cref="Captures.Folder"/> and gets the image
-/// flower (a "Quick" ring first), text gets its own petals (TXT, MD, QR; JSON and CSV when it is that; a link: QR
-/// plus whatever <see cref="LinkPetals"/> adds).
+/// Copied files get their normal flower, a picture gets the image flower (a "Quick" ring first) and is saved into
+/// <see cref="Captures.Folder"/> once a petal uses it, text gets its own petals (TXT, MD, QR; JSON and CSV when it is
+/// that; a link: QR plus whatever <see cref="LinkPetals"/> adds). Text stays in memory until a petal writes it, and text
+/// a password manager marked as secret is never shown.
 /// </summary>
 public static class ClipFlower
 {
@@ -45,22 +42,26 @@ public static class ClipFlower
     /// <summary>The first ring of a pasted picture or a screenshot, in this order, when the image flower has them.</summary>
     static readonly string[] Quick = ["copyimg", "ocr", "readqr", "annotate", "crop", "redact", "to-jpg", "to-webp", "to-pdf", "cutout"];
 
-    static (string Hash, string Path)? _lastPicture;
-
-    /// <summary>Pasted pictures no petal has used yet, and how many open flowers show each (the shortcut pressed again while one closes).</summary>
-    static readonly Dictionary<string, int> Unused = [];
+    /// <summary>Longest text a QR code holds (bytes, at the lowest error correction).</summary>
+    const int QrBytes = 2900;
 
     /// <summary>The flower for this clipboard content, or null when there is nothing to offer.</summary>
-    public static Offer? For(ClipContent? content) => content switch
+    public static Offer? For(ClipContent? content)
+    {
+        lock (Gate) if (!_swept) { _swept = true; Captures.SweepPending(); }
+        return Make(content);
+    }
+
+    static Offer? Make(ClipContent? content) => content switch
     {
         ClipContent.Files f => ForFiles(f.Paths),
         ClipContent.Image i => ForPicture(i.Png),
-        ClipContent.Text t when t.Value.Trim().Length > 0 => ForText(t.Value),
+        ClipContent.Text t when t.Value.Trim().Length > 0 => ForText(t.Value, t.Secret),
         _ => null,
     };
 
-    /// <summary>A capture already saved as PNG (kept even if no petal is picked: it was taken on purpose).</summary>
-    public static Offer ForScreenshot(string png) => PictureOffer(png, "Screenshot", scratch: false);
+    /// <summary>A capture already saved as PNG (it was taken on purpose: it stays even if no petal is picked).</summary>
+    public static Offer ForScreenshot(string png) => PictureOffer(png, "Screenshot", null);
 
     static Offer? ForFiles(IReadOnlyList<string> paths)
     {
@@ -68,44 +69,75 @@ public static class ClipFlower
         return files.Count == 0 ? null : new Offer { Files = files, Pages = Catalog.For(files) };
     }
 
+    // ---------- pasted pictures ----------
+
+    /// <summary>
+    /// A pasted picture waiting in the private temp folder: shared by the flowers showing it (the shortcut pressed again
+    /// while one closes), moved into Pictures/Convertino when a petal uses it, removed when the last unused flower closes.
+    /// </summary>
+    internal sealed class Pasted
+    {
+        public required string Hash;
+        public required string Path;
+        public int Holders;
+        public bool Kept;
+    }
+
+    static readonly object Gate = new();
+    static Pasted? _last;
+    static bool _swept;
+
     static Offer ForPicture(byte[] png)
     {
         var hash = Convert.ToHexString(SHA256.HashData(png));
-        string path;
-        bool scratch;
-        lock (Unused)
+        Pasted p;
+        lock (Gate)
         {
-            // the same picture twice in a row (the shortcut pressed again): one file, still removed if no flower uses it
-            if (_lastPicture is { } last && last.Hash == hash && File.Exists(last.Path))
+            // the same picture twice in a row (the shortcut pressed again): one file
+            if (_last is { } last && last.Hash == hash && File.Exists(last.Path))
             {
-                path = last.Path;
-                scratch = Unused.ContainsKey(path);
+                if (last.Kept) return PictureOffer(last.Path, "Clipboard", null);
+                p = last;
             }
             else
             {
-                path = Captures.NewPath("Clipboard", "png");
+                var path = Captures.NewPath("Clipboard", "png", Captures.Pending);
                 File.WriteAllBytes(path, png);
-                _lastPicture = (hash, path);
-                scratch = true;
+                _last = p = new Pasted { Hash = hash, Path = path };
             }
-            if (scratch) Unused[path] = Unused.GetValueOrDefault(path) + 1;
+            p.Holders++;
         }
-        return PictureOffer(path, "Clipboard", scratch);
+        return PictureOffer(p.Path, "Clipboard", p);
     }
 
-    /// <summary>A flower showing a pasted picture closed: a used picture is kept for good, an unused one goes when no other flower shows it.</summary>
-    internal static void Release(string path, bool used)
+    /// <summary>A petal uses the picture: into Pictures/Convertino with it (once), its path there.</summary>
+    internal static string Keep(Pasted p)
     {
-        lock (Unused)
+        lock (Gate)
         {
-            if (!Unused.TryGetValue(path, out int n)) return;
-            if (!used && n > 1) { Unused[path] = n - 1; return; }
-            Unused.Remove(path);
-            if (!used) Offer.TryDelete(path);
+            if (p.Kept || !File.Exists(p.Path)) return p.Path;
+            try
+            {
+                var dst = Captures.NewPath("Clipboard", "png");
+                File.Move(p.Path, dst);
+                p.Path = dst;
+                p.Kept = true;
+            }
+            catch (Exception ex) { Log.Error("keep pasted picture", ex); } // the petal still runs, on the temp copy
+            return p.Path;
         }
     }
 
-    static Offer PictureOffer(string png, string what, bool scratch)
+    internal static void Release(Pasted p)
+    {
+        lock (Gate)
+        {
+            if (--p.Holders > 0 || p.Kept) return;
+            try { File.Delete(p.Path); } catch (Exception ex) { Log.Error("pasted picture cleanup", ex); }
+        }
+    }
+
+    static Offer PictureOffer(string png, string what, Pasted? pasted)
     {
         var all = Catalog.For([png]);
         var pool = all.Convert.Concat(all.Tools).Concat(all.More).ToList();
@@ -119,54 +151,59 @@ public static class ClipFlower
         };
         string dims = "";
         try { var info = new MagickImageInfo(png); dims = $"{info.Width}×{info.Height}"; } catch (Exception ex) { Log.Error("picture size", ex); }
-        return new Offer { Files = [png], Pages = pages, HubTitle = dims.Length > 0 ? dims : Paths.HumanSize(Paths.SizeOf(png)), HubSub = what, Scratch = scratch ? png : null };
+        return new Offer { Files = [png], Pages = pages, HubTitle = dims.Length > 0 ? dims : Paths.HumanSize(Paths.SizeOf(png)), HubSub = what, Pasted = pasted };
     }
 
     // ---------- text ----------
 
-    static Offer ForText(string text)
+    /// <summary>
+    /// Text petals carry the text themselves: nothing is written until one is picked, and then only its own result.
+    /// <paramref name="secret"/> (a password manager's copy): the hub says "Hidden text" and the cards never quote it.
+    /// </summary>
+    static Offer ForText(string text, bool secret)
     {
-        var tmp = Path.Combine(Paths.Temp, $"clipboard-{Guid.NewGuid():N}.txt");
-        File.WriteAllText(tmp, text, new UTF8Encoding(false));
-        var link = Link(text);
+        var link = secret ? null : Link(text);
+        bool fitsQr = Encoding.UTF8.GetByteCount(text.Trim()) <= QrBytes;
         var petals = new List<PetalAction>();
         if (link != null)
         {
-            petals.Add(QrPetal);
+            if (fitsQr) petals.Add(QrPetal(text, secret));
             foreach (var extra in LinkPetals)
                 try { if (extra(link) is { } p) petals.Add(p); }
                 catch (Exception ex) { Log.Error("link petal", ex); }
         }
-        petals.Add(SaveAs("txt", "TXT", "text"));
-        petals.Add(SaveAs("md", "MD", "Markdown"));
-        if (link == null && Encoding.UTF8.GetByteCount(text.Trim()) <= 2900) petals.Add(QrPetal);
-        if (IsJson(text)) petals.Add(SaveAs("json", "JSON", "pretty"));
-        if (Table(text) != null) petals.Add(SaveAs("csv", "CSV", "table"));
+        petals.Add(SaveAs(text, secret, "txt", "TXT", "text"));
+        petals.Add(SaveAs(text, secret, "md", "MD", "Markdown"));
+        if (link == null && fitsQr) petals.Add(QrPetal(text, secret));
+        if (!secret && IsJson(text)) petals.Add(SaveAs(text, secret, "json", "JSON", "pretty"));
+        if (!secret && Table(text) != null) petals.Add(SaveAs(text, secret, "csv", "CSV", "table"));
         string badge = link != null ? "URL" : "TEXT";
         var pages = new Pages(petals.Take(Pages.MaxPetals).ToList(), [], link != null ? "Link" : "Text", badge);
         return new Offer
         {
-            Files = [tmp], Pages = pages, TempInput = tmp,
-            HubTitle = link != null ? link.Host : Count(text),
-            HubSub = link != null ? "Link" : Short(text),
+            // nothing at this path: it only names the input on cards ("Clipboard text")
+            Files = [Path.Combine(Path.GetTempPath(), "Clipboard text")],
+            Pages = pages,
+            HubTitle = secret ? "Hidden text" : link != null ? link.Host : Count(text),
+            HubSub = secret ? $"{text.Length} chars" : link != null ? "Link" : Short(text),
         };
     }
 
-    static PetalAction QrPetal => Catalog.Tool("clip-qr", "QR", "qr", "Make a QR code", async job =>
+    static string Said(string text, bool secret) => secret ? $"Hidden text, {text.Length} chars" : Ocr.Preview(text);
+
+    static PetalAction QrPetal(string text, bool secret) => Catalog.Tool("clip-qr", "QR", "qr", "Make a QR code", async job =>
     {
-        var text = (await File.ReadAllTextAsync(job.Inputs[0], job.Token)).Trim();
-        job.Outputs.Add(await Task.Run(() => SaveText(text, "qr")));
-        job.Summary = Ocr.Preview(text);
+        job.Outputs.Add(await Task.Run(() => SaveText(text, "qr"), job.Token));
+        job.Summary = Said(text, secret);
     });
 
-    static PetalAction SaveAs(string ext, string label, string hint) => new()
+    static PetalAction SaveAs(string text, bool secret, string ext, string label, string hint) => new()
     {
         Id = "clip-" + ext, Label = label, Hint = hint, Verb = $"Save as .{ext}", Short = $"→ {label}",
         Run = async job =>
         {
-            var text = await File.ReadAllTextAsync(job.Inputs[0], job.Token);
-            job.Outputs.Add(await Task.Run(() => SaveText(text, ext)));
-            job.Summary = Ocr.Preview(text);
+            job.Outputs.Add(await Task.Run(() => SaveText(text, ext), job.Token));
+            job.Summary = Said(text, secret);
         },
     };
 
@@ -277,7 +314,8 @@ public static class ClipFlower
         if (items.Count == 1 && File.Exists(items[0]))
         {
             var f = items[0];
-            if (Kinds.Of(f) == Kind.Image)
+            // a GIF stays a file: as a picture only its first frame would paste
+            if (Kinds.Of(f) == Kind.Image && Kinds.Ext(f) != "gif")
             {
                 var job = new Job { Inputs = [f], Action = Catalog.Tool("copyimg", "Copy", "image", "Copy image", ImageTools.CopyImage, quick: true) };
                 await ImageTools.CopyImage(job);

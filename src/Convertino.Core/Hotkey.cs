@@ -60,6 +60,8 @@ public readonly record struct Hotkey(HotMods Mods, string Key)
             }
         }
         if (key == null || mods == HotMods.None || !ValidKey(key)) return null;
+        // Shift and Alt / Option alone with a letter or digit type characters (capitals, é, ł …): those need Ctrl or Win / Super / Command
+        if (key.Length == 1 && (mods & (HotMods.Ctrl | HotMods.Super)) == 0) return null;
         return new Hotkey(mods, key);
     }
 

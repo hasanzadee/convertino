@@ -34,7 +34,8 @@ public sealed unsafe class CarbonHotkeys : IHotkeys
 
     public string? Register(Hotkey key, Action action)
     {
-        if (KeyCode(key.Key) is not { } code) return "no such key";
+        // letters and digits where the current layout has them (AZERTY's A is the US Q key), F-keys where they are
+        if (((key.Key.Length == 1 ? LayoutKeyCode(key.Key[0]) : null) ?? KeyCode(key.Key)) is not { } code) return "no such key";
         try
         {
             if (!_installed)
@@ -84,6 +85,56 @@ public sealed unsafe class CarbonHotkeys : IHotkeys
         if (hk.Signature != Signature || !Actions.TryGetValue(hk.Id, out var action)) return -9874;
         try { action(); } catch (Exception ex) { Log.Error("hot key", ex); }
         return 0;
+    }
+
+    // ---------- keyboard layout ----------
+
+    const string CoreServices = "/System/Library/Frameworks/CoreServices.framework/CoreServices";
+    const string CoreFoundation = "/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation";
+    [DllImport(Carbon)] static extern IntPtr TISCopyCurrentASCIICapableKeyboardLayoutInputSource();
+    [DllImport(Carbon)] static extern IntPtr TISGetInputSourceProperty(IntPtr source, IntPtr key);
+    [DllImport(Carbon)] static extern byte LMGetKbdType();
+    [DllImport(CoreServices)] static extern int UCKeyTranslate(IntPtr layout, ushort keyCode, ushort keyAction, uint modifiers, uint keyboardType, uint options, ref uint deadKeyState, nuint maxLength, out nuint length, char* chars);
+    [DllImport(CoreFoundation)] static extern IntPtr CFDataGetBytePtr(IntPtr data);
+    [DllImport(CoreFoundation)] static extern void CFRelease(IntPtr cf);
+
+    /// <summary>
+    /// The key that types <paramref name="ch"/> in the current keyboard layout (its Latin one, for Cyrillic, Greek …), as
+    /// the shortcut should follow the letter, not a US position. Null when the layout can't be read: the US table then.
+    /// </summary>
+    static uint? LayoutKeyCode(char ch)
+    {
+        IntPtr source = IntPtr.Zero;
+        try
+        {
+            source = TISCopyCurrentASCIICapableKeyboardLayoutInputSource();
+            if (source == IntPtr.Zero) return null;
+            var name = Marshal.ReadIntPtr(NativeLibrary.GetExport(NativeLibrary.Load(Carbon), "kTISPropertyUnicodeKeyLayoutData"));
+            var data = TISGetInputSourceProperty(source, name);
+            if (data == IntPtr.Zero) return null;
+            var layout = CFDataGetBytePtr(data);
+            uint keyboard = LMGetKbdType();
+            char* buf = stackalloc char[4];
+            char want = char.ToUpperInvariant(ch);
+            // the main block first (0–50), so a digit is the top-row key, not the keypad's
+            for (ushort code = 0; code < 128; code++)
+            {
+                uint dead = 0;
+                // kUCKeyActionDisplay, no modifiers, kUCKeyTranslateNoDeadKeysMask
+                if (UCKeyTranslate(layout, code, 3, 0, keyboard, 1, ref dead, 4, out var length, buf) == 0 && length == 1 && char.ToUpperInvariant(buf[0]) == want)
+                {
+                    if (KeyCode(ch.ToString()) is { } us && us != code) Log.Info($"hot key letter {ch}: key {code} in this keyboard layout (US {us})");
+                    return code;
+                }
+            }
+            return null;
+        }
+        catch (Exception ex) when (ex is DllNotFoundException or EntryPointNotFoundException or InvalidOperationException)
+        {
+            Log.Error("keyboard layout", ex);
+            return null;
+        }
+        finally { if (source != IntPtr.Zero) CFRelease(source); }
     }
 
     /// <summary>ANSI virtual key codes (kVK_ANSI_*, kVK_F*): what RegisterEventHotKey takes.</summary>

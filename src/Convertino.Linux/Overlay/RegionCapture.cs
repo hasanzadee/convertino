@@ -168,50 +168,95 @@ public sealed class RegionCapture
 
     // ---------- Wayland: the desktop's own picker ----------
 
+    /// <summary>
+    /// The desktop's own area picker, its own first: Spectacle on KDE, gnome-screenshot on GNOME, grim + slurp on wlroots
+    /// compositors (Sway, Hyprland … — GNOME and KDE lack the protocols they need), then whatever else is installed. A tool
+    /// that fails at once can't work here and the next one is tried; one that ran a while without a picture was cancelled.
+    /// </summary>
     static (string Png, ScreenPoint? At)? WithTool()
     {
         var path = Captures.NewPath("Screenshot", "png");
+        var desktop = (Environment.GetEnvironmentVariable("XDG_CURRENT_DESKTOP") ?? "").ToUpperInvariant();
+        bool wlroots = Environment.GetEnvironmentVariable("SWAYSOCK") != null || Environment.GetEnvironmentVariable("HYPRLAND_INSTANCE_SIGNATURE") != null
+            || new[] { "SWAY", "HYPRLAND", "WAYFIRE", "RIVER", "LABWC", "NIRI" }.Any(desktop.Contains);
         ScreenPoint? at = null;
-        if (Paths.Which("slurp") is { } slurp && Paths.Which("grim") is { } grim)
+        bool Got() => File.Exists(path) && new FileInfo(path).Length > 0;
+
+        // true = a picture, false = the user cancelled, null = not installed or can't work here: try the next
+        bool? GrimSlurp()
         {
-            var (code, geo) = Exec(slurp, []);
+            if (Paths.Which("slurp") is not { } slurp || Paths.Which("grim") is not { } grim) return null;
+            var (code, geo, secs) = Exec(slurp, []);
             geo = geo.Trim();
-            if (code != 0 || geo.Length == 0) return null; // Esc in slurp
-            Exec(grim, ["-g", geo, path]);
+            if (code != 0 || geo.Length == 0) return secs < 1.5 ? null : false;
+            if (Exec(grim, ["-g", geo, path]).Code != 0 || !Got()) return null;
             // "x,y wxh": the flower blooms at the bottom-right corner, where the drag ended
             var n = geo.Split([',', ' ', 'x'], StringSplitOptions.RemoveEmptyEntries).Select(s => int.TryParse(s, out int v) ? v : 0).ToArray();
             if (n.Length == 4) at = new ScreenPoint(n[0] + n[2], n[1] + n[3]);
+            return true;
         }
-        else if (Paths.Which("gnome-screenshot") is { } gs) Exec(gs, ["-a", "-f", path]);
-        else if (Paths.Which("spectacle") is { } sp) Exec(sp, ["-r", "-b", "-n", "-o", path]);
-        else if (Paths.Which("flameshot") is { } fs)
+        bool? Picker(string exe, params string[] args)
         {
-            var png = ExecBytes(fs, ["gui", "-r"]);
-            if (png is { Length: > 8 }) File.WriteAllBytes(path, png);
+            if (Paths.Which(exe) is not { } tool) return null;
+            var (code, _, secs) = Exec(tool, args);
+            if (Got()) return true;
+            return code != 0 && secs < 1.5 ? null : false;
         }
-        else throw new InvalidOperationException("On Wayland, area capture needs grim + slurp, gnome-screenshot, Spectacle or Flameshot");
-        return File.Exists(path) && new FileInfo(path).Length > 0 ? (path, at) : null;
+        bool? Flameshot()
+        {
+            if (Paths.Which("flameshot") is not { } fs) return null;
+            var (png, secs) = ExecBytes(fs, ["gui", "-r"]);
+            if (png is { Length: > 8 }) { File.WriteAllBytes(path, png); return true; }
+            return secs < 1.5 ? null : false;
+        }
+
+        var order = new List<(string Name, Func<bool?> Run)>();
+        if (wlroots) order.Add(("grim", GrimSlurp));
+        if (desktop.Contains("KDE")) order.Add(("spectacle", () => Picker("spectacle", "-r", "-b", "-n", "-o", path)));
+        if (desktop.Contains("GNOME")) order.Add(("gnome-screenshot", () => Picker("gnome-screenshot", "-a", "-f", path)));
+        order.Add(("spectacle", () => Picker("spectacle", "-r", "-b", "-n", "-o", path)));
+        order.Add(("gnome-screenshot", () => Picker("gnome-screenshot", "-a", "-f", path)));
+        order.Add(("flameshot", Flameshot));
+        order.Add(("grim", GrimSlurp));
+        var tried = new HashSet<string>();
+        foreach (var (name, run) in order)
+        {
+            if (!tried.Add(name)) continue;
+            var r = run();
+            if (r == null) continue;
+            Log.Info($"capture with {name}: {(r == true ? "ok" : "cancelled")}");
+            return r == true ? (path, at) : null;
+        }
+        throw new InvalidOperationException("On Wayland, area capture needs Spectacle (KDE), gnome-screenshot (GNOME), Flameshot, or grim + slurp (Sway, Hyprland)");
     }
 
-    static (int Code, string Out) Exec(string exe, string[] args)
+    /// <summary>
+    /// Run a picker and wait for the user (two minutes at most, then it is stopped). Its error output isn't captured:
+    /// nobody would read it, and a chatty tool would block on a full pipe.
+    /// </summary>
+    static (int Code, string Out, double Secs) Exec(string exe, string[] args)
     {
-        var psi = new ProcessStartInfo(exe) { UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true };
+        var sw = Stopwatch.StartNew();
+        var psi = new ProcessStartInfo(exe) { UseShellExecute = false, RedirectStandardOutput = true };
         foreach (var a in args) psi.ArgumentList.Add(a);
         using var p = Process.Start(psi)!;
-        var stdout = p.StandardOutput.ReadToEnd();
-        p.WaitForExit(300_000);
-        return (p.HasExited ? p.ExitCode : -1, stdout);
+        var output = p.StandardOutput.ReadToEndAsync();
+        if (!p.WaitForExit(120_000)) { try { p.Kill(true); } catch { } return (-1, "", sw.Elapsed.TotalSeconds); }
+        output.Wait(2000);
+        return (p.ExitCode, output.IsCompletedSuccessfully ? output.Result : "", sw.Elapsed.TotalSeconds);
     }
 
-    static byte[]? ExecBytes(string exe, string[] args)
+    static (byte[]? Out, double Secs) ExecBytes(string exe, string[] args)
     {
-        var psi = new ProcessStartInfo(exe) { UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true };
+        var sw = Stopwatch.StartNew();
+        var psi = new ProcessStartInfo(exe) { UseShellExecute = false, RedirectStandardOutput = true };
         foreach (var a in args) psi.ArgumentList.Add(a);
         using var p = Process.Start(psi)!;
         using var ms = new MemoryStream();
-        p.StandardOutput.BaseStream.CopyTo(ms);
-        p.WaitForExit(300_000);
-        return p.HasExited && p.ExitCode == 0 ? ms.ToArray() : null;
+        var copy = p.StandardOutput.BaseStream.CopyToAsync(ms);
+        if (!p.WaitForExit(120_000)) { try { p.Kill(true); } catch { } return (null, sw.Elapsed.TotalSeconds); }
+        copy.Wait(2000);
+        return (p.ExitCode == 0 ? ms.ToArray() : null, sw.Elapsed.TotalSeconds);
     }
 }
 

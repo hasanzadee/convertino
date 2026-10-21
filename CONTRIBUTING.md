@@ -53,7 +53,7 @@ Windows (`Convertino.exe`):
 |---|---|
 | `--snapshot out.png [theme] [img\|tools\|more\|formats\|pdf] [hoverIndex]` | render one ring of the flower to a PNG (no drag needed); `img`, `tools`, `more` and `formats` are the four image rings |
 | `--paging-selftest dir` | feed the hook callbacks wheel / Tab / Shift data and check the overlay cycles every ring and swallows only what it should; no hooks, no injected input, no window. Writes `results.txt` and a PNG per ring |
-| `--clip-selftest dir` | feed synthetic clipboard payloads (PNG, 32/24-bit DIB, CF_HDROP, text, a link, JSON, spreadsheet cells, Office text + picture, empty) through the real reader, offers and text petals, plus a capture crop and the shortcut parsing; renders each bloomed flower (`clip-*.png`, `screenshot.png`) and writes `results.txt`. The system clipboard and the screen are never touched; captured files go to `dir/captures` |
+| `--clip-selftest dir` | feed synthetic clipboard payloads (PNG, 32/24-bit DIB, CF_HDROP, text, a link, a too-long link, JSON, spreadsheet cells, Office text + picture, password-manager text, empty) through the real reader, offers and text petals, plus a capture crop and the shortcut parsing; renders each bloomed flower (`clip-*.png`, `screenshot.png`) and writes `results.txt`. The system clipboard and the screen are never touched; captured files go to `dir/captures` |
 | `--capture-selftest out.png` | render the area-capture overlay (mid-drag on a 1.5× monitor, idle on a 1× one) over a made-up desktop |
 | `--panel out.png [theme] [demo]` | render the tray panel to a PNG (`demo` fills the Activity card with sample data) |
 | `--run <actionId> files…` | run one action headless; result in the log |

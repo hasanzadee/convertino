@@ -48,8 +48,9 @@ public sealed class ClipShortcuts
         if (_keys == null) return;
         _keys.Clear();
         var s = Settings.Current;
-        Hotkey.ClipboardProblem = s.ClipboardHotkeyOn ? _keys.Register(s.ClipboardKey, Clipboard) : null;
-        Hotkey.CaptureProblem = s.CaptureHotkeyOn ? _keys.Register(s.CaptureKey, Capture) : null;
+        // paused: the keys go back to the other apps
+        Hotkey.ClipboardProblem = s.Enabled && s.ClipboardHotkeyOn ? _keys.Register(s.ClipboardKey, Clipboard) : null;
+        Hotkey.CaptureProblem = s.Enabled && s.CaptureHotkeyOn ? _keys.Register(s.CaptureKey, Capture) : null;
         if (!announce) return;
         foreach (var (key, problem) in new[] { (s.ClipboardKey, Hotkey.ClipboardProblem), (s.CaptureKey, Hotkey.CaptureProblem) })
             if (problem != null) Card($"{key.Label} isn't free", $"{char.ToUpperInvariant(problem[0])}{problem[1..]} — pick another in the Convertino panel", "clipboard");

@@ -291,7 +291,7 @@ public sealed class TrayPanel : Window
         {
             Children =
             {
-                ToggleRow("Enabled", s.Enabled, v => { s.Enabled = v; Subtitle(); }),
+                ToggleRow("Enabled", s.Enabled, v => { s.Enabled = v; Subtitle(); Hotkey.Changed(); }),
                 TriggerRow(key),
                 ToggleRow("Notifications", s.Notifications, v => s.Notifications = v),
                 ToggleRow("Tell me about new versions", s.CheckForUpdates == true, Updates.Answer),

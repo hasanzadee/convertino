@@ -206,7 +206,7 @@ public sealed class Flyout : Window
         {
             Children =
             {
-                ToggleRow("Enabled", s.Enabled, v => { s.Enabled = v; s.Save(); Build(); }),
+                ToggleRow("Enabled", s.Enabled, v => { s.Enabled = v; s.Save(); Hotkey.Changed(); Build(); }),
                 TriggerRow(key),
                 ToggleRow("Double-tap Shift in Explorer", s.DoubleShift, v => { s.DoubleShift = v; s.Save(); }),
                 ToggleRow("Notifications", s.Notifications, v => { s.Notifications = v; s.Save(); }),
@@ -759,7 +759,7 @@ public sealed class TrayIcon : IDisposable
         area.ShortcutKeyDisplayString = s.CaptureHotkeyOn ? s.CaptureKey.Label : null;
         m.Items.Add(area);
         m.Items.Add(new System.Windows.Forms.ToolStripSeparator());
-        m.Items.Add(Item("Enabled", () => { s.Enabled = !s.Enabled; s.Save(); }, s.Enabled));
+        m.Items.Add(Item("Enabled", () => { s.Enabled = !s.Enabled; s.Save(); Hotkey.Changed(); }, s.Enabled));
         var themes = new System.Windows.Forms.ToolStripMenuItem("Theme");
         foreach (var th in Theme.All)
             themes.DropDownItems.Add(Item(th.Name, () => { s.Theme = th.Name; s.Save(); Theme.Apply(th.Name); }, th.Name == Theme.Current.Name));

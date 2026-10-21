@@ -67,11 +67,13 @@ public static class Pasteboard
             var text = ObjC.Str(ObjC.Send(pb, "stringForType:", ObjC.NSString("public.utf8-plain-text")));
             bool hasText = !string.IsNullOrWhiteSpace(text);
             bool document = hasText && types.Any(t => t is "public.rtf" or "com.apple.flat-rtfd" or "public.utf8-tab-separated-values-text" || t.StartsWith("com.microsoft.", StringComparison.Ordinal));
-            if (!document)
+            // 1Password, Bitwarden, KeePassXC… mark passwords (nspasteboard.org): never shown
+            bool secret = types.Contains("org.nspasteboard.ConcealedType");
+            if (!document && !secret)
                 foreach (var t in new[] { "public.png", "public.tiff", "public.jpeg" })
                     if (types.Contains(t) && Bytes(ObjC.Send(pb, "dataForType:", ObjC.NSString(t))) is { Length: > 8 } b)
                         return new ClipContent.Image(t == "public.png" ? b : Captures.ToPng(b));
-            return hasText ? new ClipContent.Text(text!) : null;
+            return hasText ? new ClipContent.Text(text!, secret) : null;
         }
         finally { ObjC.objc_autoreleasePoolPop(pool); }
     }

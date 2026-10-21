@@ -353,9 +353,10 @@ public sealed class OverlayController
         var actions = _win.View.CurrentActions;
         if (idx < 0 || idx >= actions.Count) { Hide(); return; }
         var action = actions[idx];
-        var files = _files;
         var offer = _offer;
         _offer = null;
+        // a pasted picture moves from temp into Pictures/Convertino only now, when a petal uses it
+        var files = offer?.Use() ?? _files;
         var where = new ScreenPoint(_rect.X + _rect.Width / 2, _rect.Y + _rect.Height / 2);
         _state = State.Leaving;
         _seedTimeout.Stop();

@@ -9,7 +9,9 @@ public abstract record ClipContent
     public sealed record Files(IReadOnlyList<string> Paths) : ClipContent;
     /// <summary>A picture, already as PNG.</summary>
     public sealed record Image(byte[] Png) : ClipContent;
-    public sealed record Text(string Value) : ClipContent;
+    /// <param name="Secret">A password manager marked it (Windows "ExcludeClipboardContentFromMonitorProcessing", macOS
+    /// "org.nspasteboard.ConcealedType", KDE "x-kde-passwordManagerHint"): never shown, never quoted.</param>
+    public sealed record Text(string Value, bool Secret = false) : ClipContent;
 }
 
 /// <summary>
@@ -39,6 +41,42 @@ public static class Captures
             Directory.CreateDirectory(dir);
             return dir;
         }
+    }
+
+    /// <summary>
+    /// Where a pasted picture waits until a petal uses it: private to the user ($XDG_RUNTIME_DIR, or a 0700 folder in
+    /// temp), not Pictures (often cloud-synced: a picture opened and dismissed would sit in its bin for a month).
+    /// </summary>
+    public static string Pending
+    {
+        get
+        {
+            var root = Path.GetTempPath();
+            if (OperatingSystem.IsLinux() && Environment.GetEnvironmentVariable("XDG_RUNTIME_DIR") is { Length: > 0 } run && Directory.Exists(run)) root = run;
+            var dir = Path.Combine(root, OperatingSystem.IsWindows() ? "convertino-clipboard" : $"convertino-clipboard-{Environment.UserName}");
+            if (OperatingSystem.IsWindows()) Directory.CreateDirectory(dir);
+            else
+            {
+                Directory.CreateDirectory(dir, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+                File.SetUnixFileMode(dir, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+            }
+            return dir;
+        }
+    }
+
+    /// <summary>
+    /// Remove what a crash or quitting with a flower open left in <see cref="Pending"/> (an hour old: no flower stays open
+    /// that long), and clipboard text that pre-release builds wrote to temp.
+    /// </summary>
+    public static void SweepPending()
+    {
+        try
+        {
+            foreach (var f in new DirectoryInfo(Pending).EnumerateFiles())
+                if (f.LastWriteTimeUtc < DateTime.UtcNow.AddHours(-1)) f.Delete();
+            foreach (var f in Directory.EnumerateFiles(Paths.Temp, "clipboard-*.txt")) File.Delete(f);
+        }
+        catch (Exception ex) { Log.Error("sweep pasted pictures", ex); }
     }
 
     /// <summary>"Folder/Clipboard 2026-10-20 14.32.05.png" (" (2)" if two land in the same second).</summary>

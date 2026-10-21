@@ -164,7 +164,7 @@ public sealed class App : Application
         menu.Items.Add(area);
         menu.Items.Add(new NativeMenuItem($"Convertino — drag a file, {s.TriggerKey.Tap()}") { IsEnabled = false });
         menu.Items.Add(new NativeMenuItemSeparator());
-        menu.Items.Add(Check("Enabled", s.Enabled, v => s.Enabled = v));
+        menu.Items.Add(Check("Enabled", s.Enabled, v => { s.Enabled = v; Hotkey.Changed(); }));
         var themes = new NativeMenu();
         foreach (var th in Skin.All)
         {

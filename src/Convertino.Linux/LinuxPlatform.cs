@@ -95,7 +95,8 @@ public sealed class LinuxPlatform : IPlatform
     {
         if (ClipboardHost?.Clipboard is { } cb)
         {
-            try { return await Dispatcher.UIThread.InvokeAsync(() => ReadAvalonia(cb)); }
+            // the data on the UI thread, decoding a big picture off it
+            try { return await Task.Run(await Dispatcher.UIThread.InvokeAsync(() => ReadAvalonia(cb))); }
             // the session's tools may still manage
             catch (Exception ex) { Log.Error("clipboard (Avalonia)", ex); }
         }
@@ -106,30 +107,37 @@ public sealed class LinuxPlatform : IPlatform
     static bool Document(IEnumerable<string> types) =>
         types.Any(t => t.StartsWith("application/x-openoffice", StringComparison.Ordinal) || t is "text/rtf" or "text/richtext" or "application/rtf" or "text/csv");
 
-    static async Task<ClipContent?> ReadAvalonia(IClipboard cb)
+    /// <summary>KeePassXC, KWallet and other password managers mark what they copy (KDE's hint; Klipper keeps it out of its history).</summary>
+    static bool Secret(IEnumerable<string> types) => types.Contains("x-kde-passwordManagerHint");
+
+    static readonly string[] PictureTypes = ["image/png", "image/jpeg", "image/bmp", "image/tiff", "image/webp"];
+
+    /// <summary>Reads what's there (UI thread); the returned step decodes it (any thread).</summary>
+    static async Task<Func<ClipContent?>> ReadAvalonia(IClipboard cb)
     {
         var types = (await cb.GetDataFormatsAsync()).Select(f => f.Identifier).ToList();
         if (Overlay.OverlayController.Diag) Log.Info("clipboard types: " + string.Join(", ", types));
         if (await cb.TryGetFilesAsync() is { Length: > 0 } items)
         {
             var paths = items.Select(i => i.TryGetLocalPath()).OfType<string>().Where(p => File.Exists(p) || Directory.Exists(p)).ToList();
-            if (paths.Count > 0) return new ClipContent.Files(paths);
+            if (paths.Count > 0) return () => new ClipContent.Files(paths);
         }
         var text = await cb.TryGetTextAsync();
-        bool hasText = !string.IsNullOrWhiteSpace(text);
-        if (!(hasText && Document(types)))
+        bool hasText = !string.IsNullOrWhiteSpace(text), secret = Secret(types);
+        if (!(hasText && Document(types)) && !secret)
         {
-            foreach (var mime in new[] { "image/png", "image/jpeg", "image/bmp", "image/tiff", "image/webp" })
+            foreach (var mime in PictureTypes)
                 if (types.Contains(mime) && await cb.TryGetValueAsync(DataFormat.CreateBytesPlatformFormat(mime)) is { Length: > 8 } bytes)
-                    return new ClipContent.Image(mime == "image/png" ? bytes : Captures.ToPng(bytes));
+                    return () => new ClipContent.Image(mime == "image/png" ? bytes : Captures.ToPng(bytes));
             if (types.Any(t => t.StartsWith("image/", StringComparison.Ordinal)) && await cb.TryGetBitmapAsync() is { } bmp)
-            {
-                using var ms = new MemoryStream();
-                bmp.Save(ms, PngBitmapEncoderOptions.Default);
-                return new ClipContent.Image(ms.ToArray());
-            }
+                return () =>
+                {
+                    using var ms = new MemoryStream();
+                    bmp.Save(ms, PngBitmapEncoderOptions.Default);
+                    return new ClipContent.Image(ms.ToArray());
+                };
         }
-        return hasText ? new ClipContent.Text(text!) : null;
+        return () => hasText ? new ClipContent.Text(text!, secret) : null;
     }
 
     static ClipContent? ReadWithTools()
@@ -149,19 +157,19 @@ public sealed class LinuxPlatform : IPlatform
         string? text = null;
         foreach (var t in new[] { "text/plain;charset=utf-8", "UTF8_STRING", "text/plain", "STRING" })
             if (types.Contains(t) && get(t) is { Length: > 0 } b) { text = Encoding.UTF8.GetString(b); break; }
-        bool hasText = !string.IsNullOrWhiteSpace(text);
-        if (!(hasText && Document(types)))
-            foreach (var mime in new[] { "image/png", "image/jpeg", "image/bmp", "image/tiff", "image/webp" })
+        bool hasText = !string.IsNullOrWhiteSpace(text), secret = Secret(types);
+        if (!(hasText && Document(types)) && !secret)
+            foreach (var mime in PictureTypes)
                 if (types.Contains(mime) && get(mime) is { Length: > 8 } bytes)
                     return new ClipContent.Image(mime == "image/png" ? bytes : Captures.ToPng(bytes));
-        return hasText ? new ClipContent.Text(text!) : null;
+        return hasText ? new ClipContent.Text(text!, secret) : null;
     }
 
     static byte[]? Output(string exe, string[] args)
     {
         try
         {
-            var psi = new ProcessStartInfo(Paths.Which(exe) ?? exe) { RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false };
+            var psi = new ProcessStartInfo(Paths.Which(exe) ?? exe) { RedirectStandardOutput = true, UseShellExecute = false };
             foreach (var a in args) psi.ArgumentList.Add(a);
             using var p = Process.Start(psi)!;
             using var ms = new MemoryStream();
