@@ -17,8 +17,11 @@ public sealed record Pages(List<PetalAction> Convert, List<PetalAction> Tools, s
     /// <summary>Rarer output formats. Last in the cycle, so they sit one step back from Convert (images: HEIC, TIFF, ICO, BMP, JPEG XL, QOI).</summary>
     public List<PetalAction> MoreFormats { get; init; } = [];
 
+    /// <summary>What the first ring is called when it isn't plain conversions (a screenshot's "Quick" ring).</summary>
+    public string FirstRing { get; init; } = "Convert";
+
     /// <summary>The rings in flip order, Convert → Tools → More tools → More formats, empty ones left out.</summary>
-    public IReadOnlyList<Ring> Rings => [.. Split("Convert", Convert), .. Split("Tools", Tools), .. Split("More tools", More), .. Split("More formats", MoreFormats)];
+    public IReadOnlyList<Ring> Rings => [.. Split(FirstRing, Convert), .. Split("Tools", Tools), .. Split("More tools", More), .. Split("More formats", MoreFormats)];
 
     static IEnumerable<Ring> Split(string name, List<PetalAction> petals)
     {

@@ -1,0 +1,105 @@
+using System.IO;
+using Convertino.Input;
+using Convertino.Native;
+using Convertino.Services;
+using Convertino.Ui;
+
+namespace Convertino.Overlay;
+
+/// <summary>
+/// Convertino without dragging a file: Win+Shift+X opens the flower for what's on the clipboard, Win+Shift+A captures
+/// an area of the screen and opens the flower for it (both from the settings, see <see cref="Hotkey"/>).
+/// </summary>
+public sealed class Shortcuts : IDisposable
+{
+    public static Shortcuts? Current { get; private set; }
+
+    readonly OverlayController _overlay;
+    readonly Hotkeys _keys = new();
+
+    public Shortcuts(OverlayController overlay, GlobalInput input)
+    {
+        _overlay = overlay;
+        Current = this;
+        input.Escape += () => RegionCapture.Active?.Cancel();
+        Hotkey.SettingsChanged += () => Apply(announce: true);
+        Apply(announce: true);
+    }
+
+    /// <summary>(Re)register both shortcuts from the settings; a taken one gets a card saying so.</summary>
+    void Apply(bool announce)
+    {
+        _keys.Clear();
+        var s = Settings.Current;
+        Hotkey.ClipboardProblem = s.ClipboardHotkeyOn ? _keys.Register(s.ClipboardKey, Clipboard) : null;
+        Hotkey.CaptureProblem = s.CaptureHotkeyOn ? _keys.Register(s.CaptureKey, Capture) : null;
+        if (!announce) return;
+        foreach (var (key, problem) in new[] { (s.ClipboardKey, Hotkey.ClipboardProblem), (s.CaptureKey, Hotkey.CaptureProblem) })
+            if (problem != null) Card($"{key.Label} isn't free", $"{Upper(problem)} — pick another in the Convertino panel", "clipboard");
+    }
+
+    /// <summary>The flower for whatever is on the clipboard, at the cursor (click mode).</summary>
+    public async void Clipboard()
+    {
+        if (!Settings.Current.Enabled) return;
+        var at = Win32.Cursor;
+        Offer? offer;
+        try
+        {
+            var content = await Platform.Current.ReadClipboard();
+            Log.Info($"clipboard flower: {Describe(content)}");
+            offer = await Task.Run(() => ClipFlower.For(content));
+        }
+        catch (Exception ex)
+        {
+            Log.Error("clipboard flower", ex);
+            Card("Couldn't read the clipboard", Jobs.Friendly(ex), "clipboard");
+            return;
+        }
+        if (offer == null) { Card("The clipboard is empty", "Copy a file, a picture or some text first", "clipboard"); return; }
+        _overlay.Open(offer, at);
+    }
+
+    void Capture() => Capture(delayMs: 0);
+
+    /// <summary>Freeze the screens, let the user drag an area, save it to Pictures\Convertino, bloom its flower where the mouse came up.</summary>
+    public async void Capture(int delayMs)
+    {
+        if (!Settings.Current.Enabled || RegionCapture.Active != null) return;
+        try
+        {
+            if (delayMs > 0) await Task.Delay(delayMs);
+            var r = await RegionCapture.Run();
+            if (r == null) return;
+            var path = Captures.NewPath("Screenshot", "png");
+            await File.WriteAllBytesAsync(path, await Task.Run(r.Png));
+            var offer = await Task.Run(() => ClipFlower.ForScreenshot(path));
+            await Task.Delay(60); // the overlay is surely off the screen before the flower grabs what's behind it for its glass
+            _overlay.Open(offer, r.Release);
+        }
+        catch (Exception ex)
+        {
+            Log.Error("capture", ex);
+            Card("Couldn't capture the screen", Jobs.Friendly(ex), "capture");
+        }
+    }
+
+    static string Describe(ClipContent? c) => c switch
+    {
+        ClipContent.Files f => $"{f.Paths.Count} file(s)",
+        ClipContent.Image i => $"picture {Paths.HumanSize(i.Png.Length)}",
+        ClipContent.Text t => $"text {t.Value.Length} chars",
+        _ => "nothing",
+    };
+
+    static string Upper(string s) => s.Length > 0 ? char.ToUpperInvariant(s[0]) + s[1..] : s;
+
+    static void Card(string title, string text, string icon)
+    {
+        var t = Toasts.Create(Win32.Cursor);
+        t.SetDone(title, text, null, Icons.Glyph(icon) ?? "", error: false);
+        Toasts.Show(t);
+    }
+
+    public void Dispose() => _keys.Dispose();
+}

@@ -22,6 +22,20 @@ jobs:
           Copy-Item packaging/linux/icons/convertino-256.png smoke.png
           $p = Start-Process dist/win-x64/Convertino.exe -ArgumentList 'convert','smoke.png','--to','webp' -Wait -PassThru
           if (-not (Test-Path smoke.webp)) { throw "conversion failed ($($p.ExitCode))" }
+      - name: Clipboard + capture self-tests
+        shell: pwsh
+        run: |
+          # synthetic clipboard payloads through the real reader, offers and petals; flowers and the overlay as PNGs
+          Start-Process dist/win-x64/Convertino.exe -ArgumentList '--clip-selftest', "$PWD\clip-selftest" -Wait
+          Get-Content clip-selftest/results.txt
+          if (-not (Select-String -Path clip-selftest/results.txt -Pattern '^ALL PASS' -Quiet)) { throw "clipboard self-test failed" }
+          Start-Process dist/win-x64/Convertino.exe -ArgumentList '--capture-selftest', "$PWD\clip-selftest\capture-overlay.png" -Wait
+          if (-not (Test-Path clip-selftest/capture-overlay.png)) { throw "capture overlay didn't render" }
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: windows-clip-selftest
+          path: clip-selftest/
 
   linux:
     runs-on: ubuntu-latest
@@ -60,6 +74,12 @@ jobs:
           grep -qx 'a :hover{color:red}' 'site (min).css'
       - name: Archives and file tools
         run: bash tools/files-smoke.sh dist/linux-x64/convertino
+      - name: Clipboard (Xvfb + xclip)
+        run: |
+          sudo apt-get install -y -qq xvfb xclip > /dev/null
+          Xvfb :91 -screen 0 1280x800x24 &
+          sleep 2
+          DISPLAY=:91 bash tools/clip-smoke.sh dist/linux-x64/convertino
 
   macos:
     strategy:

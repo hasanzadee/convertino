@@ -51,6 +51,7 @@ public sealed class OverlayController
     State _state = State.Hidden;
     IReadOnlyList<string> _files = [];
     Pages? _pages;
+    Offer? _offer; // the clipboard or a screenshot instead of a drag
     readonly RingPager _pager = new();
     int _session;
     PixelRect _rect;
@@ -133,6 +134,21 @@ public sealed class OverlayController
         _win.Activate();
     }
 
+    /// <summary>Open the flower in click mode for something that wasn't dragged: the clipboard, a screenshot. The shortcut again closes it.</summary>
+    public void Open(Offer offer, ScreenPoint? at)
+    {
+        if (_state != State.Hidden)
+        {
+            if (_state == State.Click) Hide();
+            offer.Closed(used: false);
+            return;
+        }
+        ShowAt(at ?? _input?.Pointer ?? CenterOfPrimary(), State.Click);
+        _offer = offer;
+        Bloom(offer.Files, offer);
+        _win.Activate();
+    }
+
     ScreenPoint CenterOfPrimary()
     {
         var s = _win.Screens.Primary;
@@ -194,15 +210,15 @@ public sealed class OverlayController
         catch (Exception ex) { Log.Error("backdrop", ex); return null; }
     }
 
-    void Bloom(IReadOnlyList<string> files)
+    void Bloom(IReadOnlyList<string> files, Offer? offer = null)
     {
         _seedTimeout.Stop();
         _files = files;
-        _pages = Catalog.For(files);
+        _pages = offer?.Pages ?? Catalog.For(files);
         _pager.Reset(_pages);
         var v = _win.View;
-        v.HubTitle = files.Count == 1 ? Paths.HumanSize(Paths.SizeOf(files[0])) : $"{files.Count} items";
-        v.HubSub = files.Count == 1 ? _pages.Title : Paths.HumanSize(files.Sum(Paths.SizeOf));
+        v.HubTitle = offer?.HubTitle ?? (files.Count == 1 ? Paths.HumanSize(Paths.SizeOf(files[0])) : $"{files.Count} items");
+        v.HubSub = offer?.HubSub ?? (files.Count == 1 ? _pages.Title : Paths.HumanSize(files.Sum(Paths.SizeOf)));
         v.HubBadge = _pages.Badge;
         v.SetMode(HubMode.Info);
         v.SetPages(_pager.Count, 0);
@@ -251,6 +267,8 @@ public sealed class OverlayController
         _files = [];
         _pages = null;
         _pager.Clear();
+        _offer?.Closed(used: false);
+        _offer = null;
     }
 
     // ---------- XDND ----------
@@ -328,6 +346,8 @@ public sealed class OverlayController
         if (idx < 0 || idx >= actions.Count) { Hide(); return; }
         var action = actions[idx];
         var files = _files;
+        var offer = _offer;
+        _offer = null;
         var where = new ScreenPoint(_rect.X + _rect.Width / 2, _rect.Y + _rect.Height / 2);
         _state = State.Leaving;
         _seedTimeout.Stop();
@@ -340,5 +360,6 @@ public sealed class OverlayController
             _ = Task.Delay(220).ContinueWith(_ => Dispatcher.UIThread.Post(() => { if (session == _session) FinishHide(); }));
         }
         await Jobs.Start(action, files, where);
+        offer?.Closed(used: true);
     }
 }

@@ -15,6 +15,8 @@ public interface IPlatform
     void SetClipboardFiles(IEnumerable<string> files);
     /// <summary>Put a picture (PNG bytes) on the clipboard itself, not as a file, so it pastes into chats and documents.</summary>
     void SetClipboardImage(byte[] png);
+    /// <summary>What the clipboard holds now: copied files, a picture (as PNG) or text; null when empty or unreadable.</summary>
+    Task<ClipContent?> ReadClipboard();
 
     /// <summary>Document converter (Microsoft Office on Windows, LibreOffice anywhere) or null.</summary>
     IOffice? Office { get; }

@@ -150,6 +150,14 @@ public sealed class Settings
         get => Enum.TryParse<TriggerKey>(Trigger, true, out var k) && Enum.IsDefined(k) ? k : TriggerKey.Shift;
         set => Trigger = value.ToString();
     }
+    /// <summary>Global shortcut for the flower of whatever is on the clipboard (text like "Super+Shift+X"; unreadable → the default).</summary>
+    public string ClipboardHotkey { get; set; } = Hotkey.Clipboard.ToString();
+    public bool ClipboardHotkeyOn { get; set; } = true;
+    /// <summary>Global shortcut for "capture an area of the screen, then its flower".</summary>
+    public string CaptureHotkey { get; set; } = Hotkey.Capture.ToString();
+    public bool CaptureHotkeyOn { get; set; } = true;
+    [JsonIgnore] public Hotkey ClipboardKey => Hotkey.Parse(ClipboardHotkey) ?? Hotkey.Clipboard;
+    [JsonIgnore] public Hotkey CaptureKey => Hotkey.Parse(CaptureHotkey) ?? Hotkey.Capture;
     public bool LaunchAtStartup { get; set; } = true;
     public bool FirstRunDone { get; set; }
     public int JpegQuality { get; set; } = 90;

@@ -62,7 +62,7 @@ static class Dev
     }
 
     /// <summary>The flower over a fake warm wallpaper (like the macOS demo), at 2×, animations settled.</summary>
-    static void Render(FlowerView view, string outPath)
+    internal static void Render(FlowerView view, string outPath)
     {
         var size = new Size(RadialWindow.SizeDip, RadialWindow.SizeDip);
         var bg = new DrawingVisual();

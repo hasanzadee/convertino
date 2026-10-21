@@ -14,6 +14,7 @@ public partial class App : Application
     EventWaitHandle? _wake;
     GlobalInput? _input;
     OverlayController? _overlay;
+    Shortcuts? _shortcuts;
     TrayIcon? _tray;
 
     [System.Runtime.InteropServices.DllImport("kernel32.dll")]
@@ -64,6 +65,23 @@ public partial class App : Application
         {
             Theme.Apply("Mocha");
             Dev.PagingSelfTest(System.IO.Path.GetFullPath(e.Args[1]));
+            Shutdown();
+            return;
+        }
+
+        if (e.Args.Length == 2 && e.Args[0] == "--clip-selftest")
+        {
+            Settings.Load();
+            Theme.Apply("Mocha");
+            DevClip.ClipSelfTest(System.IO.Path.GetFullPath(e.Args[1]));
+            Shutdown();
+            return;
+        }
+
+        if (e.Args.Length == 2 && e.Args[0] == "--capture-selftest")
+        {
+            Theme.Apply("Mocha");
+            DevClip.CaptureSelfTest(System.IO.Path.GetFullPath(e.Args[1]));
             Shutdown();
             return;
         }
@@ -128,6 +146,8 @@ public partial class App : Application
         string[] menuFiles = e.Args.Length > 0 && e.Args[0] == "menu"
             ? e.Args.Skip(1).Select(System.IO.Path.GetFullPath).Where(p => System.IO.File.Exists(p) || System.IO.Directory.Exists(p)).ToArray()
             : [];
+        // "Convertino.exe menu --clipboard" / "--capture": the same as the shortcuts, for launchers and mouse buttons
+        if (e.Args is ["menu", "--clipboard" or "--capture"]) menuFiles = [e.Args[1]];
         if (!first && menuFiles.Length > 0)
         {
             MenuPipe.Send(menuFiles);
@@ -157,8 +177,9 @@ public partial class App : Application
         _input = new GlobalInput(Dispatcher);
         _input.Start();
         _overlay = new OverlayController(_input);
-        MenuPipe.Listen(files => Dispatcher.BeginInvoke(() => _overlay?.Menu(files)));
-        if (menuFiles.Length > 0) Dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle, () => _overlay.Menu(menuFiles));
+        _shortcuts = new Shortcuts(_overlay, _input);
+        MenuPipe.Listen(files => Dispatcher.BeginInvoke(() => Menu(files)));
+        if (menuFiles.Length > 0) Dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle, () => Menu(menuFiles));
         _tray = new TrayIcon();
         _tray.Attach(_input);
         Watches.StartAll();
@@ -185,8 +206,16 @@ public partial class App : Application
         Dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle, UpdateCards.Start);
     }
 
+    void Menu(IReadOnlyList<string> files)
+    {
+        if (files is ["--clipboard"]) _shortcuts?.Clipboard();
+        else if (files is ["--capture"]) _shortcuts?.Capture(delayMs: 0);
+        else _overlay?.Menu(files);
+    }
+
     protected override void OnExit(ExitEventArgs e)
     {
+        _shortcuts?.Dispose();
         _input?.Dispose();
         _tray?.Dispose();
         base.OnExit(e);

@@ -6,6 +6,7 @@ using System.Windows.Media;
 using System.Windows.Threading;
 using Convertino.Input;
 using Convertino.Native;
+using Convertino.Services;
 
 namespace Convertino.Overlay;
 
@@ -72,6 +73,7 @@ public sealed class OverlayController
     State _state = State.Hidden;
     IReadOnlyList<string> _files = [];
     Pages? _pages;
+    Offer? _offer; // the clipboard or a screenshot instead of a drag
     readonly RingPager _pager = new();
     bool _helperEntered;
     RECT _placed;
@@ -145,6 +147,20 @@ public sealed class OverlayController
         Bloom(files);
     }
 
+    /// <summary>Open the flower in click mode for something that wasn't dragged: the clipboard, a screenshot. The shortcut again closes it.</summary>
+    public void Open(Offer offer, POINT at)
+    {
+        if (_state != State.Hidden)
+        {
+            if (_state == State.Click) Hide();
+            offer.Closed(used: false);
+            return;
+        }
+        ShowAt(at, State.Click);
+        _offer = offer;
+        Bloom(offer.Files, offer);
+    }
+
     // ---------- dev (Convertino.exe --paging-selftest) ----------
 
     /// <summary>Open the flower for files as if mid-drag over <paramref name="at"/>, without showing its window.</summary>
@@ -193,15 +209,15 @@ public sealed class OverlayController
         return new RECT { Left = x, Top = y, Right = x + size, Bottom = y + size };
     }
 
-    void Bloom(IReadOnlyList<string> files)
+    void Bloom(IReadOnlyList<string> files, Offer? offer = null)
     {
         _seedTimeout.Stop();
         _files = files;
-        _pages = Catalog.For(files);
+        _pages = offer?.Pages ?? Catalog.For(files);
         _pager.Reset(_pages);
         var v = _win.View;
-        v.HubTitle = files.Count == 1 ? Paths.HumanSize(Paths.SizeOf(files[0])) : $"{files.Count} items";
-        v.HubSub = files.Count == 1 ? _pages.Title : Paths.HumanSize(files.Sum(Paths.SizeOf));
+        v.HubTitle = offer?.HubTitle ?? (files.Count == 1 ? Paths.HumanSize(Paths.SizeOf(files[0])) : $"{files.Count} items");
+        v.HubSub = offer?.HubSub ?? (files.Count == 1 ? _pages.Title : Paths.HumanSize(files.Sum(Paths.SizeOf)));
         v.HubBadge = _pages.Badge;
         v.SetMode(HubMode.Info);
         v.SetPages(_pager.Count, 0);
@@ -258,6 +274,8 @@ public sealed class OverlayController
         _files = [];
         _pages = null;
         _pager.Clear();
+        _offer?.Closed(used: false);
+        _offer = null;
     }
 
     // ---------- OLE drag & drop ----------
@@ -392,6 +410,8 @@ public sealed class OverlayController
         if (idx < 0 || idx >= actions.Count) { Hide(); return; }
         var action = actions[idx];
         var files = _files;
+        var offer = _offer;
+        _offer = null;
         var where = Win32.Cursor;
         _state = State.Leaving;
         _input.Paging = null;
@@ -405,5 +425,6 @@ public sealed class OverlayController
             _ = Task.Delay(220).ContinueWith(_ => { if (session == _session) FinishHide(); }, TaskScheduler.FromCurrentSynchronizationContext());
         }
         await Jobs.Start(action, files, new ScreenPoint(where.X, where.Y));
+        offer?.Closed(used: true);
     }
 }
