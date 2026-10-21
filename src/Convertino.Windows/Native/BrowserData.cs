@@ -74,10 +74,10 @@ public sealed class ComDrag(IDataObject data) : IDragData
         return Copy(Id(format), -1, ms, max) ? ms.ToArray() : null;
     }
 
-    public Task<string?>? Save(WebItem item, string dir)
+    public Task<string?>? Save(WebItem item, string dir, string name)
     {
         if (item.Source != WebSource.Virtual) return null;
-        var path = Path.Combine(dir, Fetch.SafeName(item.Name, "download"));
+        var path = Path.Combine(dir, name);
         bool ok;
         using (var fs = new FileStream(path, FileMode.CreateNew, FileAccess.Write))
         {

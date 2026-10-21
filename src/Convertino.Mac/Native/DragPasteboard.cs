@@ -64,8 +64,8 @@ public sealed class MacDrag : IDragData
     static readonly Dictionary<string, TaskCompletionSource<string?>> Pending = [];
     static IntPtr _queue, _reader;
 
-    /// <summary>Ask the drag source to write its promised file into <paramref name="dir"/> (during the drop); the task ends when it has.</summary>
-    public Task<string?>? Save(WebItem item, string dir)
+    /// <summary>Ask the drag source to write its promised file into <paramref name="dir"/> (during the drop; the source picks the name); the task ends when it has.</summary>
+    public Task<string?>? Save(WebItem item, string dir, string name)
     {
         if (item.Source != WebSource.Promise) return null;
         var pool = ObjC.objc_autoreleasePoolPush();

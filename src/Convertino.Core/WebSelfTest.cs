@@ -301,9 +301,13 @@ public static class WebSelfTest
         link.Formats.Add(("text/x-moz-url", U16($"{b}/page.html\nExample page")));
         yield return link;
 
-        var png = new DragCase { Name = "raw PNG format → JPG, no download", Pick = "to-jpg", Check = Made("photo.jpg").And(Offline(s, "/img/photo.png")) };
+        var png = new DragCase { Name = "PNG data + the picture's address → the original downloaded → JPG", Pick = "to-jpg", Check = Made("photo.jpg").And(Kept("photo.png")) };
         png.Formats.AddRange([("PNG", TestServer.Png), ("UniformResourceLocatorW", U16(img))]);
         yield return png;
+
+        var locked = new DragCase { Name = "picture behind a sign-in → the PNG data in the drag → JPG", Shown = "photo.png", Pick = "to-jpg", Check = Made("photo.jpg").And(Kept("photo.png")) };
+        locked.Formats.AddRange([("PNG", TestServer.Png), ("UniformResourceLocatorW", U16($"{b}/members/photo.png"))]);
+        yield return locked;
 
         var dib = new DragCase { Name = "CF_DIBV5 only → PNG", Shown = "image.bmp", Pick = "to-png", Check = Made("image.png") };
         dib.Formats.Add(("CF_DIBV5", TestServer.Dib));
@@ -328,10 +332,16 @@ public static class WebSelfTest
     static IEnumerable<DragCase> X11(TestServer s)
     {
         string b = s.Base, img = $"{b}/img/photo.png";
-        var ff = new DragCase { Name = "Firefox image: image/png in the drag → JPG, no download", Shown = "photo.png", Pick = "to-jpg", Check = Made("photo.jpg").And(Offline(s, "/img/photo.png")) };
+        // direct save needs the source's window, which a test transfer hasn't: the original then comes from its address
+        var ff = new DragCase { Name = "Firefox image: no direct save → the original from its address → JPG", Shown = "photo.png", Pick = "to-jpg", Check = Made("photo.jpg").And(Kept("photo.png")) };
+        ff.Formats.AddRange([("XdndDirectSave0", U8("photo.png")), ("application/x-moz-file-promise", U8("x"))]);
         ff.Formats.AddRange([("text/x-moz-url", Encoding.Unicode.GetBytes(img + "\nPhoto")), ("_NETSCAPE_URL", U8(img + "\nPhoto")),
             ("text/html", Encoding.Unicode.GetBytes($"\ufeff<img src=\"{img}\">")), ("image/png", TestServer.Png), ("text/plain;charset=utf-8", U8(img))]);
         yield return ff;
+
+        var locked = new DragCase { Name = "picture behind a sign-in → image/png from the drag → JPG", Shown = "photo.png", Pick = "to-jpg", Check = Made("photo.jpg").And(Kept("photo.png")) };
+        locked.Formats.AddRange([("text/x-moz-url", Encoding.Unicode.GetBytes($"{b}/members/photo.png\nPhoto")), ("image/png", TestServer.Png), ("XdndDirectSave0", U8("photo.png"))]);
+        yield return locked;
 
         var chrome = new DragCase { Name = "Chrome image: uri-list + html → download → WEBP", Shown = "photo.png", Pick = "to-webp", Check = Made("photo.webp").And(Kept("photo.png")) };
         chrome.Formats.AddRange([("text/uri-list", U8(img + "\r\n")), ("text/html", U8($"<meta charset=\"utf-8\"><img src=\"{img}\">"))]);
@@ -350,9 +360,13 @@ public static class WebSelfTest
             ("public.url", U8($"{b}/img/photo.jpg")), ("public.url-name", U8("Photo"))]);
         yield return safari;
 
-        var chrome = new DragCase { Name = "Chrome image: public.png in the drag → JPG, no download", Shown = "photo.png", Pick = "to-jpg", Check = Made("photo.jpg").And(Offline(s, "/img/photo.png")) };
+        var chrome = new DragCase { Name = "Chrome image: public.png + address → the original → JPG", Shown = "photo.png", Pick = "to-jpg", Check = Made("photo.jpg").And(Kept("photo.png")) };
         chrome.Formats.AddRange([("public.png", TestServer.Png), ("public.url", U8($"{b}/img/photo.png")), ("public.html", U8($"<img src=\"{b}/img/photo.png\">"))]);
         yield return chrome;
+
+        var locked = new DragCase { Name = "picture behind a sign-in → public.png from the drag → JPG", Shown = "photo.png", Pick = "to-jpg", Check = Made("photo.jpg").And(Kept("photo.png")) };
+        locked.Formats.AddRange([("public.png", TestServer.Png), ("public.url", U8($"{b}/members/photo.png"))]);
+        yield return locked;
 
         var tiff = new DragCase { Name = "public.tiff only → PNG", Shown = "image.tiff", Pick = "to-png", Check = Made("image.png") };
         tiff.Formats.Add(("public.tiff", TestServer.Tiff));
@@ -551,7 +565,7 @@ sealed class TestServer : IDisposable
             case "/tofile": Redirect(OperatingSystem.IsWindows() ? "file:///C:/Windows/win.ini" : "file:///etc/passwd"); break;
             case "/toftp": Redirect("ftp://127.0.0.1/x.png"); break;
             case "/todata": Redirect("data:text/plain,hi"); break;
-            case "/401": r.StatusCode = 401; r.Headers.Add("WWW-Authenticate", "Basic realm=\"private\""); break;
+            case "/401" or "/members/photo.png": r.StatusCode = 401; r.Headers.Add("WWW-Authenticate", "Basic realm=\"private\""); break;
             case "/403": r.StatusCode = 403; break;
             case "/private/photo.jpg": Redirect("/accounts/login?next=/private/photo.jpg"); break;
             case "/accounts/login": await Send(Encoding.UTF8.GetBytes("<!doctype html><html><body><form>Sign in</form></body></html>"), "text/html"); break;

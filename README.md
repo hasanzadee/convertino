@@ -159,12 +159,12 @@ While dragging over a petal, the caption under the Explorer drag image says what
 
 Drag a picture, a file link or any link out of a web page, tap <kbd>Shift</kbd> and the flower opens just like for a file. Its petals are picked before anything is downloaded, from what the drag says (the picture's type, the file name, the link's extension): a picture gets **Save** followed by the image rings, a PDF link gets **Save** and the PDF petals, and a link to a page gets **Download** · **QR** (a QR code of the link) · **Shortcut** (`.url` on Windows, `.webloc` on macOS, a `.desktop` link on Linux).
 
-Drop on a petal and Convertino takes the file the browser hands over with the drag (most pictures need no download at all), or downloads it: http, https and `data:` only, up to 2 GB, no cookies or passwords sent, every redirect checked, with progress and cancel on the card. The real type is read from the file itself, so a `photo.jpg` that is a PNG becomes `photo.png`, and file names from the server lose folders, device names (`CON`) and look-alike tricks. The file is kept in your **Downloads** folder and the petal's result lands beside it; both are marked as coming from the internet (Mark-of-the-Web on Windows, quarantine on macOS, `user.xdg.origin.url` on Linux). A page that needs a sign-in says so: *save the file first* and drag it from there.
+Drop on a petal and Convertino takes the original file the browser hands over with the drag (most pictures need no download at all: a virtual file on Windows, a file promise on macOS, a direct save on Linux), or downloads it: http, https and `data:` only, up to 2 GB, no cookies or passwords sent, every redirect checked, with progress and cancel on the card. The real type is read from the file itself, so a `photo.jpg` that is a PNG becomes `photo.png`, and file names from the server lose folders, device names (`CON`) and look-alike tricks. The file is kept in your **Downloads** folder and the petal's result lands beside it; both are marked as coming from the internet (Mark-of-the-Web on Windows, quarantine on macOS, `user.xdg.origin.url` on Linux). A page that needs a sign-in says so: *save the file first* and drag it from there.
 
 | Browser | Windows | Linux (X11) | macOS *(beta)* |
 |---|---|---|---|
-| **Chrome · Edge** | pictures (taken from the drag), links, attachments that pages offer for dragging (`DownloadURL`) | pictures, links | pictures (file promise, else the picture's address), links |
-| **Firefox** | pictures (taken from the drag), links | pictures (taken from the drag), links | pictures, links |
+| **Chrome · Edge** | pictures (taken from the drag), links, attachments that pages offer for dragging (`DownloadURL`) | pictures (taken from the drag), links | pictures (file promise, else the picture's address), links |
+| **Firefox** | pictures (taken from the drag), links | pictures (Firefox saves the original itself), links | pictures, links |
 | **Safari** | | | pictures (file promise, else the picture's address), links |
 
 On Windows, files dragged out of Outlook (attachments) open the flower the same way.

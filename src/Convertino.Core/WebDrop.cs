@@ -15,10 +15,11 @@ public interface IDragData
     byte[]? Bytes(string format, int max);
 
     /// <summary>
-    /// Bytes that aren't a plain format — Windows virtual files (FileContents), macOS file promises — written into
-    /// <paramref name="dir"/>. Called during the drop; null when this platform has no such thing.
+    /// Bytes that aren't a plain format — Windows virtual files (FileContents), macOS file promises, X11 direct save
+    /// (XDS) — written into <paramref name="dir"/>, as <paramref name="name"/> where the platform lets us choose.
+    /// Called during the drop; null when this platform has no such thing.
     /// </summary>
-    Task<string?>? Save(WebItem item, string dir) => null;
+    Task<string?>? Save(WebItem item, string dir, string name) => null;
 }
 
 public enum WebSource { Url, Virtual, Format, TempFile, Promise }
@@ -43,8 +44,14 @@ public sealed class WebItem
     public string? Key { get; init; }
     /// <summary>The virtual file / promise index.</summary>
     public int Index { get; init; }
-    /// <summary>Set at the drop: the bytes the drag carried, in a file (macOS promises arrive a moment later).</summary>
+    /// <summary>
+    /// A picture format the drag also carries (X11 image/png, macOS public.tiff, Windows PNG / DIB): the browser's
+    /// re-encoding of the decoded picture, so only the last resort when neither the original nor its download works.
+    /// </summary>
+    public string? Raw { get; set; }
+    /// <summary>Set at the drop: the bytes the drag carried, in a file (promises arrive a moment later).</summary>
     internal Task<string?>? Grabbed { get; set; }
+    internal string? RawGrabbed { get; set; }
 }
 
 /// <summary>
@@ -233,13 +240,17 @@ public sealed class WebDrop
             return items;
         }
 
-        // macOS file promises (Safari, Chrome): the type is announced as a UTI, the file is written at the drop
-        if (Has("com.apple.pasteboard.promised-file-content-type") || Has("com.apple.NSFilePromiseItemMetaData") || Has("Apple files promise pasteboard type"))
+        var raw = RawImages.FirstOrDefault(Has);
+
+        // file promises: macOS (Safari, Chrome — the type announced as a UTI) and X11's direct save (XDS: Firefox,
+        // Chromium). The browser writes the original file itself at the drop, with its own cookies
+        if (Has("com.apple.pasteboard.promised-file-content-type") || Has("com.apple.NSFilePromiseItemMetaData") || Has("Apple files promise pasteboard type")
+            || Has("XdndDirectSave0"))
         {
             var uti = Text("com.apple.pasteboard.promised-file-content-type")?.Trim();
             var mime = UtiMime(uti) ?? PromisedExtMime(Text("Apple files promise pasteboard type"));
             var name = Text("com.apple.pasteboard.promised-suggested-file-name")?.Trim();
-            items.Add(new WebItem { Source = WebSource.Promise, Name = name, Mime = mime, Title = title, Image = mime?.StartsWith("image/") == true });
+            items.Add(new WebItem { Source = WebSource.Promise, Name = name, Mime = mime, Title = title, Image = mime?.StartsWith("image/") == true, Raw = raw });
             Fallback(items, img, url);
             return items;
         }
@@ -248,12 +259,15 @@ public sealed class WebDrop
         if ((Text("DownloadURL") ?? custom.GetValueOrDefault("DownloadURL")) is { } dl && DownloadUrl(dl) is { } du)
             return [du];
 
-        // the picture itself (X11 image/png, macOS public.png / public.tiff, Windows PNG / DIB)
-        if (RawImages.FirstOrDefault(Has) is { } raw)
+        // the picture itself (X11 image/png, macOS public.png / public.tiff, Windows PNG / DIB) is the browser's
+        // re-encoding: the original from the picture's own address first, these bytes when that fails
+        if (raw != null)
         {
+            var pic = img ?? (url != null && Fetch.UrlName(url) is { } un && Kinds.Of(un) == Kind.Image ? url : null);
+            if (pic != null) return [new WebItem { Url = pic, Image = true, Title = title, Raw = raw }];
             var mime = RawMime(raw);
-            string? stem = (img ?? url) is { } src && Fetch.UrlName(src) is { } un ? Path.GetFileNameWithoutExtension(un) : null;
-            items.Add(new WebItem { Source = WebSource.Format, Key = raw, Name = (stem ?? "image") + Fetch.MimeExt(mime), Mime = mime, Image = true, Title = title, Url = img ?? url });
+            string? stem = url != null && Fetch.UrlName(url) is { } un2 ? Path.GetFileNameWithoutExtension(un2) : null;
+            items.Add(new WebItem { Source = WebSource.Format, Key = raw, Name = (stem ?? "image") + Fetch.MimeExt(mime), Mime = mime, Image = true, Title = title });
             return items;
         }
 
@@ -268,9 +282,10 @@ public sealed class WebDrop
         if (items.Count != 1) return;
         var it = items[0];
         var kind = it.Name is { Length: > 0 } n ? Kinds.Of(n) : it.Mime?.StartsWith("image/") == true ? Kind.Image : Kind.Other;
-        it.Image |= kind == Kind.Image || img != null && kind == Kind.Other;
+        var linked = url != null && Fetch.UrlName(url) is { } un ? Kinds.Of(un) : Kind.Other;
+        it.Image |= kind == Kind.Image || it.Raw != null || kind == Kind.Other && (img != null || linked == Kind.Image);
         if (img != null && (kind is Kind.Image or Kind.Other)) it.Url = img;
-        else if (url != null && Fetch.UrlName(url) is { } un && Kinds.Of(un) == kind && kind != Kind.Other) it.Url = url;
+        else if (linked != Kind.Other && (linked == kind || kind == Kind.Other)) it.Url = url;
     }
 
     /// <summary>UTF-16 (with or without a BOM, as Windows and Firefox write it) or UTF-8, cut at the first NUL.</summary>
@@ -472,6 +487,20 @@ public sealed class WebDrop
         for (int i = 0; i < Items.Count; i++)
         {
             var it = Items[i];
+            if (it.Raw != null && it.Source != WebSource.Format)
+                try
+                {
+                    var rawDir = Path.Combine(Dir, i + "-raw");
+                    Directory.CreateDirectory(rawDir);
+                    if (d.Bytes(it.Raw, Inline) is { Length: > 0 } rb)
+                    {
+                        if (it.Raw is "CF_DIBV5" or "DeviceIndependentBitmap") rb = DibToBmp(rb);
+                        var rp = Path.Combine(rawDir, Path.GetFileNameWithoutExtension(Names[i]) + Fetch.MimeExt(RawMime(it.Raw)));
+                        File.WriteAllBytes(rp, rb);
+                        it.RawGrabbed = rp;
+                    }
+                }
+                catch (Exception ex) { Log.Error($"browser drop: picture data for {Names[i]}", ex); }
             if (it.Source == WebSource.Url) continue;
             try
             {
@@ -495,7 +524,7 @@ public sealed class WebDrop
                         break;
                     }
                     case WebSource.Virtual or WebSource.Promise:
-                        it.Grabbed = d.Save(it, dir);
+                        it.Grabbed = d.Save(it, dir, Names[i].Contains('.') ? Fetch.SafeName(Names[i]) : Fetch.SafeName(Names[i]) + Fetch.MimeExt(it.Mime));
                         break;
                 }
             }
@@ -578,6 +607,26 @@ public sealed class WebDrop
                 try { path = await it.Grabbed.WaitAsync(Fetch.IdleTimeout * 4, job.Token); }
                 catch (Exception ex) when (ex is not OperationCanceledException || !job.Token.IsCancellationRequested) { Log.Error($"browser drop: {Names[i]} from the drag", ex); }
             }
+            if (path != null && !File.Exists(path)) path = null;
+            if (path == null && it.Url != null)
+            {
+                // a name the page or browser chose wins; otherwise Content-Disposition or the URL; a link is saved under its title
+                string? suggested = it.Source != WebSource.Url || it.Mime != null ? Fetch.SafeName(Names[i], "download") : null;
+                int k = i;
+                try
+                {
+                    var r = await Fetch.Download(it.Url, dir, suggested, (done, total) => job.Report(share * (k + (total is long t && t > 0 ? Math.Min(1, (double)done / t) : 0)) / n),
+                        job.Token, expectFile: !Link, fallback: Link ? LinkName : null);
+                    list.Add((r.Path, r.Source));
+                    continue;
+                }
+                // a sign-in, a dead link…: the browser's own copy of the picture still beats nothing
+                catch (Exception ex) when (it.RawGrabbed != null && ex is not OperationCanceledException)
+                {
+                    Log.Info($"browser drop: {ex.Message}; using the picture data from the drag");
+                }
+            }
+            path ??= it.RawGrabbed;
             if (path != null && File.Exists(path))
             {
                 if (new FileInfo(path).Length > Fetch.Cap) throw new Fetch.Refused($"Too big ({Paths.HumanSize(Fetch.Cap)} at most)");
@@ -595,13 +644,7 @@ public sealed class WebDrop
                 job.Report(share * (i + 1) / n);
                 continue;
             }
-            if (it.Url == null) throw new Fetch.Refused(it.Source == WebSource.Url ? "Nothing to download" : "The browser didn't hand the file over — save it first");
-            // a name the page or browser chose wins; otherwise Content-Disposition or the URL; a link is saved under its title
-            string? suggested = it.Source != WebSource.Url || it.Mime != null ? Fetch.SafeName(Names[i], "download") : null;
-            int k = i;
-            var r = await Fetch.Download(it.Url, dir, suggested, (done, total) => job.Report(share * (k + (total is long t && t > 0 ? Math.Min(1, (double)done / t) : 0)) / n),
-                job.Token, expectFile: !Link, fallback: Link ? LinkName : null);
-            list.Add((r.Path, r.Source));
+            throw new Fetch.Refused(it.Source == WebSource.Url ? "Nothing to download" : "The browser didn't hand the file over — save it first");
         }
         return list;
     }
