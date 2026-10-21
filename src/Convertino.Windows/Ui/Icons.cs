@@ -20,6 +20,8 @@ public static class Icons
         ["recipe"] = "\uE945", ["terminal"] = "\uE756",
         // drops out of a browser
         ["download"] = "\uE896",
+        // clipboard + screen capture
+        ["clipboard"] = "", ["capture"] = "", ["keyboard"] = "",
     };
 
     public static string? Glyph(string? key) => key != null && Map.TryGetValue(key, out var g) ? g : null;

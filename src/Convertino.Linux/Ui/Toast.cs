@@ -21,7 +21,7 @@ public sealed class ToastWindow : Window
     readonly Image _thumb = new() { Stretch = Stretch.UniformToFill };
     readonly TextBlock _title, _sub;
     readonly Border _bar, _track;
-    readonly Button _folder, _close;
+    readonly Button _folder, _close, _copy;
     readonly StackPanel _buttons;
     readonly Border _card;
     readonly DispatcherTimer _life = new();
@@ -67,12 +67,23 @@ public sealed class ToastWindow : Window
         _folder = IconButton("folder", "Show in folder");
         _folder.Click += (_, _) => { if (Outputs.Count > 0) Platform.Current.Reveal(Outputs[0]); Dismiss(); };
         _folder.IsVisible = false;
+        // the result straight back to the clipboard: a picture as a picture, text as text, anything else as files
+        _copy = IconButton("copy", "Copy the result");
+        _copy.Click += async (_, _) =>
+        {
+            _life.Stop();
+            try { _sub.Text = await Task.Run(() => Services.ClipFlower.CopyBack([.. Outputs])); }
+            catch (Exception ex) { Log.Error("copy result", ex); _sub.Text = Jobs.Friendly(ex); }
+            _sub.IsVisible = true;
+            if (!IsPointerOver) _life.Start();
+        };
+        _copy.IsVisible = false;
         _close = IconButton("x", "Close");
         _close.Click += (_, _) => { if (Running) OnCancel?.Invoke(); Dismiss(); };
 
         var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"), Margin = new Thickness(14, 0, 10, 0) };
         Grid.SetColumn(text, 1);
-        _buttons = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center, Children = { _folder, _close } };
+        _buttons = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center, Children = { _copy, _folder, _close } };
         Grid.SetColumn(_buttons, 2);
         grid.Children.Add(_iconBox);
         grid.Children.Add(text);
@@ -152,6 +163,7 @@ public sealed class ToastWindow : Window
         if (error) _iconBox.Background = B(Skin.Current.Danger);
         if (thumb != null) _thumb.Source = thumb;
         _folder.IsVisible = Outputs.Count > 0;
+        _copy.IsVisible = Outputs.Count > 0 && !error;
         _life.Interval = TimeSpan.FromSeconds(seconds ?? (error ? 9 : 5));
         _life.Start();
     }
@@ -169,6 +181,7 @@ public sealed class ToastWindow : Window
         _track.IsVisible = false;
         _icon.Key = icon ?? "check";
         _folder.IsVisible = false;
+        _copy.IsVisible = false;
         _close.IsVisible = false;
         _card.Cursor = Cursor.Default;
         if (tip != null) ToolTip.SetTip(_card, tip);

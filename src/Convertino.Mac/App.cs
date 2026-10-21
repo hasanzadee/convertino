@@ -18,10 +18,13 @@ namespace Convertino;
 public sealed class App : Application
 {
     public static string[] StartupMenu = [];
+    /// <summary>"clip" or "capture" from "convertino menu --clipboard / --capture" when it started the app.</summary>
+    public static string? StartupVerb;
     const string InputMonitoringPane = "x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent";
 
     MacInput? _input;
     OverlayController? _overlay;
+    ClipShortcuts? _shortcuts;
     TrayIcon? _tray;
     // one menu for the app's lifetime, refilled by BuildTray: Avalonia.Native throws if a live status item gets another
     readonly NativeMenu _menu = new();
@@ -60,6 +63,13 @@ public sealed class App : Application
         Toasts.ScreensHost = _overlay.Host;
         Toasts.Prepare = w => w.Opened += (_, _) => MacWindow.Float(w, MacWindow.StatusLevel);
         bool selftest = Environment.GetEnvironmentVariable("CONVERTINO_EDIT_SELFTEST") is { Length: > 0 };
+        if (!selftest)
+        {
+            // no drag needed: the clipboard's flower (Control+Option+X) and an area capture (Control+Option+A)
+            var overlay = _overlay;
+            MacInput pointer = _input;
+            _shortcuts = new ClipShortcuts(new CarbonHotkeys(), overlay.Open, () => MacPlatform.CaptureArea(() => pointer.Pointer), overlay.CloseIfOpen);
+        }
         if (!selftest)
         {
             MacInput input = _input;
@@ -116,6 +126,7 @@ public sealed class App : Application
         if (Environment.GetEnvironmentVariable("CONVERTINO_PANEL") is { Length: > 0 } panel)
             Dispatcher.UIThread.Post(() => _panel?.Open(panel == "demo" ? Stats.Demo() : null), DispatcherPriority.Background);
         if (StartupMenu.Length > 0) Dispatcher.UIThread.Post(() => _overlay.Menu(StartupMenu), DispatcherPriority.Background);
+        else if (StartupVerb != null) Dispatcher.UIThread.Post(() => Verb(StartupVerb), DispatcherPriority.Background);
         else if (!Settings.Current.FirstRunDone)
         {
             Settings.Current.FirstRunDone = true;
@@ -178,9 +189,16 @@ public sealed class App : Application
         var open = new NativeMenuItem("Open panel");
         open.Click += (_, _) => _panel?.Open();
         menu.Items.Add(open);
+        var clip = new NativeMenuItem("Flower for the clipboard" + (s.ClipboardHotkeyOn ? $"  ({s.ClipboardKey.Label})" : ""));
+        clip.Click += (_, _) => _shortcuts?.Clipboard();
+        menu.Items.Add(clip);
+        // after the menu has closed, or the picker would start under it
+        var area = new NativeMenuItem("Capture an area" + (s.CaptureHotkeyOn ? $"  ({s.CaptureKey.Label})" : ""));
+        area.Click += (_, _) => _shortcuts?.Capture(delayMs: 250);
+        menu.Items.Add(area);
         menu.Items.Add(new NativeMenuItem($"Convertino — drag a file, {s.TriggerKey.Tap()}") { IsEnabled = false });
         menu.Items.Add(new NativeMenuItemSeparator());
-        menu.Items.Add(Check("Enabled", s.Enabled, v => s.Enabled = v));
+        menu.Items.Add(Check("Enabled", s.Enabled, v => { s.Enabled = v; Hotkey.Changed(); }));
         var themes = new NativeMenu();
         foreach (var th in Skin.All)
         {
@@ -247,6 +265,12 @@ public sealed class App : Application
         _tray.ToolTipText = tip;
     }
 
+    void Verb(string cmd)
+    {
+        if (cmd == "clip") _shortcuts?.Clipboard();
+        else _shortcuts?.Capture(delayMs: 0);
+    }
+
     // ---------- single instance ----------
 
     void StartIpc()
@@ -273,6 +297,7 @@ public sealed class App : Application
                         string? line;
                         while (!string.IsNullOrEmpty(line = r.ReadLine())) files.Add(line);
                         if (cmd == "menu") Dispatcher.UIThread.Post(() => _overlay?.Menu(files));
+                        else if (cmd is "clip" or "capture") Dispatcher.UIThread.Post(() => Verb(cmd));
                     }
                     catch (ObjectDisposedException) { return; }
                     catch (SocketException ex) when (ex.SocketErrorCode == SocketError.OperationAborted) { return; }

@@ -212,13 +212,25 @@ public sealed partial class Flyout : Window
         {
             Children =
             {
-                ToggleRow("Enabled", s.Enabled, v => { s.Enabled = v; s.Save(); Build(); }),
+                ToggleRow("Enabled", s.Enabled, v => { s.Enabled = v; s.Save(); Hotkey.Changed(); Build(); }),
                 TriggerRow(key),
                 ToggleRow("Double-tap Shift in Explorer", s.DoubleShift, v => { s.DoubleShift = v; s.Save(); }),
                 ToggleRow("Notifications", s.Notifications, v => { s.Notifications = v; s.Save(); }),
                 ToggleRow("Live preview", s.LivePreview, v => { s.LivePreview = v; s.Save(); }),
                 ToggleRow("Tell me about new versions", s.CheckForUpdates == true, Updates.Answer),
                 ToggleRow("Start with Windows", s.LaunchAtStartup, v => { s.LaunchAtStartup = v; s.Save(); AutoStart.Apply(v); }),
+            },
+        }, new Thickness(0)));
+
+        // no drag needed: the clipboard's flower and an area of the screen, each on a global shortcut
+        stack.Children.Add(Label("Clipboard & screenshots"));
+        stack.Children.Add(Card(new StackPanel
+        {
+            Children =
+            {
+                HotkeyRow("Flower for the clipboard", capture: false),
+                HotkeyRow("Capture an area", capture: true),
+                FooterButton(Ui.Icons.Glyph("folder") ?? "", @"Open Pictures\Convertino", () => { Shell.Open(Captures.Folder); HideAnimated(); }),
             },
         }, new Thickness(0)));
 
@@ -486,6 +498,49 @@ public sealed partial class Flyout : Window
         return dp;
     }
 
+    /// <summary>A global shortcut: what it does, its keys (a click steps to the next choice), and a switch.</summary>
+    UIElement HotkeyRow(string text, bool capture)
+    {
+        var s = Settings.Current;
+        bool on = capture ? s.CaptureHotkeyOn : s.ClipboardHotkeyOn;
+        var key = capture ? s.CaptureKey : s.ClipboardKey;
+        var problem = on ? capture ? Hotkey.CaptureProblem : Hotkey.ClipboardProblem : null;
+        var chip = new Border
+        {
+            CornerRadius = new CornerRadius(6), Padding = new Thickness(7, 2, 7, 3), Margin = new Thickness(0, 4, 0, 0), Cursor = Cursors.Hand,
+            Background = B(A(T.SubText, .12)), ToolTip = "Click for another shortcut",
+            Child = new TextBlock { Text = key.Label, FontFamily = TextF, FontSize = 11.5, Foreground = B(T.Text) },
+        };
+        chip.MouseEnter += (_, _) => chip.Background = B(A(T.SubText, .22));
+        chip.MouseLeave += (_, _) => chip.Background = B(A(T.SubText, .12));
+        chip.MouseLeftButtonUp += (_, e) =>
+        {
+            var next = key.Next(capture).ToString();
+            if (capture) s.CaptureHotkey = next; else s.ClipboardHotkey = next;
+            s.Save();
+            Hotkey.Changed();
+            Build();
+            e.Handled = true;
+        };
+        var keys = new StackPanel { Orientation = Orientation.Horizontal, Children = { chip } };
+        if (problem != null)
+            keys.Children.Add(new TextBlock { Text = problem, FontFamily = TextF, FontSize = 11, Foreground = B(T.Danger), Margin = new Thickness(8, 4, 0, 0), VerticalAlignment = VerticalAlignment.Center });
+        var left = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+        left.Children.Add(new TextBlock { Text = text, FontFamily = TextF, FontSize = 13, Foreground = B(T.Text) });
+        left.Children.Add(keys);
+        var dp = new DockPanel { Margin = new Thickness(0, 6, 0, 6) };
+        var sw = Switch(on, v =>
+        {
+            if (capture) s.CaptureHotkeyOn = v; else s.ClipboardHotkeyOn = v;
+            s.Save();
+            Hotkey.Changed();
+        });
+        DockPanel.SetDock(sw, Dock.Right);
+        dp.Children.Add(sw);
+        dp.Children.Add(left);
+        return dp;
+    }
+
     FrameworkElement Switch(bool on, Action<bool> changed)
     {
         bool state = on;
@@ -713,8 +768,15 @@ public sealed class TrayIcon : IDisposable
             return it;
         }
         m.Items.Add(Item("Open panel", () => _flyout.Toggle()));
+        var clip = Item("Flower for the clipboard", () => Overlay.Shortcuts.Current?.Clipboard());
+        clip.ShortcutKeyDisplayString = s.ClipboardHotkeyOn ? s.ClipboardKey.Label : null;
+        m.Items.Add(clip);
+        // after the menu has faded, or the frozen screen would still show it
+        var area = Item("Capture an area", () => Overlay.Shortcuts.Current?.Capture(delayMs: 250));
+        area.ShortcutKeyDisplayString = s.CaptureHotkeyOn ? s.CaptureKey.Label : null;
+        m.Items.Add(area);
         m.Items.Add(new System.Windows.Forms.ToolStripSeparator());
-        m.Items.Add(Item("Enabled", () => { s.Enabled = !s.Enabled; s.Save(); }, s.Enabled));
+        m.Items.Add(Item("Enabled", () => { s.Enabled = !s.Enabled; s.Save(); Hotkey.Changed(); }, s.Enabled));
         var themes = new System.Windows.Forms.ToolStripMenuItem("Theme");
         foreach (var th in Theme.All)
             themes.DropDownItems.Add(Item(th.Name, () => { s.Theme = th.Name; s.Save(); Theme.Apply(th.Name); }, th.Name == Theme.Current.Name));

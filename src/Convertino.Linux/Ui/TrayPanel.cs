@@ -291,7 +291,7 @@ public sealed partial class TrayPanel : Window
         {
             Children =
             {
-                ToggleRow("Enabled", s.Enabled, v => { s.Enabled = v; Subtitle(); }),
+                ToggleRow("Enabled", s.Enabled, v => { s.Enabled = v; Subtitle(); Hotkey.Changed(); }),
                 TriggerRow(key),
                 ToggleRow("Notifications", s.Notifications, v => s.Notifications = v),
                 ToggleRow("Live preview", s.LivePreview, v => s.LivePreview = v),
@@ -300,6 +300,26 @@ public sealed partial class TrayPanel : Window
                     v => { s.LaunchAtStartup = v; Platform.Current.SetAutostart(v); }),
             },
         }, new Thickness(0)));
+
+        // no drag needed: the clipboard's flower and an area of the screen, each on a global shortcut
+        stack.Children.Add(Label("Clipboard & screenshots"));
+        var shots = new StackPanel
+        {
+            Children =
+            {
+                HotkeyRow("Flower for the clipboard", capture: false),
+                HotkeyRow("Capture an area", capture: true),
+            },
+        };
+        if (ClipShortcuts.Current is { HasHotkeys: false } || (OperatingSystem.IsLinux() && Environment.GetEnvironmentVariable("XDG_SESSION_TYPE") == "wayland"))
+            shots.Children.Add(new TextBlock
+            {
+                Text = "Wayland: bind “convertino menu --clipboard” and “convertino menu --capture” to keys in your desktop's keyboard settings",
+                FontSize = 11, Foreground = B(T.SubText), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 2, 0, 4),
+            });
+        shots.Children.Add(FooterButton("folder", OperatingSystem.IsMacOS() ? "Open Pictures/Convertino" : "Open the captures folder",
+            () => { Platform.Current.Open(Captures.Folder); HideAnimated(); }));
+        stack.Children.Add(Card(shots, new Thickness(0)));
 
         // folders whose new files convert by themselves
         stack.Children.Add(Label("Watch folders"));
@@ -589,6 +609,44 @@ public sealed partial class TrayPanel : Window
         row.Children.Add(new TextBlock { Text = "Open with", FontSize = 13, Foreground = B(T.Text) });
         row.Children.Add(keys);
         return row;
+    }
+
+    /// <summary>A global shortcut: what it does, its keys (a click steps to the next choice), and a switch.</summary>
+    Control HotkeyRow(string text, bool capture)
+    {
+        var s = Settings.Current;
+        bool on = capture ? s.CaptureHotkeyOn : s.ClipboardHotkeyOn;
+        var key = capture ? s.CaptureKey : s.ClipboardKey;
+        var problem = on ? capture ? Hotkey.CaptureProblem : Hotkey.ClipboardProblem : null;
+        IBrush rest = B(A(T.SubText, .12));
+        var chip = new Border
+        {
+            CornerRadius = new CornerRadius(6), Padding = new Thickness(7, 2, 7, 3), Background = rest, Cursor = new Cursor(StandardCursorType.Hand),
+            Child = new TextBlock { Text = key.Label, FontSize = 11.5, Foreground = B(T.Text) },
+        };
+        ToolTip.SetTip(chip, "Click for another shortcut");
+        chip.PointerEntered += (_, _) => chip.Background = B(A(T.SubText, .22));
+        chip.PointerExited += (_, _) => chip.Background = rest;
+        chip.PointerReleased += (_, e) =>
+        {
+            var next = key.Next(capture).ToString();
+            if (capture) s.CaptureHotkey = next; else s.ClipboardHotkey = next;
+            s.Save();
+            Hotkey.Changed();
+            Rebuild();
+            SettingsChanged?.Invoke();
+            e.Handled = true;
+        };
+        var keys = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 4, 0, 0), Children = { chip } };
+        if (problem != null)
+            keys.Children.Add(new TextBlock { Text = problem, FontSize = 11, Foreground = B(T.Danger), Margin = new Thickness(8, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center });
+        var toggle = ToggleRow(text, on, v =>
+        {
+            if (capture) s.CaptureHotkeyOn = v; else s.ClipboardHotkeyOn = v;
+            Hotkey.Changed();
+        });
+        toggle.Margin = new Thickness(0, 6, 0, 0);
+        return new StackPanel { Margin = new Thickness(0, 0, 0, 6), Children = { toggle, keys } };
     }
 
     /// <summary>A whole-row switch; <paramref name="set"/> changes the setting, saving is done here.</summary>

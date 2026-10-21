@@ -33,6 +33,7 @@ Converting a file usually means opening an app, finding *Export…*, picking a f
 | | |
 |---|---|
 | 🔮 **Live preview** | Hover a petal and the centre shows the result — the B&W version, the square, the cut-out on a checkerboard — and every format petal shows what the file would weigh (`AVIF 127 KB`, `PNG 4.4 MB`). Estimated within a blink, exact a moment later: the petals run while you aim, so the drop is instant |
+| 📋 **No drag needed** | <kbd>Win</kbd>+<kbd>Shift</kbd>+<kbd>X</kbd> opens the flower for **whatever you copied**: files from Explorer / Finder / a file manager, a picture, text or a link. <kbd>Win</kbd>+<kbd>Shift</kbd>+<kbd>A</kbd> **captures an area of the screen** and opens the flower for it (Copy, Text, Read QR, Annotate, JPG, PDF…). Every result card has **Copy**, straight back to the clipboard ([more](#clipboard--screenshots)) |
 | ✿ **Rings** | **Convert** (formats), **Tools** (editors & actions) and, for images, **More tools** (one tap: Half, Full HD, B&W) and **More formats** (TIFF, ICO, BMP, JPEG XL, QOI…). Tap the key again, press <kbd>Tab</kbd> or turn the mouse wheel mid-drag to flip between them. |
 | 🖼 **Images** | PNG · JPG · WEBP · AVIF · GIF · PDF · TIFF · ICO · BMP · JPEG XL · QOI, from anything ImageMagick reads (HEIC, PSD, RAW, SVG…); **Half**, **Full HD** (fit in 1920 × 1080) and **B&W** in one tap |
 | 🌐 **From the browser** | Drag a picture, a file or a link straight out of Chrome, Edge, Firefox or Safari and tap <kbd>Shift</kbd>: **Save** it, convert it, edit it — or for a link **Download**, **QR** and **Shortcut**. Results land in Downloads, marked as coming from the internet |
@@ -57,7 +58,7 @@ Converting a file usually means opening an app, finding *Export…*, picking a f
 | 📦 **Everything else** | Copy path, data URI |
 | 🎨 **Themes** | Catppuccin **Mocha** & **Latte**, **Sunset**, **Graphite** |
 | 📊 **Activity** | The tray / menu-bar panel charts your last two weeks: files handled, space saved, day streak, favourite actions |
-| ⌨️ **CLI** | `convertino convert IMG_0042.HEIC --to jpg` — the same engine without the UI |
+| ⌨️ **CLI** | `convertino convert IMG_0042.HEIC --to jpg` — the same engine without the UI; `convertino clip` saves what's on the clipboard |
 
 <div align="center">
 <img src="docs/live-preview.png" width="100%" alt="Live preview: the WEBP petal shows 249 KB (−84%) in the centre with the other formats' sizes on their petals; Cut out shows the result on a checkerboard; Square shows 3840×3840 · 1.04 MB" />
@@ -107,7 +108,7 @@ sudo pacman -S ffmpeg poppler tesseract tesseract-data-eng libreoffice-fresh   #
 
 <img src="docs/linux-tools.png" width="300" align="right" alt="The Tools ring on Linux (Avalonia build) over a file manager" />
 
-> **X11 vs Wayland.** The drag + <kbd>Shift</kbd> gesture needs to see the pointer and keyboard globally, which X11 allows and Wayland (by design) does not. On a Wayland session it works over X11/XWayland apps; everywhere else use **right-click → Convertino** (or `convertino menu <files>`) — same flower, click a petal.
+> **X11 vs Wayland.** The drag + <kbd>Shift</kbd> gesture needs to see the pointer and keyboard globally, which X11 allows and Wayland (by design) does not. On a Wayland session it works over X11/XWayland apps; everywhere else use **right-click → Convertino** (or `convertino menu <files>`), or copy the files and open the [clipboard flower](#clipboard--screenshots) — same flower, click a petal.
 
 ### macOS 13 or later (Apple silicon or Intel)
 
@@ -130,7 +131,7 @@ brew install --cask libreoffice      # Word / Excel / PowerPoint petals
 
 PDF rendering and OCR use what's built into macOS (CoreGraphics, the Vision framework), so they need nothing extra.
 
-**Permissions.** Convertino watches the mouse buttons and the trigger key by polling their state (no keyboard tap). That works without any permission (seen on a MacBook M4 with macOS 27 and in CI), and no Accessibility or Screen Recording access is needed either: the frosted glass is the system's own blur. If the flower doesn't open on your Mac, macOS may be holding back the Shift key: click the first-start card (or *Input Monitoring…* in the menu you get by right-clicking the menu-bar icon), switch Convertino on in *System Settings → Privacy & Security → Input Monitoring*, then quit and reopen Convertino.
+**Permissions.** Convertino watches the mouse buttons and the trigger key by polling their state (no keyboard tap). That works without any permission (seen on a MacBook M4 with macOS 27 and in CI), and no Accessibility or Screen Recording access is needed either: the frosted glass is the system's own blur. Only *Capture an area* asks for Screen Recording, the first time you use it. If the flower doesn't open on your Mac, macOS may be holding back the Shift key: click the first-start card (or *Input Monitoring…* in the menu you get by right-clicking the menu-bar icon), switch Convertino on in *System Settings → Privacy & Security → Input Monitoring*, then quit and reopen Convertino.
 
 **Gatekeeper.** Convertino isn't signed with an Apple Developer ID or notarized. `install.sh` clears the download quarantine for the copy it installs, so it opens normally. If you move `Convertino.app` somewhere yourself instead, macOS says it *can't verify* the app: click *Done*, open *System Settings → Privacy & Security*, scroll down to *"Convertino" was blocked…* and click **Open Anyway** (once). Or, in Terminal: `xattr -dr com.apple.quarantine /path/to/Convertino.app`.
 
@@ -157,7 +158,9 @@ convertino model install
 | Right-click → **Send to → Convertino** *(Windows)* | Same flower for the selected files |
 | Right-click → **Convertino** *(Linux file managers)* | Same flower for the selected files |
 | Right-click → **Quick Actions → Convertino** *(macOS Finder)* | Same flower for the selected files |
-| Click the result card | Open the file · folder icon reveals it · × cancels a running job |
+| <kbd>Win</kbd>+<kbd>Shift</kbd>+<kbd>X</kbd> (<kbd>⌃</kbd><kbd>⌥</kbd><kbd>X</kbd> on macOS) | The flower for what's on the clipboard, at the cursor — click a petal |
+| <kbd>Win</kbd>+<kbd>Shift</kbd>+<kbd>A</kbd> (<kbd>⌃</kbd><kbd>⌥</kbd><kbd>A</kbd> on macOS) | Capture an area of the screen, then its flower where you let go |
+| Click the result card | Open the file · folder icon reveals it · copy icon puts the result on the clipboard · × cancels a running job |
 
 <kbd>Shift</kbd> is the default. To use another key, pick it under **Open with** in the tray panel or the tray / menu-bar menu: <kbd>Shift</kbd>, <kbd>Shift</kbd> twice, <kbd>Ctrl</kbd> or <kbd>Alt</kbd> (<kbd>⌃ Control</kbd> / <kbd>⌥ Option</kbd> on macOS). The gestures above then use that key.
 
@@ -183,6 +186,23 @@ On Windows, files dragged out of Outlook (attachments, and mails as `.msg`) open
 <img src="docs/addbg-example.png" width="720" alt="Example output of the Add BG editor: a screenshot on a gradient with a window frame, rounded corners and shadow" />
 <br/><sub>Add BG: any screenshot on a gradient, with padding, corners, shadow and an optional window frame</sub>
 </div>
+
+## Clipboard & screenshots
+
+No file to drag? Two global shortcuts open the same flower anyway (on Linux, <kbd>Win</kbd> is <kbd>Super</kbd>):
+
+| Shortcut | What you get |
+|---|---|
+| <kbd>Win</kbd>+<kbd>Shift</kbd>+<kbd>X</kbd> · macOS <kbd>⌃ Control</kbd>+<kbd>⌥ Option</kbd>+<kbd>X</kbd> | The flower for **what's on the clipboard**, at the cursor. **Files** copied in Explorer, Finder or a file manager get their usual flower — handy on Wayland or whenever drag + key is awkward. A **picture** (a copied image, a screenshot tool's output) gets the image flower. **Text** gets TXT · MD · QR, plus JSON when it is JSON and CSV for cells copied from a spreadsheet; a **link** gets a QR code first. A password copied from a password manager shows as *Hidden text · 16 chars*, never as itself. |
+| <kbd>Win</kbd>+<kbd>Shift</kbd>+<kbd>A</kbd> · macOS <kbd>⌃ Control</kbd>+<kbd>⌥ Option</kbd>+<kbd>A</kbd> | **Capture an area**: the screens dim, drag a rectangle (its size shows live), click for the whole screen, <kbd>Esc</kbd> or right-click to cancel. Works across monitors with different scaling. The capture is saved as PNG and the image flower opens where you let go, starting with a **Quick** ring: Copy · Text (OCR to the clipboard) · Read QR · Annotate · Crop · Redact · JPG · WEBP · PDF · Cut out. |
+
+- Captures, and pasted pictures once you pick a petal, are real files, not temp: `Pictures/Convertino/Screenshot 2026-10-20 14.32.05.png`, `Clipboard 2026-10-20 14.32.05.png` (the Pictures folder wherever Windows or `XDG_PICTURES_DIR` put it). Results land next to them, as always. Until then a pasted picture waits in a private temp folder and is gone when the flower closes unused, so nothing reaches a synced Pictures folder just because the flower opened. Copied text stays in memory until a petal writes its own result.
+- Password managers mark what they copy (KeePass, KeePassXC, Bitwarden, 1Password …: `ExcludeClipboardContentFromMonitorProcessing` on Windows, `org.nspasteboard.ConcealedType` on macOS, `x-kde-passwordManagerHint` on Linux). Such text is shown as *Hidden text* with its length, and cards never quote it.
+- Every result card has a **copy** button: a picture goes onto the clipboard as a picture, a text file as its text, anything else as files to paste into a folder or a chat.
+- **Why these keys:** the obvious ones are taken — <kbd>Win</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd> / <kbd>V</kbd> / <kbd>C</kbd> / <kbd>T</kbd> belong to Snipping Tool and PowerToys, <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+letter to browsers, Office and IDEs, and <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+letter *is* <kbd>AltGr</kbd> on Polish, German, Czech… keyboards, where it types ą, €, @. On macOS, <kbd>⌘</kbd>+<kbd>⇧</kbd>+letter belongs to apps and <kbd>⌥</kbd> alone types characters, so it's <kbd>⌃</kbd><kbd>⌥</kbd>.
+- **Change or switch off** either shortcut under *Clipboard & screenshots* in the tray / menu-bar panel (click a shortcut to step through the alternatives: <kbd>Win</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd>, <kbd>Q</kbd>; macOS <kbd>⌃</kbd><kbd>⌥</kbd><kbd>V</kbd>, <kbd>S</kbd>), or set any combination in `settings.json` (`"ClipboardHotkey": "Super+Shift+J"`, `"CaptureHotkey"`, `…HotkeyOn`) — with <kbd>Ctrl</kbd> or <kbd>Win</kbd> in it, since <kbd>Shift</kbd> or <kbd>Alt</kbd> alone with a letter types characters. If another app already owns a shortcut, a card and the panel say so. While Convertino is paused (*Enabled* off) the shortcuts are released. On macOS the letter follows your keyboard layout (on AZERTY, <kbd>⌃</kbd><kbd>⌥</kbd><kbd>A</kbd> is the A key). The tray / menu-bar menu has both actions too.
+- **Linux:** the shortcuts are X11 key grabs, and the capture freezes the screen with XGetImage. On **Wayland**, the desktop only lets its own settings bind keys: add shortcuts there for `convertino menu --clipboard` and `convertino menu --capture`. The capture then uses the desktop's own picker: Spectacle on KDE, `gnome-screenshot` on GNOME, `grim` + `slurp` on Sway, Hyprland and other wlroots compositors, otherwise whichever of them or Flameshot is installed. Reading the clipboard from the command line needs `wl-clipboard` (Wayland) or `xclip` (X11); the app itself needs neither on X11.
+- **macOS:** the capture is macOS's own `screencapture -i`; the first time, macOS asks for *Screen Recording* permission. The shortcuts need no permission.
 
 ## What's on each ring
 
@@ -280,6 +300,9 @@ convertino run verify ubuntu.iso SHA256SUMS       # Matches ✓ / Doesn't match 
 convertino actions report.pdf                     # what's possible for these files
 convertino preview photo.jpg --full               # what each petal would give: look + estimated, then exact size
 convertino menu photo.png notes.md                # open the flower for them (used by file-manager menus)
+convertino menu --clipboard                       # the flower for the clipboard (bind it to a key on Wayland); --capture: an area
+convertino clip                                   # save the clipboard: a picture → PNG, text → .txt, copied files listed
+convertino clip --to jpg --out ~/Desktop          # also webp, pdf…; text: md, json, csv, qr; copied files: --to <format> converts them
 convertino model install | status | remove        # the AI cut-out model
 convertino watch ~/Inbox --to pdf                 # convert every new file there, until Ctrl+C
 convertino watch add ~/Inbox --to webp            # same, run by the desktop app (also: watch list | remove)

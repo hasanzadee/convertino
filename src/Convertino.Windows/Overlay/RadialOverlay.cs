@@ -6,6 +6,7 @@ using System.Windows.Media;
 using System.Windows.Threading;
 using Convertino.Input;
 using Convertino.Native;
+using Convertino.Services;
 
 namespace Convertino.Overlay;
 
@@ -72,6 +73,7 @@ public sealed class OverlayController
     State _state = State.Hidden;
     IReadOnlyList<string> _files = [];
     Pages? _pages;
+    Offer? _offer; // the clipboard or a screenshot instead of a drag
     readonly RingPager _pager = new();
     bool _helperEntered;
     RECT _placed;
@@ -150,6 +152,28 @@ public sealed class OverlayController
         Bloom(files);
     }
 
+    /// <summary>Open the flower in click mode for something that wasn't dragged: the clipboard, a screenshot. The shortcut again closes it.</summary>
+    public void Open(Offer offer, POINT at)
+    {
+        if (_state != State.Hidden)
+        {
+            if (_state == State.Click) Hide();
+            offer.Closed(used: false);
+            return;
+        }
+        ShowAt(at, State.Click);
+        _offer = offer;
+        Bloom(offer.Files, offer: offer);
+    }
+
+    /// <summary>Close the flower if it is open (before a screen capture, so it isn't in the picture); true if it was.</summary>
+    public bool CloseIfOpen()
+    {
+        if (!Visible) return false;
+        Hide();
+        return true;
+    }
+
     // ---------- dev (Convertino.exe --paging-selftest) ----------
 
     /// <summary>Open the flower for files as if mid-drag over <paramref name="at"/>, without showing its window.</summary>
@@ -200,15 +224,15 @@ public sealed class OverlayController
         return new RECT { Left = x, Top = y, Right = x + size, Bottom = y + size };
     }
 
-    void Bloom(IReadOnlyList<string> files, WebDrop? web = null)
+    void Bloom(IReadOnlyList<string> files, WebDrop? web = null, Offer? offer = null)
     {
         _seedTimeout.Stop();
         _files = files;
-        _pages = web?.Pages() ?? Catalog.For(files);
+        _pages = web?.Pages() ?? offer?.Pages ?? Catalog.For(files);
         _pager.Reset(_pages);
         var v = _win.View;
-        v.HubTitle = web?.HubTitle ?? (files.Count == 1 ? Paths.HumanSize(Paths.SizeOf(files[0])) : $"{files.Count} items");
-        v.HubSub = web?.HubSub ?? (files.Count == 1 ? _pages.Title : Paths.HumanSize(files.Sum(Paths.SizeOf)));
+        v.HubTitle = web?.HubTitle ?? offer?.HubTitle ?? (files.Count == 1 ? Paths.HumanSize(Paths.SizeOf(files[0])) : $"{files.Count} items");
+        v.HubSub = web?.HubSub ?? offer?.HubSub ?? (files.Count == 1 ? _pages.Title : Paths.HumanSize(files.Sum(Paths.SizeOf)));
         v.HubBadge = _pages.Badge;
         v.SetMode(HubMode.Info);
         v.SetPages(_pager.Count, 0);
@@ -310,6 +334,8 @@ public sealed class OverlayController
         _pages = null;
         _web = null;
         _pager.Clear();
+        _offer?.Closed(used: false);
+        _offer = null;
     }
 
     // ---------- OLE drag & drop ----------
@@ -449,9 +475,12 @@ public sealed class OverlayController
         var actions = _win.View.CurrentActions;
         if (idx < 0 || idx >= actions.Count) { Hide(); return; }
         var action = actions[idx];
-        var files = _files;
+        var offer = _offer;
+        _offer = null;
         // from a browser: the file first (out of the drag, or downloaded), kept in Downloads, then the petal on it there
         if (_web != null) action = _web.Wrap(action);
+        // a pasted picture moves from temp into Pictures/Convertino only now, when a petal uses it
+        var files = offer?.Use() ?? _files;
         var where = Win32.Cursor;
         // worked out already (or still working on it)? the job picks that up instead of starting over
         var ready = _ahead?.Take(action);
@@ -468,5 +497,6 @@ public sealed class OverlayController
             _ = Task.Delay(220).ContinueWith(_ => { if (session == _session) FinishHide(); }, TaskScheduler.FromCurrentSynchronizationContext());
         }
         await Jobs.Start(action, files, new ScreenPoint(where.X, where.Y), ready);
+        offer?.Closed(used: true);
     }
 }

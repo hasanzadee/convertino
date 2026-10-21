@@ -20,7 +20,14 @@ static class Program
         if (args.Length == 2 && args[0] == "--browser-drop-selftest")
             return Overlay.AvaloniaDrag.SelfTest(Path.GetFullPath(args[1]));
 
-        if (args.Length > 0 && args[0] == "menu")
+        if (args is ["menu", "--clipboard" or "--capture"])
+        {
+            // the shortcuts' actions, for desktops where only the desktop itself can bind keys (Wayland)
+            var verb = args[1] == "--clipboard" ? "clip" : "capture";
+            if (Ipc.Send(verb, [])) return 0;
+            App.StartupVerb = verb;
+        }
+        else if (args.Length > 0 && args[0] == "menu")
         {
             var files = args.Skip(1).Select(Path.GetFullPath).Where(p => File.Exists(p) || Directory.Exists(p)).ToArray();
             if (files.Length == 0) { Console.Error.WriteLine("usage: convertino menu <files…>"); return 2; }

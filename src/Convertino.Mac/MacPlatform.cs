@@ -109,6 +109,21 @@ public sealed class MacPlatform : IPlatform
 
     public Func<Job, Task>? Editor(string id) => Editors?.Invoke(id);
 
+    public Task<ClipContent?> ReadClipboard() => Task.Run(Pasteboard.Read);
+
+    /// <summary>macOS's own interactive area picker (screencapture -i; Screen Recording permission the first time), into Pictures/Convertino.</summary>
+    public static async Task<(string Png, ScreenPoint? At)?> CaptureArea(Func<ScreenPoint>? pointer)
+    {
+        var path = Captures.NewPath("Screenshot", "png");
+        var psi = new ProcessStartInfo("/usr/sbin/screencapture") { UseShellExecute = false };
+        foreach (var a in new[] { "-i", "-x", path }) psi.ArgumentList.Add(a);
+        using var p = Process.Start(psi)!;
+        await p.WaitForExitAsync();
+        // Esc in the picker: no file
+        if (!File.Exists(path) || new FileInfo(path).Length == 0) return null;
+        return (path, pointer?.Invoke());
+    }
+
     public void Reveal(string path) => Run("/usr/bin/open", ["-R", path], wait: false);
 
     public void Open(string path) => Run("/usr/bin/open", [path], wait: false);

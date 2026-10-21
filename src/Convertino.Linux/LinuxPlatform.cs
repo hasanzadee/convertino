@@ -87,6 +87,100 @@ public sealed class LinuxPlatform : IPlatform
             : "Copy image needs wl-clipboard (Wayland) or xclip (X11)");
     }
 
+    /// <summary>
+    /// The clipboard through Avalonia while the app runs (no extra tools needed on X11), otherwise wl-paste (Wayland)
+    /// or xclip (X11), e.g. for "convertino clip".
+    /// </summary>
+    public async Task<ClipContent?> ReadClipboard()
+    {
+        if (ClipboardHost?.Clipboard is { } cb)
+        {
+            // the data on the UI thread, decoding a big picture off it
+            try { return await Task.Run(await Dispatcher.UIThread.InvokeAsync(() => ReadAvalonia(cb))); }
+            // the session's tools may still manage
+            catch (Exception ex) { Log.Error("clipboard (Avalonia)", ex); }
+        }
+        return await Task.Run(ReadWithTools);
+    }
+
+    /// <summary>Formats a document or sheet adds beside its text (LibreOffice / browsers offer a picture of the cells too): then the text is what was meant.</summary>
+    static bool Document(IEnumerable<string> types) =>
+        types.Any(t => t.StartsWith("application/x-openoffice", StringComparison.Ordinal) || t is "text/rtf" or "text/richtext" or "application/rtf" or "text/csv");
+
+    /// <summary>KeePassXC, KWallet and other password managers mark what they copy (KDE's hint; Klipper keeps it out of its history).</summary>
+    static bool Secret(IEnumerable<string> types) => types.Contains("x-kde-passwordManagerHint");
+
+    static readonly string[] PictureTypes = ["image/png", "image/jpeg", "image/bmp", "image/tiff", "image/webp"];
+
+    /// <summary>Reads what's there (UI thread); the returned step decodes it (any thread).</summary>
+    static async Task<Func<ClipContent?>> ReadAvalonia(IClipboard cb)
+    {
+        var types = (await cb.GetDataFormatsAsync()).Select(f => f.Identifier).ToList();
+        if (Overlay.OverlayController.Diag) Log.Info("clipboard types: " + string.Join(", ", types));
+        if (await cb.TryGetFilesAsync() is { Length: > 0 } items)
+        {
+            var paths = items.Select(i => i.TryGetLocalPath()).OfType<string>().Where(p => File.Exists(p) || Directory.Exists(p)).ToList();
+            if (paths.Count > 0) return () => new ClipContent.Files(paths);
+        }
+        var text = await cb.TryGetTextAsync();
+        bool hasText = !string.IsNullOrWhiteSpace(text), secret = Secret(types);
+        if (!(hasText && Document(types)) && !secret)
+        {
+            foreach (var mime in PictureTypes)
+                if (types.Contains(mime) && await cb.TryGetValueAsync(DataFormat.CreateBytesPlatformFormat(mime)) is { Length: > 8 } bytes)
+                    return () => new ClipContent.Image(mime == "image/png" ? bytes : Captures.ToPng(bytes));
+            if (types.Any(t => t.StartsWith("image/", StringComparison.Ordinal)) && await cb.TryGetBitmapAsync() is { } bmp)
+                return () =>
+                {
+                    using var ms = new MemoryStream();
+                    bmp.Save(ms, PngBitmapEncoderOptions.Default);
+                    return new ClipContent.Image(ms.ToArray());
+                };
+        }
+        return () => hasText ? new ClipContent.Text(text!, secret) : null;
+    }
+
+    static ClipContent? ReadWithTools()
+    {
+        bool wayland = !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("WAYLAND_DISPLAY")) && Paths.Which("wl-paste") != null;
+        Func<string?, byte[]?> get;
+        if (wayland) get = type => Output("wl-paste", type == null ? ["--list-types"] : ["--no-newline", "--type", type]);
+        else if (!string.IsNullOrEmpty(Environment.GetEnvironmentVariable("DISPLAY")) && Paths.Which("xclip") != null)
+            get = type => Output("xclip", ["-selection", "clipboard", "-o", "-t", type ?? "TARGETS"]);
+        else throw new InvalidOperationException("Reading the clipboard needs wl-clipboard (Wayland) or xclip (X11)");
+
+        var types = Encoding.UTF8.GetString(get(null) ?? []).Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
+        if (types.Count == 0) return null;
+        foreach (var t in new[] { "x-special/gnome-copied-files", "text/uri-list" })
+            if (types.Contains(t) && get(t) is { } uris && ClipFlower.UriList(Encoding.UTF8.GetString(uris)) is { Count: > 0 } files)
+                return new ClipContent.Files(files);
+        string? text = null;
+        foreach (var t in new[] { "text/plain;charset=utf-8", "UTF8_STRING", "text/plain", "STRING" })
+            if (types.Contains(t) && get(t) is { Length: > 0 } b) { text = Encoding.UTF8.GetString(b); break; }
+        bool hasText = !string.IsNullOrWhiteSpace(text), secret = Secret(types);
+        if (!(hasText && Document(types)) && !secret)
+            foreach (var mime in PictureTypes)
+                if (types.Contains(mime) && get(mime) is { Length: > 8 } bytes)
+                    return new ClipContent.Image(mime == "image/png" ? bytes : Captures.ToPng(bytes));
+        return hasText ? new ClipContent.Text(text!, secret) : null;
+    }
+
+    static byte[]? Output(string exe, string[] args)
+    {
+        try
+        {
+            var psi = new ProcessStartInfo(Paths.Which(exe) ?? exe) { RedirectStandardOutput = true, UseShellExecute = false };
+            foreach (var a in args) psi.ArgumentList.Add(a);
+            using var p = Process.Start(psi)!;
+            using var ms = new MemoryStream();
+            var copy = p.StandardOutput.BaseStream.CopyToAsync(ms);
+            if (!p.WaitForExit(5000)) { try { p.Kill(); } catch { } return null; }
+            copy.Wait(2000);
+            return p.ExitCode == 0 ? ms.ToArray() : null;
+        }
+        catch (Exception ex) { Log.Error(exe, ex); return null; }
+    }
+
     static bool PipeBytes(string exe, string args, byte[] input)
     {
         try

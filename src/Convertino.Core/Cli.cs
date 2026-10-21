@@ -13,7 +13,7 @@ public static class Cli
     public static readonly string Version = typeof(Cli).Assembly.GetName().Version?.ToString(3) ?? "1.0.0";
 
     public static bool IsCommand(string[] args) =>
-        args.Length > 0 && args[0] is "convert" or "run" or "actions" or "model" or "watch" or "preview" or "recipe" or "fetch" or "--help" or "-h" or "help" or "--version" or "-v";
+        args.Length > 0 && args[0] is "convert" or "run" or "actions" or "model" or "watch" or "preview" or "recipe" or "fetch" or "clip" or "--help" or "-h" or "help" or "--version" or "-v";
 
     public static async Task<int> Run(string[] args, TextWriter? output = null)
     {
@@ -99,6 +99,8 @@ public static class Cli
                     return await Recipe(args.Skip(1).ToArray(), o, outPlace);
                 case "fetch":
                     return await FetchUrl(args.Skip(1).ToArray(), o);
+                case "clip":
+                    return await Clip(args.Skip(1).ToArray(), o);
             }
         }
         catch (Exception ex)
@@ -311,6 +313,77 @@ public static class Cli
         }
     }
 
+    const string ClipUsage = "usage: convertino clip [--to png|jpg|webp|txt|md|json|csv|qr] [--out <folder>]   (copied files: --to <format> converts them)";
+
+    /// <summary>The clipboard saved headlessly: a picture as PNG (or --to), text as .txt (or --to), copied files listed, converted or copied.</summary>
+    static async Task<int> Clip(string[] a, TextWriter o)
+    {
+        string? to = null, outDir = null;
+        for (int i = 0; i < a.Length; i++)
+        {
+            if (a[i] == "--to" && i + 1 < a.Length) to = a[++i].TrimStart('.').ToLowerInvariant();
+            else if (a[i] == "--out" && i + 1 < a.Length) outDir = Path.GetFullPath(a[++i]);
+            else { o.WriteLine(ClipUsage); return 2; }
+        }
+        if (outDir != null) Directory.CreateDirectory(outDir);
+        switch (await Platform.Current.ReadClipboard())
+        {
+            case Services.ClipContent.Files f:
+            {
+                if (to != null)
+                {
+                    if (outDir == null) return await RunAction("to-" + to, f.Paths, o);
+                    var action = Catalog.All(f.Paths).FirstOrDefault(a => a.Id == "to-" + to && !a.Interactive);
+                    if (action == null) { o.WriteLine($"the copied files don't convert to {to}. Try: convertino actions {string.Join(' ', f.Paths.Select(Quote))}"); return 2; }
+                    var job = await Jobs.RunHeadless(action, f.Paths);
+                    foreach (var p in job.Outputs)
+                    {
+                        // results land beside their sources; --out moves them there
+                        var dst = Directory.Exists(p) ? Paths.UniqueDir(outDir, Path.GetFileName(p)) : Paths.Unique(outDir, Path.GetFileNameWithoutExtension(p), Path.GetExtension(p));
+                        if (File.Exists(p)) File.Move(p, dst); else if (Directory.Exists(p)) Directory.Move(p, dst);
+                        o.WriteLine(dst);
+                    }
+                    if (!string.IsNullOrEmpty(job.Summary)) o.WriteLine(job.Summary);
+                    return job.Failed ? 1 : 0;
+                }
+                foreach (var p in f.Paths)
+                {
+                    if (outDir == null || !File.Exists(p)) { o.WriteLine(p); continue; }
+                    var dst = Paths.Unique(outDir, Path.GetFileNameWithoutExtension(p), Path.GetExtension(p));
+                    File.Copy(p, dst);
+                    o.WriteLine(dst);
+                }
+                return 0;
+            }
+            case Services.ClipContent.Image img:
+            {
+                var ext = to ?? "png";
+                if (ext == "jpeg") ext = "jpg";
+                if (ext is not ("png" or "jpg" or "webp" or "avif" or "gif" or "bmp" or "tiff" or "pdf"))
+                {
+                    o.WriteLine($"the clipboard holds a picture: --to png, jpg, webp, avif, gif, bmp, tiff or pdf, not {ext}");
+                    return 2;
+                }
+                var dst = Services.Captures.NewPath("Clipboard", ext, outDir);
+                if (ext == "png") await File.WriteAllBytesAsync(dst, img.Png);
+                else
+                {
+                    using var m = new ImageMagick.MagickImage(img.Png);
+                    Services.Images.PrepareFor(m, ext);
+                    m.Write(dst, ext == "pdf" ? ImageMagick.MagickFormat.Pdf : Services.Images.FormatOf(ext));
+                }
+                o.WriteLine(dst);
+                return 0;
+            }
+            case Services.ClipContent.Text t when t.Value.Trim().Length > 0:
+                o.WriteLine(Services.ClipFlower.SaveText(t.Value, to ?? "txt", outDir));
+                return 0;
+            default:
+                o.WriteLine("the clipboard is empty (or holds nothing Convertino can save)");
+                return 1;
+        }
+    }
+
     static WatchFolder? ParseWatch(string[] a, TextWriter o)
     {
         if (a.Length < 3) { o.WriteLine(WatchUsage); return null; }
@@ -390,6 +463,8 @@ public static class Cli
             Desktop:
               convertino                       start in the tray (drag any file + tap Shift)
               convertino menu <files…>         open the flower for these files (file-manager integration)
+              convertino menu --clipboard      the flower for what's on the clipboard (bind it to a key on Wayland)
+              convertino menu --capture        capture an area of the screen, then its flower
 
             Command line:
               convertino convert <files…> --to <format>    e.g. convertino convert IMG_1234.HEIC --to jpg
@@ -402,6 +477,7 @@ public static class Cli
                                                            (also: recipe list|remove|run; custom commands: recipes.json)
               … --out <subfolder|full path>                convert, run, recipe run: put results there (default: next to the original)
               convertino fetch <url> [--to <format>]       download into Downloads (http, https, data:), then convert
+              convertino clip [--to <format>] [--out <dir>] save what's on the clipboard (a picture, text or copied files)
               convertino model install                     download the offline AI model for Cut out (224 MB)
               convertino --version
             """);
