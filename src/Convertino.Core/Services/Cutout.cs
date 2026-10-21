@@ -155,7 +155,7 @@ public static class Cutout
         if (!hash.Equals(ModelSha256, StringComparison.OrdinalIgnoreCase))
         {
             File.Delete(part);
-            throw new IOException(L.T("model download is corrupted (SHA-256 mismatch)"));
+            throw new IOException(L.En("model download is corrupted (SHA-256 mismatch)"));
         }
         File.Move(part, ModelPath, overwrite: true);
     }

@@ -54,7 +54,7 @@ static class Dev
         view.SetMode(HubMode.Info);
         var rings = pages.Rings.ToList();
         string name = kind switch { "tools" => "Tools", "more" => "More tools", "formats" => "More formats", _ => "Convert" };
-        int page = Math.Max(0, rings.FindIndex(r => r.Name == L.T(name)));
+        int page = Math.Max(0, rings.FindIndex(r => r.Key == name));
         view.SetPages(rings.Count, page);
         view.SetPetals(rings[page].Petals, 1);
         view.SetHover(hover);
@@ -190,8 +190,8 @@ static class Dev
         // a list longer than Pages.MaxPetals carries on in a second ring of the same name, spread evenly
         var many = Enumerable.Range(1, 23).Select(i => Catalog.Tool($"t{i}", $"T{i}", "tag", "test", _ => Task.CompletedTask)).ToList();
         var split = new Pages([], many, "", "").Rings;
-        string got = string.Join(" · ", split.Select(r => $"{r.Name} ({r.Petals.Count})"));
-        bool splitOk = got == $"{L.T("Tools")} (8) · {L.T("Tools")} 2 (8) · {L.T("Tools")} 3 (7)";
+        string got = string.Join(" · ", split.Select(r => $"{r.Key} ({r.Petals.Count})"));
+        bool splitOk = got == "Tools (8) · Tools 2 (8) · Tools 3 (7)";
         if (!splitOk) failed++;
         report.Add($"{(splitOk ? "PASS" : "FAIL")}  {"23 tools",-36} → {got}");
 

@@ -14,9 +14,10 @@ namespace Convertino;
 /// A plural entry's key is the English singular and its value lists the language's forms (Russian: one, few, many).
 /// <c>{0:l}</c> in a template lowercases the first letter of a text argument ("Couldn't {0:l}" + "Convert to PNG").
 /// </para>
-/// The command line never calls <see cref="Use"/> with anything but English, so its output and the log stay English.
+/// Exceptions carry English (<c>L.En</c>, so the log stays English) and are translated where they're shown
+/// (<see cref="Saved"/>, as <see cref="Jobs.Friendly"/> does). The command line always runs in English.
 /// </summary>
-public static class L
+public static partial class L
 {
     public sealed record Language(string Code, string Name);
 
@@ -26,15 +27,19 @@ public static class L
         public readonly CultureInfo Culture = culture;
         public readonly Dictionary<string, string[]> Map = map;
         public readonly Formatter Fmt = new(culture);
-        public List<(Regex Re, string Key)>? Templates;
+        public List<(Regex Re, string Key, int Letters)>? Templates;
     }
 
     const string Prefix = "Convertino.Lang.";
     static readonly Formatter EnglishFmt = new(CultureInfo.GetCultureInfo("en-US"));
     static Table _t = new("en", EnglishCulture(), []);
     static IReadOnlyList<Language>? _all;
-    /// <summary>Translated text → the English it came from, so what gets saved (Recent, stats.json) stays language-neutral.</summary>
-    static readonly ConcurrentDictionary<string, string> Back = new();
+    /// <summary>
+    /// Translated text → the English it came from, so what gets saved (Recent, stats.json) stays language-neutral.
+    /// Two generations: when the newer one fills up the older one is dropped, so an entry just made always survives.
+    /// </summary>
+    static ConcurrentDictionary<string, string> _back = new(), _backOld = new();
+    const int BackGeneration = 20_000;
 
     /// <summary>The language in use: "en", "ru", "pt-BR" …</summary>
     public static string Code => _t.Code;
@@ -170,13 +175,16 @@ public static class L
 
     static string Remember(string shown, string english)
     {
-        if (shown != english)
-        {
-            if (Back.Count > 4096) Back.Clear();
-            Back[shown] = english;
-        }
+        if (shown == english) return shown;
+        var back = _back;
+        if (back.Count >= BackGeneration)
+            lock (Lock)
+                if (_back == back) { _backOld = back; _back = back = new(); }
+        back[shown] = english;
         return shown;
     }
+
+    static readonly object Lock = new();
 
     static string Format(Formatter f, string template, string key, object?[] args)
     {
@@ -189,28 +197,67 @@ public static class L
     }
 
     /// <summary>The English a translated text came from (or the text itself): what Recent and stats.json store.</summary>
-    public static string English(string shown) => Back.TryGetValue(shown, out var e) ? e : shown;
+    public static string English(string shown) =>
+        _back.TryGetValue(shown, out var e) || _backOld.TryGetValue(shown, out e) ? e : shown;
 
     /// <summary>
-    /// Show text that was saved in English ("Convert to PNG" in Recent, an Activity caption): the exact key,
-    /// or a template whose {0}s match ("Convert to {0}"), or the text as it is.
+    /// English text for exceptions and other messages that may reach the log: formatted like <see cref="T(string, object?[])"/>
+    /// but never translated. The key is still a UI string — shown translated through <see cref="Saved"/>.
     /// </summary>
-    public static string Saved(string english)
+    public static string En(string key, params object?[] args)
+    {
+        var english = Format(EnglishFmt, key, key, args);
+        var made = _made;
+        if (made.Count >= BackGeneration)
+            lock (Lock)
+                if (_made == made) { _madeOld = made; _made = made = new(); }
+        made[english] = (key, args);
+        return english;
+    }
+
+    /// <summary>What <see cref="En"/> built this run: message → key and values, so it's shown translated exactly.</summary>
+    static ConcurrentDictionary<string, (string Key, object?[] Args)> _made = new(), _madeOld = new();
+
+    /// <summary>
+    /// Show English text that an exception carried or that was saved ("Part 003 of a.zip is missing", "Convert to PNG"
+    /// in Recent, an Activity caption): a message <see cref="En"/> built is translated from its key and values (each value
+    /// in turn); otherwise the exact key, or a template whose {0}s match ("Convert to {0}"), or the text as it is.
+    /// </summary>
+    public static string Saved(string english) => Saved(english, 0);
+
+    static string Saved(string english, int depth)
     {
         var t = _t;
         if (t.Code == "en" || string.IsNullOrEmpty(english)) return english;
         if (t.Map.ContainsKey(english)) return T(english);
-        t.Templates ??= [.. t.Map.Keys.Where(IsTemplate).OrderByDescending(k => Regex.Replace(k, @"\{\d+[^}]*\}", "").Length).Select(k => (Pattern(k), k))];
-        foreach (var (re, key) in t.Templates)
+        if (depth > 3) return english;
+        if (_made.TryGetValue(english, out var made) || _madeOld.TryGetValue(english, out made))
+            return T(made.Key, [.. made.Args.Select(a => a is string s ? Saved(s, depth + 1) : a)]);
+        if (depth > 0) return english; // a value inside a message: a file name, a tool's own output
+        t.Templates ??= [.. t.Map.Keys.Where(IsTemplate).OrderByDescending(k => Regex.Replace(k, @"\{\d+[^}]*\}", "").Length)
+            .Select(k => (Pattern(k), k, Regex.Replace(k, @"\{\d+[^}]*\}", "").Count(char.IsLetter)))];
+        foreach (var (re, key, letters) in t.Templates)
             if (re.Match(english) is { Success: true } m)
             {
                 var groups = m.Groups.Cast<Group>().Skip(1).ToList();
+                // a short template ("{0} file", "Split {0}") only takes counts and sizes, not any words ("bad file")
+                if (letters < 8 && groups.Any(g => !CountLike().IsMatch(g.Value))) continue;
                 var args = new object?[groups.Max(g => int.Parse(g.Name[1..])) + 1];
                 foreach (var g in groups) args[int.Parse(g.Name[1..])] = g.Value;
+                var forms = t.Map[key];
+                // a plural entry: the form for the count in {0}
+                if (forms.Length > 1 && args[0] is string s && long.TryParse(s, NumberStyles.AllowThousands, CultureInfo.InvariantCulture, out var n))
+                {
+                    args[0] = n;
+                    return Remember(Format(t.Fmt, forms[Math.Min(forms.Length - 1, Plural(t.Code, n))], key, args), english);
+                }
                 return T(key, args);
             }
         return english;
     }
+
+    [GeneratedRegex(@"^[\d.,\s]*\d[\d.,\s]*(?: ?[KMGT]?B)?$")]
+    private static partial Regex CountLike();
 
     /// <summary>Only templates with real words around their {0}s take part ("{0} · {1}" would match anything).</summary>
     static bool IsTemplate(string key) =>

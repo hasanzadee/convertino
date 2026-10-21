@@ -160,7 +160,7 @@ public sealed class OverlayController
     }
 
     internal FlowerView DevView => _win.View;
-    internal string DevRing => _pages == null ? "closed" : $"{_pager.Page + 1}/{_pager.Count} {_pager.Name}";
+    internal string DevRing => _pages == null ? "closed" : $"{_pager.Page + 1}/{_pager.Count} {_pager.Key}";
 
     // ---------- show / hide ----------
 

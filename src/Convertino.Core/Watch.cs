@@ -99,7 +99,7 @@ public static class Watches
 
     public static void Add(WatchFolder wf)
     {
-        wf.Out = ValidOut(wf.Out) ?? throw new ArgumentException(L.T("The results folder needs a plain name, like Converted."));
+        wf.Out = ValidOut(wf.Out) ?? throw new ArgumentException(L.En("The results folder needs a plain name, like Converted."));
         Edit(list => { list.RemoveAll(w => Same(w.Path, wf.Path)); list.Add(wf); return 0; });
     }
 

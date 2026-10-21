@@ -7,16 +7,33 @@ namespace Convertino;
 /// <summary>
 /// <c>convertino lang-check [checkout]</c>: what each <c>src/Convertino.Core/Lang/*.json</c> still lacks, and whether the files are sound.
 /// Fails (exit 1) on malformed JSON, keys whose English no longer appears anywhere in the sources, {n} placeholders that
-/// differ from the English, a wrong number of plural forms, or an interpolated string handed to L.T / L.N.
-/// Untranslated strings are only listed: they show in English until someone translates them.
+/// differ from the English, a plural entry without all of its language's forms, and on text that can never match a key:
+/// an interpolated or concatenated string handed to L.T / L.N / L.En or to a petal factory (Tool, Editor, Fmt, Pack).
+/// Untranslated strings are only listed (they show in English until someone translates them), and so are factory
+/// arguments that come from variables, which can't be checked here.
 /// </summary>
 public static class LangCheck
 {
-    /// <summary>Calls whose literal arguments are UI text, by 0-based argument position (L.N: its singular is the key).</summary>
+    /// <summary>
+    /// Calls whose arguments at these 0-based positions are UI text: keys for L.T / L.N (its singular) / L.En, and the
+    /// label / verb the petal factories run through L.T themselves.
+    /// </summary>
     static readonly Dictionary<string, int[]> Calls = new()
     {
-        ["L.T"] = [0], ["L.N"] = [1], ["Tool"] = [1, 3], ["Catalog.Tool"] = [1, 3], ["Editor"] = [1, 3],
+        ["L.T"] = [0], ["L.N"] = [1], ["L.En"] = [0], ["Tool"] = [1, 3], ["Catalog.Tool"] = [1, 3], ["Editor"] = [1, 3],
     };
+
+    /// <summary>Catalog.cs's own helpers: the hints of Fmt and Pack, and its local F / D that hand a hint on to Fmt.</summary>
+    static readonly Dictionary<string, int[]> CatalogCalls = new() { ["Fmt"] = [1], ["Pack"] = [2], ["F"] = [2], ["D"] = [1] };
+
+    sealed class Found
+    {
+        public readonly HashSet<string> Literals = new(StringComparer.Ordinal);
+        public readonly SortedSet<string> Wanted = new(StringComparer.Ordinal);
+        /// <summary>Keys of L.N calls: every language with several plural forms must list them all.</summary>
+        public readonly HashSet<string> Plurals = new(StringComparer.Ordinal);
+        public readonly List<string> Unchecked = [];
+    }
 
     public static int Run(string? dir, TextWriter o)
     {
@@ -30,15 +47,15 @@ public static class LangCheck
         }
         var src = Path.Combine(root, "src");
         var errors = new List<string>();
-        var literals = new HashSet<string>(StringComparer.Ordinal);
-        var wanted = new SortedSet<string>(StringComparer.Ordinal);
+        var found = new Found();
         foreach (var file in Directory.EnumerateFiles(src, "*.cs", SearchOption.AllDirectories))
         {
             var rel = Path.GetRelativePath(root, file).Replace('\\', '/');
             if (rel.Contains("/bin/") || rel.Contains("/obj/")) continue;
-            // Dev.cs only builds test petals: its literals count as sources, not as UI text to translate
-            Scan(File.ReadAllText(file), rel, literals, rel.EndsWith("/Dev.cs") ? [] : wanted, errors);
+            // Dev.cs only builds test petals: its literals count as sources, nothing in it is UI text
+            Scan(File.ReadAllText(file), rel, found, errors, uiText: !rel.EndsWith("/Dev.cs"));
         }
+        var (literals, wanted) = (found.Literals, found.Wanted);
 
         var langs = new SortedDictionary<string, Dictionary<string, string[]>>(StringComparer.Ordinal);
         foreach (var file in Directory.EnumerateFiles(Path.Combine(src, "Convertino.Core", "Lang"), "*.json"))
@@ -56,6 +73,8 @@ public static class LangCheck
                         errors.Add($"{code}: \"{key}\" → \"{f}\" has placeholders {Show(Holes(f))}, the English has {Show(want)}");
                 if (forms.Length > 1 && forms.Length != L.Forms(code))
                     errors.Add($"{code}: \"{key}\" lists {forms.Length} plural forms, {code} has {L.Forms(code)}");
+                else if (found.Plurals.Contains(key) && forms.Length != L.Forms(code))
+                    errors.Add($"{code}: \"{key}\" counts things (L.N): list its {L.Forms(code)} plural forms, not one text");
             }
         }
 
@@ -67,6 +86,11 @@ public static class LangCheck
             var missing = wanted.Where(k => !map.ContainsKey(k)).ToList();
             o.WriteLine($"{code,-8} {wanted.Count - missing.Count,4}/{wanted.Count} translated" + (missing.Count > 0 ? $", {missing.Count} missing:" : ""));
             foreach (var k in missing) o.WriteLine($"           {k}");
+        }
+        if (found.Unchecked.Count > 0)
+        {
+            o.WriteLine($"{found.Unchecked.Count} petal text argument(s) come from variables: their values must be keys (not checked here)");
+            foreach (var u in found.Unchecked) o.WriteLine("  " + u);
         }
         foreach (var e in errors) o.WriteLine("error: " + e);
         o.WriteLine(errors.Count == 0 ? "ok" : $"{errors.Count} error(s)");
@@ -114,10 +138,11 @@ public static class LangCheck
     enum K { Word, Punct, Str }
     readonly record struct Tok(K Kind, string Text, bool Interpolated, int Line);
 
-    static void Scan(string code, string file, HashSet<string> literals, SortedSet<string> wanted, List<string> errors)
+    static void Scan(string code, string file, Found found, List<string> errors, bool uiText)
     {
         var toks = Lex(code);
-        foreach (var t in toks) if (t.Kind == K.Str) literals.Add(t.Text);
+        foreach (var t in toks) if (t.Kind == K.Str) found.Literals.Add(t.Text);
+        bool catalog = file.EndsWith("/Catalog.cs");
         for (int i = 0; i < toks.Count; i++)
         {
             // Name ( or Name . Name (
@@ -126,17 +151,45 @@ public static class LangCheck
             int j = i + 1;
             if (j + 1 < toks.Count && toks[j].Text == "." && toks[j + 1].Kind == K.Word) { name += "." + toks[j + 1].Text; j += 2; }
             if (i > 0 && toks[i - 1].Text == ".") continue; // x.Tool( is someone else's Tool
-            if (j >= toks.Count || toks[j].Text != "(" || !Calls.TryGetValue(name, out var positions)) continue;
+            if (j >= toks.Count || toks[j].Text != "(") continue;
+            if (!Calls.TryGetValue(name, out var positions) && !(catalog && CatalogCalls.TryGetValue(name, out positions))) continue;
             var args = Args(toks, j);
+            if (!uiText || IsDeclaration(args[0])) continue; // static PetalAction Tool(string id, …)
             foreach (var p in positions)
             {
-                if (p >= args.Count || args[p].Count != 1 || args[p][0].Kind != K.Str) continue;
-                var s = args[p][0];
-                if (s.Interpolated && name.StartsWith("L.")) errors.Add($"{file}:{s.Line}: {name} gets an interpolated string, which can never match a key: pass {{0}} and the value instead");
-                else if (!s.Interpolated) wanted.Add(s.Text);
+                if (p >= args.Count || args[p].Count == 0) continue;
+                var arg = args[p];
+                int line = arg[0].Line;
+                // the literals at the argument's own level: one, or one per branch of a ?: (L.T(…) inside is scanned on its own)
+                var strs = new List<Tok>();
+                bool plus = false;
+                int depth = 0;
+                foreach (var t in arg)
+                {
+                    if (t.Kind == K.Punct && t.Text is "(" or "[" or "{") depth++;
+                    else if (t.Kind == K.Punct && t.Text is ")" or "]" or "}") depth--;
+                    else if (depth == 0 && t.Kind == K.Str) strs.Add(t);
+                    else if (depth == 0 && t.Kind == K.Punct && t.Text == "+") plus = true;
+                }
+                if (strs.Any(s => s.Interpolated))
+                    errors.Add($"{file}:{line}: {name} gets an interpolated string, which can never match a key: use L.T(\"… {{0}} …\", value)");
+                else if (plus && strs.Count > 0)
+                    errors.Add($"{file}:{line}: {name} gets a string pieced together with +, which can never match a key: use L.T(\"… {{0}} …\", value)");
+                else if (strs.Count > 0)
+                {
+                    foreach (var s in strs) found.Wanted.Add(s.Text);
+                    if (name == "L.N") found.Plurals.Add(strs[0].Text);
+                }
+                else if (!name.StartsWith("L.") && !(arg.Count > 3 && arg[0].Text == "L" && arg[1].Text == "."))
+                    found.Unchecked.Add($"{file}:{line}: {name}(… {string.Concat(arg.Select(t => t.Text))} …)");
             }
         }
     }
+
+    /// <summary>A parameter list ("string id", "List&lt;PetalAction&gt; ring") rather than arguments.</summary>
+    static bool IsDeclaration(List<Tok> first) =>
+        first.Count >= 2 && first[^1].Kind == K.Word && (first[^2].Kind == K.Word || first[^2].Text is ">" or "?" or "]")
+        && first[0].Text is not ("new" or "await" or "out" or "ref" or "in" or "this");
 
     /// <summary>The token lists of a call's arguments, split at top-level commas.</summary>
     static List<List<Tok>> Args(List<Tok> toks, int open)

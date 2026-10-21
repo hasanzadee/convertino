@@ -140,6 +140,7 @@
   "Language": "Langue",
   "Let Convertino tell you when a new version is out? It checks GitHub once a day; nothing else is sent.": "Laisser Convertino vous prévenir quand une nouvelle version sort ? Il vérifie GitHub une fois par jour ; rien d'autre n'est envoyé.",
   "LibreOffice couldn't convert this file": "LibreOffice n'a pas pu convertir ce fichier",
+  "LibreOffice couldn't convert this file: {0}": "LibreOffice n'a pas pu convertir ce fichier : {0}",
   "Light, color, size": "Lumière, couleur, taille",
   "Log": "Journal",
   "Loudness": "Volume",
@@ -407,6 +408,7 @@
     "{0} groupes de doublons"
   ],
   "{0} failed ({1})": "{0} a échoué ({1})",
+  "{0} failed ({1}): {2}": "{0} a échoué ({1}) : {2}",
   "{0} file": [
     "{0} fichier",
     "{0} fichiers"
@@ -538,6 +540,14 @@
   "text": "texte",
   "web page": "page web",
   "Linux, Mac": "Linux, Mac",
+  "Apple": "Apple",
+  "Excel": "Excel",
+  "H.264": "H.264",
+  "JPEG XL": "JPEG XL",
+  "OpenDoc": "OpenDoc",
+  "PowerPoint": "PowerPoint",
+  "VP9": "VP9",
+  "Word": "Word",
   "Mocha": "Mocha",
   "Latte": "Latte",
   "Sunset": "Couchant",

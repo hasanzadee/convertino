@@ -185,7 +185,7 @@ public sealed class EditorShell : Window
         catch (Exception ex)
         {
             Log.Error("editor save", ex);
-            MessageBox.Show(this, ex.Message, "Convertino", MessageBoxButton.OK, MessageBoxImage.Warning);
+            MessageBox.Show(this, L.Saved(ex.Message), "Convertino", MessageBoxButton.OK, MessageBoxImage.Warning);
         }
         _save.Content = old;
         _save.IsEnabled = true;

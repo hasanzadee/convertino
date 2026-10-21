@@ -277,7 +277,7 @@ public static class ImageTools
             rgb.Add((r, g, b));
             lab.Add(Lab(r, g, b));
         }
-        if (lab.Count == 0) throw new InvalidOperationException(L.T("The image is fully transparent"));
+        if (lab.Count == 0) throw new InvalidOperationException(L.En("The image is fully transparent"));
 
         const int k = 10;
         var rnd = new Random(7);

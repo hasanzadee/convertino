@@ -61,7 +61,7 @@ public static partial class Archives
     static void ExtractOne(string src, Job job, Action<double> report, Tally tally)
     {
         var fmt = Sniff(src);
-        if (fmt == Format.Unknown) throw new InvalidDataException(L.T("{0} isn't an archive Convertino can open", Path.GetFileName(src)));
+        if (fmt == Format.Unknown) throw new InvalidDataException(L.En("{0} isn't an archive Convertino can open", Path.GetFileName(src)));
         var dir = Path.GetDirectoryName(src)!;
         var stem = Stem(src);
         var cap = Cap.For(src, dir);
@@ -195,14 +195,14 @@ public static partial class Archives
             }
             catch (IOException) when (File.Exists(dest) || Directory.Exists(dest)) { }
         }
-        throw new IOException(L.T("No free folder name for {0}", name));
+        throw new IOException(L.En("No free folder name for {0}", name));
     }
 
     static bool IsPasswordError(Exception ex) =>
         ex is SharpCompress.Common.CryptographicException or System.Security.Cryptography.CryptographicException || ex.GetType().Name.Contains("Password", StringComparison.OrdinalIgnoreCase)
         || ex.Message.Contains("password", StringComparison.OrdinalIgnoreCase) || ex.Message.Contains("encrypted", StringComparison.OrdinalIgnoreCase);
 
-    static Exception Locked() => new InvalidOperationException(L.T("This archive is password-protected"));
+    static Exception Locked() => new InvalidOperationException(L.En("This archive is password-protected"));
 
     static void ExtractTar(Stream s, Target t)
     {
@@ -281,8 +281,8 @@ public static partial class Archives
                 if (drive.IsReady) free = drive.AvailableFreeSpace - GB;
             }
             catch { }
-            if (free < ratio) return new(Math.Max(0, free), L.T("unpacking it would leave less than 1 GB free on the disk"));
-            return new(ratio, L.T("it unpacks to more than {0}, which looks like a decompression bomb", Paths.HumanSize(ratio)));
+            if (free < ratio) return new(Math.Max(0, free), L.En("unpacking it would leave less than 1 GB free on the disk"));
+            return new(ratio, L.En("it unpacks to more than {0}, which looks like a decompression bomb", Paths.HumanSize(ratio)));
         }
     }
 
@@ -432,7 +432,7 @@ public static partial class Archives
                 while ((n = from.Read(buf, 0, buf.Length)) > 0)
                 {
                     Token.ThrowIfCancellationRequested();
-                    if (Written + n > cap.Bytes) throw new TooBigException(L.T("Stopped: {0}", cap.Why));
+                    if (Written + n > cap.Bytes) throw new TooBigException(L.En("Stopped: {0}", cap.Why));
                     to.Write(buf, 0, n);
                     Written += n;
                     Tally.Bytes += n;

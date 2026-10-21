@@ -222,7 +222,7 @@ public sealed class OverlayController
     {
         if (dir == 0 || _pages == null || _state is not (State.Drag or State.Click)) return;
         if (!_pager.Step(dir)) { _win.View.Nudge(); return; }
-        if (Diag) Log.Info($"ring {_pager.Page + 1}/{_pager.Count} {_pager.Name} ({why})");
+        if (Diag) Log.Info($"ring {_pager.Page + 1}/{_pager.Count} {_pager.Key} ({why})");
         _win.View.SetPages(_pager.Count, _pager.Page, _pager.Name);
         _win.View.SetPetals(_pager.Current, dir);
     }

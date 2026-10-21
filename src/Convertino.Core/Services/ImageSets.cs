@@ -145,7 +145,7 @@ public static class ImageSets
         try
         {
             var ok = thumbs.Where(t => t != null).Select(t => t!).ToList();
-            if (ok.Count < 2) throw new InvalidOperationException(L.T("Need at least two readable images"));
+            if (ok.Count < 2) throw new InvalidOperationException(L.En("Need at least two readable images"));
             // every frame shares the first picture's shape; the rest are letterboxed into it
             double aspect = ok[0].Width / (double)ok[0].Height;
             uint longSide = Math.Min(1080u, ok.Max(t => Math.Max(t.Width, t.Height)));
@@ -199,9 +199,9 @@ public static class ImageSets
 
     public static async Task Compare(Job job)
     {
-        if (job.Inputs.Count != 2) throw new InvalidOperationException(L.T("Compare needs exactly two images"));
+        if (job.Inputs.Count != 2) throw new InvalidOperationException(L.En("Compare needs exactly two images"));
         var r = await Task.Run(() => Diff(job.Inputs[0], job.Inputs[1]), job.Token);
-        string pct = r.differ == 0 ? "0%" : r.share < 0.0001 ? "<0.01%" : r.share < 0.01 ? $"{r.share * 100:0.##}%" : $"{r.share * 100:0.#}%";
+        string pct = r.differ == 0 ? "0%" : (r.share < 0.0001 ? "<" + 0.01.ToString(L.Culture) : (r.share * 100).ToString(r.share < 0.01 ? "0.##" : "0.#", L.Culture)) + "%";
         job.Summary = L.T("{0} of pixels differ", pct) + (r.areas > 0 ? " · " + L.N(r.areas, "{0} area", "{0} areas") : "") + (r.scaled ? " · " + L.T("sizes differed") : "");
         if (r.dst == null) { job.Title = L.T("No differences"); return; }
         job.Outputs.Add(r.dst);
@@ -217,7 +217,7 @@ public static class ImageSets
             // a retina and a normal capture of the same thing compare fine at one size; different shapes don't
             double ra = a.Width / (double)a.Height, rb = b.Width / (double)b.Height;
             if (Math.Abs(ra / rb - 1) > 0.01)
-                throw new InvalidOperationException(L.T("Different shapes ({0} and {1}): Compare needs two images of the same proportions", $"{a.Width}×{a.Height}", $"{b.Width}×{b.Height}"));
+                throw new InvalidOperationException(L.En("Different shapes ({0} and {1}): Compare needs two images of the same proportions", $"{a.Width}×{a.Height}", $"{b.Width}×{b.Height}"));
             b.Resize(new MagickGeometry(a.Width, a.Height) { IgnoreAspectRatio = true });
         }
         var (pa, w, h) = Images.ToBgra(a);

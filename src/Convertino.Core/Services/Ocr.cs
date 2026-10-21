@@ -88,16 +88,16 @@ public static class Tesseract
         Find();
         if (_exe == null)
             throw new InvalidOperationException(OperatingSystem.IsWindows()
-                ? L.T("No OCR available — add a language in Settings → Time & language, or install Tesseract")
-                : OperatingSystem.IsMacOS() ? L.T("Tesseract is not installed ({0})", "brew install tesseract")
-                : L.T("Tesseract is not installed ({0})", "sudo apt install tesseract-ocr tesseract-ocr-eng"));
+                ? L.En("No OCR available — add a language in Settings → Time & language, or install Tesseract")
+                : OperatingSystem.IsMacOS() ? L.En("Tesseract is not installed ({0})", "brew install tesseract")
+                : L.En("Tesseract is not installed ({0})", "sudo apt install tesseract-ocr tesseract-ocr-eng"));
         var tmp = Path.Combine(Paths.Temp, $"ocr-{Guid.NewGuid():N}.png");
         await File.WriteAllBytesAsync(tmp, image);
         try
         {
             var lang = string.IsNullOrEmpty(_langs) ? "" : $"-l {_langs} ";
             var (code, tsv, err) = await Task.Run(() => Run(_exe, $"\"{tmp}\" stdout {lang}--psm 3 tsv", null, 120000));
-            if (code != 0) throw new IOException(L.T("tesseract failed: {0}", err.Trim()));
+            if (code != 0) throw new IOException(L.En("tesseract failed: {0}", err.Trim()));
             return ParseTsv(tsv);
         }
         finally { try { File.Delete(tmp); } catch { } }
@@ -141,7 +141,7 @@ public static class Tesseract
         using var p = Process.Start(psi)!;
         var o = p.StandardOutput.ReadToEndAsync();
         var e = p.StandardError.ReadToEndAsync();
-        if (!p.WaitForExit(timeoutMs)) { try { p.Kill(true); } catch { } throw new TimeoutException(L.T("{0} timed out", Path.GetFileName(exe))); }
+        if (!p.WaitForExit(timeoutMs)) { try { p.Kill(true); } catch { } throw new TimeoutException(L.En("{0} timed out", Path.GetFileName(exe))); }
         return (p.ExitCode, o.Result, e.Result);
     }
 }

@@ -111,7 +111,7 @@ public sealed class EditorWindow : Window
         catch (Exception ex)
         {
             Log.Error("editor save", ex);
-            Title = L.T("Couldn't save: {0}", ex.Message);
+            Title = L.T("Couldn't save: {0}", L.Saved(ex.Message));
         }
         _save.Content = L.T("Save");
         _save.IsEnabled = true;

@@ -131,7 +131,7 @@ public static class Misc
     /// <summary>Markdown → temp HTML → office suite → PDF/DOCX (both lay out HTML nicely).</summary>
     public static Task MarkdownVia(Job job, string ext)
     {
-        var office = Platform.Current.Office ?? throw new InvalidOperationException(L.T("No office suite found"));
+        var office = Platform.Current.Office ?? throw new InvalidOperationException(L.En("No office suite found"));
         return office.Convert(job, ext, src =>
         {
             // beside the source so relative image links keep working

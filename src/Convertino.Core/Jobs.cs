@@ -92,6 +92,8 @@ public static class Jobs
         if (e is IOException && msg.Contains("being used")) return L.T("The file is open in another app");
         if (msg.Contains("NoDecodeDelegate") || msg.Contains("no decode delegate")) return L.T("This image format isn't supported");
         if (e.HResult == unchecked((int)0x800401D0)) return L.T("The clipboard is locked (another app, or the screen is locked)");   // CLIPBRD_E_CANT_OPEN
+        // exceptions carry English (it's what the log gets): shown in the UI language
+        msg = L.Saved(msg);
         return msg.Length > 140 ? msg[..140] + "…" : msg;
     }
 

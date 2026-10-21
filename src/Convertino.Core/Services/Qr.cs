@@ -74,7 +74,7 @@ public static class Qr
         {
             job.Token.ThrowIfCancellationRequested();
             var text = Content(src);
-            if (text.Length == 0) throw new InvalidOperationException(L.T("The file is empty"));
+            if (text.Length == 0) throw new InvalidOperationException(L.En("The file is empty"));
             var dst = Paths.Beside(src, "png", "(QR)");
             await File.WriteAllBytesAsync(dst, Png(text), job.Token);
             job.Outputs.Add(dst);
@@ -94,7 +94,7 @@ public static class Qr
             try { data = gen.CreateQrCode(text, QRCodeGenerator.ECCLevel.L, forceUtf8: !ascii); }
             catch (QRCoder.Exceptions.DataTooLongException)
             {
-                throw new InvalidOperationException(L.T("Too long for a QR code ({0:N0} bytes; about 2,900 fit)", Encoding.UTF8.GetByteCount(text)));
+                throw new InvalidOperationException(L.En("Too long for a QR code ({0:N0} bytes; about 2,900 fit)", Encoding.UTF8.GetByteCount(text)));
             }
         }
         using (data)
@@ -113,7 +113,7 @@ public static class Qr
             case "url":
                 foreach (var line in File.ReadLines(path))
                     if (line.StartsWith("URL=", StringComparison.OrdinalIgnoreCase)) return line[4..].Trim();
-                throw new InvalidOperationException(L.T("No URL= line in this shortcut"));
+                throw new InvalidOperationException(L.En("No URL= line in this shortcut"));
             case "webloc":
             {
                 var bytes = File.ReadAllBytes(path);
@@ -132,7 +132,7 @@ public static class Qr
                     }
                     catch (System.Xml.XmlException) { }
                 }
-                throw new InvalidOperationException(L.T("No link in this .webloc"));
+                throw new InvalidOperationException(L.En("No link in this .webloc"));
             }
             default:
                 return File.ReadAllText(path).Trim();

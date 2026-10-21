@@ -64,7 +64,7 @@ public static partial class FileTools
                     {
                         job.Token.ThrowIfCancellationRequested();
                         int n = input.Read(buf, 0, (int)Math.Min(buf.Length, left));
-                        if (n == 0) throw new IOException(L.T("The file got shorter while it was being split"));
+                        if (n == 0) throw new IOException(L.En("The file got shorter while it was being split"));
                         o.Write(buf, 0, n);
                         sha.AppendData(buf, 0, n);
                         left -= n;
@@ -96,7 +96,7 @@ public static partial class FileTools
     {
         var dir = Path.GetDirectoryName(Path.GetFullPath(first))!;
         var m = PartName().Match(Path.GetFileName(first));
-        if (!m.Success || int.Parse(m.Groups["n"].Value) != 1) throw new InvalidOperationException(L.T("Drop the first part (.001) to join"));
+        if (!m.Success || int.Parse(m.Groups["n"].Value) != 1) throw new InvalidOperationException(L.En("Drop the first part (.001) to join"));
         var baseName = m.Groups["base"].Value;
         var cmp = OperatingSystem.IsLinux() ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
         var found = new SortedDictionary<int, string>();
@@ -108,14 +108,14 @@ public static partial class FileTools
         }
         int last = found.Keys.Max();
         for (int i = 1; i <= last; i++)
-            if (!found.ContainsKey(i)) throw new InvalidOperationException(L.T("Part {0} of {1} is missing", i.ToString("D3"), baseName));
+            if (!found.ContainsKey(i)) throw new InvalidOperationException(L.En("Part {0} of {1} is missing", i.ToString("D3"), baseName));
         var parts = found.Values.ToList();
         long size = new FileInfo(parts[0]).Length;
         for (int i = 1; i < parts.Count; i++)
         {
             long s = new FileInfo(parts[i]).Length;
             bool ok = i < parts.Count - 1 ? s == size : s > 0 && s <= size;
-            if (!ok) throw new InvalidOperationException(L.T("{0} is {1} but the first part is {2}: is it incomplete?", Path.GetFileName(parts[i]), Paths.HumanSize(s), Paths.HumanSize(size)));
+            if (!ok) throw new InvalidOperationException(L.En("{0} is {1} but the first part is {2}: is it incomplete?", Path.GetFileName(parts[i]), Paths.HumanSize(s), Paths.HumanSize(size)));
         }
         return parts;
     }
@@ -138,8 +138,8 @@ public static partial class FileTools
             long partSize = new FileInfo(parts[0]).Length, lastSize = new FileInfo(parts[^1]).Length;
             if (expected == null && lastSize == partSize)
                 throw new InvalidOperationException(parts.Count == 1
-                    ? L.T("Only {0} is here: put all the parts in this folder", Path.GetFileName(parts[0]))
-                    : L.T("{0} is a full-size part, so parts after it may be missing ({1} beside them would settle it)", Path.GetFileName(parts[^1]), baseName + ".sha256"));
+                    ? L.En("Only {0} is here: put all the parts in this folder", Path.GetFileName(parts[0]))
+                    : L.En("{0} is a full-size part, so parts after it may be missing ({1} beside them would settle it)", Path.GetFileName(parts[^1]), baseName + ".sha256"));
             long size = parts.Sum(p => new FileInfo(p).Length);
             await Task.Run(() => Guarded(job, () =>
             {
@@ -164,10 +164,10 @@ public static partial class FileTools
                                 job.Report(done / (double)Math.Max(1, size));
                             }
                         }
-                        if (o.Length != size) throw new IOException(L.T("The joined file came out the wrong size"));
+                        if (o.Length != size) throw new IOException(L.En("The joined file came out the wrong size"));
                     }
                     if (expected != null && !string.Equals(Convert.ToHexStringLower(sha.GetHashAndReset()), expected, StringComparison.OrdinalIgnoreCase))
-                        throw new InvalidDataException(L.T("The joined file doesn't match {0}: a part is missing or damaged", baseName + ".sha256"));
+                        throw new InvalidDataException(L.En("The joined file doesn't match {0}: a part is missing or damaged", baseName + ".sha256"));
                 }
                 finally { ArrayPool<byte>.Shared.Return(buf); }
             }), job.Token);
@@ -435,10 +435,10 @@ public static partial class FileTools
             if (tag.Length == 0) continue; // a bare hex run of no known length: not a checksum line
             var algo = AlgoNamed(tag);
             string? problem = null;
-            if (algo == null) problem = L.T("{0} checksums aren't supported (MD5, SHA-1, SHA-256, SHA-384 and SHA-512 are)", tag.ToUpperInvariant());
+            if (algo == null) problem = L.En("{0} checksums aren't supported (MD5, SHA-1, SHA-256, SHA-384 and SHA-512 are)", tag.ToUpperInvariant());
             else if (algo.HexLength != hex.Length)
             {
-                problem = L.T("{0} has a {1}-digit hash where a {2} has {3}", Path.GetFileName(path), hex.Length, algo.Label, algo.HexLength);
+                problem = L.En("{0} has a {1}-digit hash where a {2} has {3}", Path.GetFileName(path), hex.Length, algo.Label, algo.HexLength);
                 algo = null;
             }
             string? name = m.Groups["n"].Success ? m.Groups["n"].Value : null;
@@ -495,7 +495,7 @@ public static partial class FileTools
         var lists = job.Inputs.Where(f => Kinds.Of(f) == Kind.Checksum).ToList();
         var others = job.Inputs.Where(f => !lists.Contains(f) && File.Exists(f)).ToList();
         var sums = lists.SelectMany(l => ParseSums(l).Select(s => (List: l, Sum: s))).ToList();
-        if (sums.Count == 0) throw new InvalidOperationException(L.T("No checksums found in {0}", string.Join(", ", lists.Select(Path.GetFileName))));
+        if (sums.Count == 0) throw new InvalidOperationException(L.En("No checksums found in {0}", string.Join(", ", lists.Select(Path.GetFileName))));
 
         var checks = new List<(string File, Sum Sum)>();
         int unknown = 0, outside = 0;
@@ -528,9 +528,9 @@ public static partial class FileTools
         if (checks.Count == 0)
             throw new InvalidOperationException(
                 unsupported.Count > 0 ? unsupported[0].Sum.Problem!
-                : others.Count > 0 ? L.T("{0} has no checksum for {1}", Path.GetFileName(lists[0]), Path.GetFileName(others[0]))
-                : outside > 0 && unknown == 0 ? L.T("{0} only lists files outside its folder", Path.GetFileName(lists[0]))
-                : L.T("None of the files in {0} are next to it", Path.GetFileName(lists[0])));
+                : others.Count > 0 ? L.En("{0} has no checksum for {1}", Path.GetFileName(lists[0]), Path.GetFileName(others[0]))
+                : outside > 0 && unknown == 0 ? L.En("{0} only lists files outside its folder", Path.GetFileName(lists[0]))
+                : L.En("None of the files in {0} are next to it", Path.GetFileName(lists[0])));
 
         long total = Math.Max(1, checks.Sum(c => new FileInfo(c.File).Length)), done = 0;
         var bad = new List<string>();
@@ -573,7 +573,7 @@ public static partial class FileTools
             try { return new FileStream(path, FileMode.CreateNew, FileAccess.ReadWrite, FileShare.None, 1 << 16); }
             catch (Exception ex) when ((ex is IOException || ex is UnauthorizedAccessException) && (File.Exists(path) || Directory.Exists(path))) { }
         }
-        throw new IOException(L.T("No free name for {0}", stem + ext));
+        throw new IOException(L.En("No free name for {0}", stem + ext));
     }
 
     /// <summary><see cref="CreateUnique(string, string, string, out string)"/> for a whole name: "notes.txt" → "notes (2).txt", "README" → "README (2)".</summary>

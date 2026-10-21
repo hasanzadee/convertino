@@ -74,7 +74,8 @@ public static class Paths
         double v = bytes;
         int i = 0;
         while (v >= 1024 && i < u.Length - 1) { v /= 1024; i++; }
-        return i == 0 ? $"{bytes} B" : v >= 100 ? $"{v:0} {u[i]}" : v >= 10 ? $"{v:0.#} {u[i]}" : $"{v:0.##} {u[i]}";
+        // in the UI language's number format, like the rest of the line it lands in (units stay KB / MB)
+        return i == 0 ? $"{bytes} B" : v.ToString(v >= 100 ? "0" : v >= 10 ? "0.#" : "0.##", L.Culture) + " " + u[i];
     }
 
     public static long SizeOf(string path)

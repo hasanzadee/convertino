@@ -51,7 +51,7 @@ public static class EditorHost
         var src = job.Inputs[0];
         MagickImage img;
         try { img = await Task.Run(() => Images.Load(src)); }
-        catch (Exception ex) { throw new IOException(L.T("Couldn't open this image: {0}", ex.Message), ex); }
+        catch (Exception ex) { throw new IOException(L.En("Couldn't open this image: {0}", ex.Message), ex); }
         using (img)
         {
             var editor = make(src, img);
@@ -367,7 +367,7 @@ public sealed class RedactEditor : Editor
             _surface.InvalidateVisual();
             _count.Text = res.Lines.Count == 0 ? L.T("No text found") : L.N(_surface.Boxes.Count, "{0} area", "{0} areas") + " · " + L.T("right-click removes");
         }
-        catch (Exception ex) { _count.Text = ex.Message; }
+        catch (Exception ex) { _count.Text = L.Saved(ex.Message); }
         _detect.Content = L.T("Find text");
         _detect.IsEnabled = true;
     }

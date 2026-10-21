@@ -33,7 +33,7 @@ public static class Subtitles
             var bytes = await File.ReadAllBytesAsync(src, job.Token);
             var enc = TextFiles.Detect(bytes, out int bom);
             var cues = Parse(enc.GetString(bytes, bom, bytes.Length - bom), Kinds.Ext(src));
-            if (cues.Count == 0) throw new InvalidDataException(L.T("No subtitles found in {0}", Path.GetFileName(src)));
+            if (cues.Count == 0) throw new InvalidDataException(L.En("No subtitles found in {0}", Path.GetFileName(src)));
             var dst = Paths.Beside(src, ext);
             await File.WriteAllTextAsync(dst, Write(cues, ext), new UTF8Encoding(ext is "srt" or "ass"), job.Token);
             job.Outputs.Add(dst);
@@ -51,7 +51,7 @@ public static class Subtitles
     public static async Task FromVideo(Job job)
     {
         int n = job.Inputs.Count;
-        string why = L.T("This video has no subtitle track");
+        string why = L.En("This video has no subtitle track");
         for (int i = 0; i < n; i++)
         {
             int idx = i;
@@ -60,8 +60,8 @@ public static class Subtitles
             var track = tracks?.FirstOrDefault(t => !Pictures.ContainsKey(t.Codec));
             if (tracks != null && track == null)
             {
-                why = tracks.Count == 0 ? L.T("This video has no subtitle track")
-                    : L.T("This video's subtitles are pictures ({0}), not text, so they can't be saved as SRT", Pictures[tracks[0].Codec]);
+                why = tracks.Count == 0 ? L.En("This video has no subtitle track")
+                    : L.En("This video's subtitles are pictures ({0}), not text, so they can't be saved as SRT", Pictures[tracks[0].Codec]);
                 continue;
             }
             var lang = track?.Language is { Length: > 0 } l && l != "und" ? l : null;
@@ -90,7 +90,7 @@ public static class Subtitles
             }
             catch { TryDelete(dst); throw; }
             finally { if (ass != null) TryDelete(ass); }
-            if (Paths.SizeOf(dst) <= 3) { TryDelete(dst); why = L.T("The video's subtitle track is empty"); continue; }
+            if (Paths.SizeOf(dst) <= 3) { TryDelete(dst); why = L.En("The video's subtitle track is empty"); continue; }
             job.Outputs.Add(dst);
             if (n == 1)
             {
@@ -100,7 +100,7 @@ public static class Subtitles
                 job.Summary = string.Join(" · ", parts);
             }
         }
-        if (job.Outputs.Count == 0) throw new InvalidOperationException(n == 1 ? why : L.T("None of these videos has a text subtitle track"));
+        if (job.Outputs.Count == 0) throw new InvalidOperationException(n == 1 ? why : L.En("None of these videos has a text subtitle track"));
         if (n > 1) job.Summary = L.T("{0} of {1} videos had subtitles", job.Outputs.Count, n);
     }
 

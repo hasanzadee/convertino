@@ -97,7 +97,7 @@ What CI can't show is a real Finder drag with Shift (its synthetic drag starts f
 
 ## Translating
 
-The UI is translated gettext style: the English text in the code is the key. Strings go through `L.T("Drop on a petal")`, templates through `L.T("Convert to {0}", label)`, counts through `L.N(n, "{0} file", "{0} files")`; the petal factories in `Catalog.cs` (`Tool`, `Fmt`, `Pack`) translate their labels, verbs and hints themselves. A text without a translation shows in English, so a new string never breaks anything.
+The UI is translated gettext style: the English text in the code is the key. Strings go through `L.T("Drop on a petal")`, templates through `L.T("Convert to {0}", label)`, counts through `L.N(n, "{0} file", "{0} files")`; the petal factories in `Catalog.cs` (`Tool`, `Fmt`, `Pack`) translate their labels, verbs and hints themselves, so hand them the English as a literal (`L.T("Save {0} to Downloads", n)` when it needs a value — never `$"…"` or `+`). Exception messages stay English for the log: `throw new IOException(L.En("Part {0} of {1} is missing", n, name))`; the card shows them translated. A text without a translation shows in English, so a new string never breaks anything.
 
 Translations live in `src/Convertino.Core/Lang/<code>.json` (embedded into the app):
 
@@ -121,7 +121,7 @@ To add a language, copy an existing file, translate every value and run
 convertino lang-check        # inside the checkout (Convertino.exe lang-check on Windows; dotnet run --project src/Convertino.Linux -- lang-check on Linux)
 ```
 
-It lists what each language is missing and exits with 1 on malformed JSON, keys whose English is gone from the code, placeholders that differ from the English, or a wrong number of plural forms. Missing strings are only reported. To see the result: `CONVERTINO_LANG=de` (any platform) forces a language without touching your settings, and `Convertino.exe --panel out.png Mocha demo langs` / `--snapshot out.png Mocha tools 2` render the panel and the flower (Linux / macOS: `CONVERTINO_PANEL=langs`).
+It lists what each language is missing and exits with 1 on malformed JSON, keys whose English is gone from the code, placeholders that differ from the English, a counted (`L.N`) entry without all of its plural forms, or text that can never match a key (an interpolated or `+`-joined string handed to `L.T` / `L.N` / `L.En` or a petal factory). Missing strings, and factory arguments that come from variables, are only reported. To see the result: `CONVERTINO_LANG=de` (any platform) forces a language without touching your settings, and `Convertino.exe --panel out.png Mocha demo langs` / `--snapshot out.png Mocha tools 2` render the panel and the flower (Linux / macOS: `CONVERTINO_PANEL=langs`).
 
 ## Style
 

@@ -321,9 +321,9 @@ public static class Pdfs
     public static async Task Compress(Job job)
     {
         var gs = Ghostscript ?? throw new InvalidOperationException(OperatingSystem.IsWindows()
-            ? L.T("Ghostscript not found — install it with: {0}", "winget install ArtifexSoftware.GhostScript")
-            : OperatingSystem.IsMacOS() ? L.T("Ghostscript not found — install it with: {0}", "brew install ghostscript")
-            : L.T("Ghostscript not found — install it with your package manager (e.g. sudo apt install ghostscript)"));
+            ? L.En("Ghostscript not found — install it with: {0}", "winget install ArtifexSoftware.GhostScript")
+            : OperatingSystem.IsMacOS() ? L.En("Ghostscript not found — install it with: {0}", "brew install ghostscript")
+            : L.En("Ghostscript not found — install it with your package manager (e.g. sudo apt install ghostscript)"));
         long before = 0, after = 0;
         int n = job.Inputs.Count, smaller = 0;
         for (int i = 0; i < n; i++)
@@ -389,7 +389,9 @@ public static class Pdfs
         if (p.ExitCode != 0)
         {
             var msg = err.ToString().Trim();
-            throw new InvalidOperationException(L.T("{0} failed ({1})", Path.GetFileNameWithoutExtension(exe), p.ExitCode) + (msg.Length > 0 ? ": " + msg.Split('\n')[^1].Trim() : ""));
+            throw new InvalidOperationException(msg.Length > 0
+                ? L.En("{0} failed ({1}): {2}", Path.GetFileNameWithoutExtension(exe), p.ExitCode, msg.Split('\n')[^1].Trim())
+                : L.En("{0} failed ({1})", Path.GetFileNameWithoutExtension(exe), p.ExitCode));
         }
     }
 
@@ -469,7 +471,7 @@ public static class Pdfs
             var src = job.Inputs[i];
             int idx = i;
             var pages = await RenderPages(src, 150, job.Token, p => job.Report(idx, n, p), maxPages: 1);
-            if (pages.Count == 0) throw new InvalidOperationException(L.T("Couldn't render the first page"));
+            if (pages.Count == 0) throw new InvalidOperationException(L.En("Couldn't render the first page"));
             var dst = Paths.Beside(src, "png", "(cover)");
             await File.WriteAllBytesAsync(dst, pages[0], job.Token);
             job.Outputs.Add(dst);

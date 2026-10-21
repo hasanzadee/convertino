@@ -183,7 +183,7 @@ public static class TextFiles
         job.Summary = L.N(changed, "{0:N0} line ending → {1}", "{0:N0} line endings → {1}", label) + (binary > 0 ? " · " + L.T("{0} binary skipped", binary) : "");
     }
 
-    static string Binary(int n) => n == 1 ? L.T("This looks like a binary file, not text; it was left untouched") : L.T("These look like binary files, not text; they were left untouched");
+    static string Binary(int n) => n == 1 ? L.En("This looks like a binary file, not text; it was left untouched") : L.En("These look like binary files, not text; they were left untouched");
 
     // ── text & line endings ─────────────────────────────────────────────────
 

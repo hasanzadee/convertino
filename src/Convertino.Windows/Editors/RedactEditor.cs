@@ -189,7 +189,7 @@ public sealed class RedactEditor : Editor
             _surface.InvalidateVisual();
             _count.Text = res.Lines.Count == 0 ? L.T("No text found") : L.N(_surface.Boxes.Count, "{0} area", "{0} areas") + " · " + L.T("right-click removes");
         }
-        catch (Exception ex) { _count.Text = ex.Message; }
+        catch (Exception ex) { _count.Text = L.Saved(ex.Message); }
         _detect.Content = L.T("Find text");
         _detect.IsEnabled = true;
     }

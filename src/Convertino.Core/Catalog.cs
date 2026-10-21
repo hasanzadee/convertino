@@ -4,7 +4,11 @@ using Convertino.Services;
 namespace Convertino;
 
 /// <summary>One page of the flower: its petals and the name the hub shows when you flip to it.</summary>
-public sealed record Ring(string Name, IReadOnlyList<PetalAction> Petals);
+public sealed record Ring(string Name, IReadOnlyList<PetalAction> Petals)
+{
+    /// <summary>The English name ("Tools 2") for the log and tests; <see cref="Name"/> is the one shown, in the UI language.</summary>
+    public string Key { get; init; } = Name;
+}
 
 public sealed record Pages(List<PetalAction> Convert, List<PetalAction> Tools, string Title, string Badge)
 {
@@ -18,14 +22,17 @@ public sealed record Pages(List<PetalAction> Convert, List<PetalAction> Tools, s
     public List<PetalAction> MoreFormats { get; init; } = [];
 
     /// <summary>The rings in flip order, Convert → Tools → More tools → More formats, empty ones left out.</summary>
-    public IReadOnlyList<Ring> Rings => [.. Split(L.T("Convert"), Convert), .. Split(L.T("Tools"), Tools), .. Split(L.T("More tools"), More), .. Split(L.T("More formats"), MoreFormats)];
+    public IReadOnlyList<Ring> Rings => [.. Split("Convert", Convert), .. Split("Tools", Tools), .. Split("More tools", More), .. Split("More formats", MoreFormats)];
 
     static IEnumerable<Ring> Split(string name, List<PetalAction> petals)
     {
         if (petals.Count == 0) yield break;
         int rings = (petals.Count + MaxPetals - 1) / MaxPetals, size = (petals.Count + rings - 1) / rings;
         for (int i = 0; i < rings; i++)
-            yield return new(i == 0 ? name : $"{name} {i + 1}", petals.Skip(i * size).Take(size).ToList());
+        {
+            string n = i == 0 ? "" : $" {i + 1}";
+            yield return new(L.T(name) + n, petals.Skip(i * size).Take(size).ToList()) { Key = name + n };
+        }
     }
 }
 
