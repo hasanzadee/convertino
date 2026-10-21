@@ -49,6 +49,11 @@ rm -rf "$APP"
 cp -R "$SRC" "$APP"
 # downloaded apps are quarantined; Convertino isn't notarized, so lift it for this copy only
 xattr -dr com.apple.quarantine "$APP" 2>/dev/null || true
+# a copy dragged into /Applications by hand (browser download) would ask "Apple could not verify…"; it's the same app
+if [ -d /Applications/Convertino.app ] && [ "/Applications/Convertino.app" != "$APP" ]; then
+  xattr -dr com.apple.quarantine /Applications/Convertino.app 2>/dev/null || true
+  say "There is another Convertino.app in /Applications (copied by hand); this one runs from $APP. You can delete the other one."
+fi
 # the managed .dll signatures live in extended attributes; a zip unpacked without them (plain `unzip`) breaks the
 # bundle's seal — sign this copy again, ad hoc, like the release build does
 if ! codesign --verify --strict "$APP" >/dev/null 2>&1; then

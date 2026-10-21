@@ -11,6 +11,9 @@ namespace Convertino.Services;
 public static class Updates
 {
     public const string ReleasesPage = "https://github.com/hasanzadee/convertino/releases/latest";
+
+    /// <summary>The notes of one release (the panel's version badge).</summary>
+    public static string ReleaseUrl(string version) => $"https://github.com/hasanzadee/convertino/releases/tag/v{version}";
     const string Api = "https://api.github.com/repos/hasanzadee/convertino/releases/latest";
     static readonly TimeSpan Every = TimeSpan.FromDays(1);
 

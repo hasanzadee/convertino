@@ -632,5 +632,6 @@
   "doesn't work on {0} files": "{0} ファイルには使えません",
   "It doesn't work on folders": "フォルダーには使えません",
   "It doesn't work on that": "前のステップの出力には使えません",
-  "It doesn't work on {0} files": "{0} ファイルには使えません"
+  "It doesn't work on {0} files": "{0} ファイルには使えません",
+  "What's new in this version": "このバージョンの新機能"
 }

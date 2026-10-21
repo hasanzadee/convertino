@@ -758,5 +758,6 @@
   "doesn't work on {0} files": "funktioniert nicht mit {0}-Dateien",
   "It doesn't work on folders": "Funktioniert nicht mit Ordnern",
   "It doesn't work on that": "Funktioniert damit nicht",
-  "It doesn't work on {0} files": "Funktioniert nicht mit {0}-Dateien"
+  "It doesn't work on {0} files": "Funktioniert nicht mit {0}-Dateien",
+  "What's new in this version": "Neu in dieser Version"
 }
