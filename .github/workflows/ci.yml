@@ -28,6 +28,12 @@ jobs:
           $p = Start-Process dist/win-x64/Convertino.exe -ArgumentList 'recipe','run','Web-ready','smoke.png' -Wait -PassThru
           if (-not (Test-Path 'smoke (Web-ready).webp')) { throw "recipe run failed ($($p.ExitCode))" }
           if (Get-ChildItem (Join-Path $env:TEMP 'convertino') -Filter 'recipe-*' -ErrorAction SilentlyContinue) { throw "a recipe work folder was left behind" }
+      - name: Browser drop self-test
+        shell: pwsh
+        run: |
+          $p = Start-Process dist/win-x64/Convertino.exe -ArgumentList '--browser-drop-selftest','webtest' -Wait -PassThru
+          Get-Content webtest/results.txt
+          if ($p.ExitCode -ne 0) { throw "$($p.ExitCode) browser-drop checks failed" }
 
   linux:
     runs-on: ubuntu-latest
@@ -73,6 +79,15 @@ jobs:
         run: bash tools/files-smoke.sh dist/linux-x64/convertino
       - name: Recipes and custom commands
         run: bash tools/recipes-smoke.sh dist/linux-x64/convertino
+      - name: Browser drops (self-test, fetch)
+        run: |
+          ./dist/linux-x64/convertino --browser-drop-selftest webtest
+          mkdir -p site && cp smoke.png site/pic.png
+          (cd site && python3 -m http.server 8765 --bind 127.0.0.1 >/dev/null 2>&1 &)
+          sleep 1
+          ./dist/linux-x64/convertino fetch http://127.0.0.1:8765/pic.png --to jpg --out fetched
+          test -s fetched/pic.png && test -s fetched/pic.jpg
+          getfattr -n user.xdg.origin.url fetched/pic.png fetched/pic.jpg || true
 
   macos:
     strategy:

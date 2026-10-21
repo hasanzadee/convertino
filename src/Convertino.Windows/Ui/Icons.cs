@@ -18,6 +18,8 @@ public static class Icons
         ["globe"] = "", ["qr"] = "", ["grid"] = "", ["slideshow"] = "", ["compare"] = "",
         // recipes and your own commands
         ["recipe"] = "\uE945", ["terminal"] = "\uE756",
+        // drops out of a browser
+        ["download"] = "\uE896",
     };
 
     public static string? Glyph(string? key) => key != null && Map.TryGetValue(key, out var g) ? g : null;

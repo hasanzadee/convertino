@@ -18,6 +18,9 @@ static class Program
             return Cli.Run(args).GetAwaiter().GetResult();
         }
 
+        if (args.Length == 2 && args[0] == "--browser-drop-selftest")
+            return Native.MacDrag.SelfTest(Path.GetFullPath(args[1]));
+
         if (args.Length > 0 && args[0] == "menu")
         {
             var files = args.Skip(1).Select(Path.GetFullPath).Where(p => File.Exists(p) || Directory.Exists(p)).ToArray();

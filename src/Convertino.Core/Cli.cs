@@ -13,7 +13,7 @@ public static class Cli
     public static readonly string Version = typeof(Cli).Assembly.GetName().Version?.ToString(3) ?? "1.0.0";
 
     public static bool IsCommand(string[] args) =>
-        args.Length > 0 && args[0] is "convert" or "run" or "actions" or "model" or "watch" or "preview" or "recipe" or "--help" or "-h" or "help" or "--version" or "-v";
+        args.Length > 0 && args[0] is "convert" or "run" or "actions" or "model" or "watch" or "preview" or "recipe" or "fetch" or "--help" or "-h" or "help" or "--version" or "-v";
 
     public static async Task<int> Run(string[] args, TextWriter? output = null)
     {
@@ -97,6 +97,8 @@ public static class Cli
                     return await PreviewCmd(args.Skip(1).ToArray(), o);
                 case "recipe":
                     return await Recipe(args.Skip(1).ToArray(), o, outPlace);
+                case "fetch":
+                    return await FetchUrl(args.Skip(1).ToArray(), o);
             }
         }
         catch (Exception ex)
@@ -327,6 +329,44 @@ public static class Cli
         return new WatchFolder { Path = dir, Action = action, Out = outName };
     }
 
+    const string FetchUsage = "usage: convertino fetch <url> [--to <format> | --run <action>] [--out <folder>]   (http, https or data:; saved to Downloads)";
+
+    /// <summary>Download a link the way a drop from the browser does (same limits and checks), then optionally convert it.</summary>
+    static async Task<int> FetchUrl(string[] a, TextWriter o)
+    {
+        string? url = null, id = null, outDir = null;
+        for (int i = 0; i < a.Length; i++)
+        {
+            if (a[i] == "--to" && i + 1 < a.Length) id = "to-" + a[++i].TrimStart('.').ToLowerInvariant();
+            else if (a[i] == "--run" && i + 1 < a.Length) id = a[++i];
+            else if (a[i] == "--out" && i + 1 < a.Length) outDir = a[++i];
+            else if (url == null && !a[i].StartsWith("--")) url = a[i];
+            else { o.WriteLine(FetchUsage); return 2; }
+        }
+        if (url == null) { o.WriteLine(FetchUsage); return 2; }
+        var web = WebDrop.ForUrl(url);
+        if (web == null) { o.WriteLine($"not an http, https or data: link: {url}"); return 2; }
+        if (outDir != null) Services.Fetch.DownloadsOverride = Path.GetFullPath(outDir);
+        int last = -1;
+        var saved = await Jobs.RunHeadless(web.Wrap(web.Pages().Convert[0]), web.Files, p =>
+        {
+            int pct = (int)(p * 100);
+            if (pct / 10 != last / 10) { last = pct; lock (o) o.Write($"\r  {pct}%  "); }
+        });
+        if (last >= 0) o.Write("\r        \r");
+        var file = saved.Outputs[0];
+        o.WriteLine(file);
+        if (id == null || id == "download") return 0;
+        var action = Catalog.All([file]).FirstOrDefault(x => x.Id == id);
+        if (action == null) { o.WriteLine($"'{id}' isn't available for {Path.GetFileName(file)}. Try: convertino actions {Quote(file)}"); return 2; }
+        if (action.Interactive) { o.WriteLine($"'{id}' opens an editor — use the desktop app (drag + Shift)."); return 2; }
+        var job = await Jobs.RunHeadless(action, [file]);
+        foreach (var f in job.Outputs) { Services.Fetch.Mark(f, Services.Fetch.Parse(url)); o.WriteLine(f); }
+        if (!string.IsNullOrEmpty(job.Title)) o.WriteLine(job.Title);
+        if (!string.IsNullOrEmpty(job.Summary)) o.WriteLine(job.Summary);
+        return job.Failed ? 1 : 0;
+    }
+
     static List<string>? Files(IEnumerable<string> paths, TextWriter o)
     {
         var list = new List<string>();
@@ -361,6 +401,7 @@ public static class Cli
               convertino recipe add <name> --steps a,b,c   chain petals into one, e.g. --steps fithd,to-webp,meta
                                                            (also: recipe list|remove|run; custom commands: recipes.json)
               … --out <subfolder|full path>                convert, run, recipe run: put results there (default: next to the original)
+              convertino fetch <url> [--to <format>]       download into Downloads (http, https, data:), then convert
               convertino model install                     download the offline AI model for Cut out (224 MB)
               convertino --version
             """);

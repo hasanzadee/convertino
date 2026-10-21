@@ -42,6 +42,9 @@ bash "$ROOT/tools/files-smoke.sh" "$D"
 
 step "recipes and custom commands"
 bash "$ROOT/tools/recipes-smoke.sh" "$D"
+step "browser drops: Safari / Chrome pasteboards → parse → download → petal (local web server)"
+"$D" --browser-drop-selftest "$WORK/webtest" | tail -4
+cp "$WORK/webtest/results.txt" "$OUT/browser-drop-selftest.txt"
 
 step "PDF: PDFsharp writes, CoreGraphics renders"
 "$D" convert smoke.png --to pdf && test -s smoke.pdf
@@ -269,6 +272,30 @@ else
   grep -E "shift|drag|drop|show|mac " "$LOG" | tail -30 || true
   exit 1
 fi
+pkill -f "Convertino.app/Contents/MacOS/convertino" || true
+sleep 1
+
+step "app: drag a picture out of a web page (file promise + link), tap Shift, drop on JPG"
+CONVERTINO_DEBUG=1 "$D" >> "$OUT/app-stdout.txt" 2>&1 &
+sleep 6
+DL="$HOME/Downloads"
+mkdir -p "$DL"
+rm -f "$DL"/cvt-promise*
+cp smoke.png cvt-promise.png
+swiftc -O "$ROOT/tools/mac-web-drag.swift" -o "$WORK/webdrag"
+# the link points nowhere: a result in Downloads can only have come through the promise
+limit 60 "$WORK/webdrag" "$WORK/cvt-promise.png" "https://example.invalid/cvt-promise.png" 1 6 "$OUT/7-web-drag-over-petal.png" || echo "::warning::webdrag exited with $?"
+sleep 4
+shot 8-after-web-drop
+ls -l "$DL"/cvt-promise* 2>/dev/null || true
+if [ -s "$DL/cvt-promise.png" ] && [ -s "$DL/cvt-promise.jpg" ]; then
+  echo "the promised picture arrived in Downloads and was converted there"
+  xattr -p com.apple.quarantine "$DL/cvt-promise.jpg" || echo "::warning::no quarantine mark on the result"
+else
+  echo "::warning::the file-promise drag didn't land in Downloads"
+fi
+grep -E "dragenter|drop |file promise|browser|job " "$LOG" | tail -12 || true
+rm -f "$DL"/cvt-promise*
 pkill -f "Convertino.app/Contents/MacOS/convertino" || true
 sleep 1
 
