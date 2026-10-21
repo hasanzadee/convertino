@@ -94,7 +94,7 @@ public static class Captures
     /// <summary>A Windows CF_DIB / CF_DIBV5 block (a BMP without its 14-byte file header) as PNG.</summary>
     public static byte[] DibToPng(byte[] dib)
     {
-        if (dib.Length < 40) throw new InvalidDataException("Not a bitmap");
+        if (dib.Length < 40) throw new InvalidDataException(L.En("Not a bitmap"));
         int headerSize = BitConverter.ToInt32(dib, 0), bits = BitConverter.ToInt16(dib, 14), compression = BitConverter.ToInt32(dib, 16);
         int colors = BitConverter.ToInt32(dib, 32);
         if (colors == 0 && bits <= 8) colors = 1 << bits;

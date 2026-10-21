@@ -52,10 +52,10 @@ public sealed partial class TrayPanel
         // the header says what's there; a click folds the card open or shut
         var chevron = new IconView { Key = _recipesOpen ? "up" : "down", Width = 12, Height = 12, Brush = B(T.SubText), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 2, 0) };
         var text = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
-        text.Children.Add(new TextBlock { Text = names.Count == 0 ? "Chain petals into one" : Counted(book), FontWeight = FontWeight.SemiBold, FontSize = 12.5, Foreground = B(T.Text) });
+        text.Children.Add(new TextBlock { Text = names.Count == 0 ? L.T("Chain petals into one") : Counted(book), FontWeight = FontWeight.SemiBold, FontSize = 12.5, Foreground = B(T.Text) });
         text.Children.Add(new TextBlock
         {
-            Text = names.Count == 0 ? "e.g. Web-ready = Full HD → WEBP → Clean" : string.Join(" · ", names),
+            Text = names.Count == 0 ? L.T("e.g. {0}", $"Web-ready = {L.T("Full HD")} → WEBP → {L.T("Clean")}") : string.Join(" · ", names),
             FontSize = 11, Foreground = B(T.SubText), TextTrimming = TextTrimming.CharacterEllipsis,
         });
         var head = new DockPanel { Background = Brushes.Transparent, Cursor = Hand, Margin = new Thickness(0, 4, 0, 4) };
@@ -71,7 +71,7 @@ public sealed partial class TrayPanel
         body.Children.Add(head);
         if (!_recipesOpen) return Card(body, new Thickness(0));
 
-        if (Recipes.Broken) body.Children.Add(Note("alert", "recipes.json can't be read: fix it, or the next change starts it afresh (the old one is kept)", T.Danger));
+        if (Recipes.Broken) body.Children.Add(Note("alert", L.T("recipes.json can't be read: fix it, or the next change starts it afresh (the old one is kept)"), T.Danger));
         if (_draft != null)
         {
             body.Children.Add(Builder(_draft));
@@ -85,7 +85,7 @@ public sealed partial class TrayPanel
         var offered = Recipes.Offered();
         if (offered.Count > 0)
         {
-            body.Children.Add(Caption(names.Count == 0 ? "Start with one:" : "Add one:", new Thickness(2, 8, 0, 2)));
+            body.Children.Add(Caption(names.Count == 0 ? L.T("Start with one:") : L.T("Add one:"), new Thickness(2, 8, 0, 2)));
             var wrap = new WrapPanel { Margin = new Thickness(-2, 0, -2, 2) };
             foreach (var t in offered)
             {
@@ -100,9 +100,9 @@ public sealed partial class TrayPanel
             body.Children.Add(wrap);
         }
         var buttons = new WrapPanel { Margin = new Thickness(-8, 2, 0, 0) };
-        buttons.Children.Add(FooterButton("plus", "New recipe…", () => { _draft = new() { Picking = true }; Rebuild(); }));
+        buttons.Children.Add(FooterButton("plus", L.T("New recipe…"), () => { _draft = new() { Picking = true }; Rebuild(); }));
         var json = FooterButton("code", "recipes.json", () => { Platform.Current.Open(Recipes.EnsureFile()); HideAnimated(); });
-        ToolTip.SetTip(json, "Custom commands and hand edits (it can run programs: only you write it)");
+        ToolTip.SetTip(json, L.T("Custom commands and hand edits (it can run programs: only you write it)"));
         buttons.Children.Add(json);
         body.Children.Add(buttons);
         return Card(body, new Thickness(0));
@@ -112,8 +112,8 @@ public sealed partial class TrayPanel
     {
         int r = book.Recipes.Count, c = book.Commands.Count;
         var parts = new List<string>();
-        if (r > 0) parts.Add(r == 1 ? "1 recipe" : $"{r} recipes");
-        if (c > 0) parts.Add(c == 1 ? "1 command" : $"{c} commands");
+        if (r > 0) parts.Add(L.N(r, "{0} recipe", "{0} recipes"));
+        if (c > 0) parts.Add(L.N(c, "{0} command", "{0} commands"));
         return string.Join(" · ", parts);
     }
 
@@ -125,13 +125,13 @@ public sealed partial class TrayPanel
         text.Children.Add(Chain(steps));
         text.Children.Add(new TextBlock
         {
-            Text = problem ?? $"for {Recipes.ForText(r.For)}" + (r.Out != null ? " · results " + Output.Describe(r.Out) : ""),
+            Text = problem ?? L.T("for {0}", Recipes.ForText(r.For)) + (r.Out != null ? " · " + L.T("results {0}", Output.Describe(r.Out)) : ""),
             FontSize = 11, Foreground = B(problem != null ? T.Danger : T.SubText), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 2, 0, 0),
         });
         var main = new Border { Background = Brushes.Transparent, Cursor = Hand, Child = Beside(IconBox(r.Icon ?? "recipe"), text) };
-        ToolTip.SetTip(main, "Change it");
+        ToolTip.SetTip(main, L.T("Change it"));
         main.PointerReleased += (_, _) => { _draft = RecipeDraft.Of(r); Rebuild(); };
-        return Removable(main, "Delete the recipe", () => Recipes.Remove(r.Name));
+        return Removable(main, L.T("Delete the recipe"), () => Recipes.Remove(r.Name));
     }
 
     Control CommandRow(CustomCommand c)
@@ -141,17 +141,17 @@ public sealed partial class TrayPanel
         text.Children.Add(new TextBlock { Text = c.Name, FontWeight = FontWeight.SemiBold, FontSize = 12.5, Foreground = B(T.Text), TextTrimming = TextTrimming.CharacterEllipsis });
         text.Children.Add(new TextBlock
         {
-            Text = $"runs {c.Program} {string.Join(' ', c.Args)}", FontFamily = new FontFamily("Menlo, DejaVu Sans Mono, monospace"), FontSize = 10.5,
+            Text = L.T("runs {0}", $"{c.Program} {string.Join(' ', c.Args)}"), FontFamily = new FontFamily("Menlo, DejaVu Sans Mono, monospace"), FontSize = 10.5,
             Foreground = B(T.SubText), TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(0, 2, 0, 0),
         });
         text.Children.Add(new TextBlock
         {
-            Text = found ? $"for {Recipes.ForText(c.For)}" : why, FontSize = 11, Foreground = B(found ? T.SubText : T.Danger), Margin = new Thickness(0, 1, 0, 0),
+            Text = found ? L.T("for {0}", Recipes.ForText(c.For)) : why, FontSize = 11, Foreground = B(found ? T.SubText : T.Danger), Margin = new Thickness(0, 1, 0, 0),
         });
         var main = new Border { Background = Brushes.Transparent, Cursor = Hand, Child = Beside(IconBox(c.Icon ?? "terminal"), text) };
-        ToolTip.SetTip(main, "Edit in recipes.json");
+        ToolTip.SetTip(main, L.T("Edit in recipes.json"));
         main.PointerReleased += (_, _) => { Platform.Current.Open(Recipes.EnsureFile()); HideAnimated(); };
-        return Removable(main, "Delete the command", () => Recipes.RemoveCommand(c.Name));
+        return Removable(main, L.T("Delete the command"), () => Recipes.RemoveCommand(c.Name));
     }
 
     /// <summary>A row with a ✕ on the right.</summary>
@@ -190,7 +190,7 @@ public sealed partial class TrayPanel
             {
                 label.Children.Add(new IconView { Key = "x", Width = 8, Height = 8, Brush = B(T.SubText), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(5, 1, 0, 0) });
                 chip.Cursor = Hand;
-                ToolTip.SetTip(chip, at == steps.Count - 1 ? "Remove this step" : "Remove this step and the ones after it");
+                ToolTip.SetTip(chip, at == steps.Count - 1 ? L.T("Remove this step") : L.T("Remove this step and the ones after it"));
                 chip.PointerReleased += (_, _) => remove(at);
             }
             chips.Children.Add(chip);
@@ -201,7 +201,7 @@ public sealed partial class TrayPanel
     Control Builder(RecipeDraft d)
     {
         var sp = new StackPanel { Margin = new Thickness(0, 0, 0, 4) };
-        sp.Children.Add(Caption(d.Was == null ? "New recipe, for" : $"Change {d.Was}, for", new Thickness(2, 6, 0, 2)));
+        sp.Children.Add(Caption(d.Was == null ? L.T("New recipe, for") : L.T("Change {0}, for", d.Was), new Thickness(2, 6, 0, 2)));
         var kinds = new WrapPanel { Margin = new Thickness(-2, 0, -2, 2) };
         foreach (var (kind, name) in Recipes.BuilderKinds())
             kinds.Children.Add(Pill(char.ToUpperInvariant(name[0]) + name[1..], kind == d.Kind, () =>
@@ -212,13 +212,13 @@ public sealed partial class TrayPanel
         sp.Children.Add(kinds);
 
         // the chain so far, then what can come next
-        sp.Children.Add(Caption("Steps", new Thickness(2, 6, 0, 0)));
+        sp.Children.Add(Caption(L.T("Steps"), new Thickness(2, 6, 0, 0)));
         var next = Recipes.NextSteps(d.Kind, d.Steps);
         var chain = Chain(Recipes.Labels(d.Steps), at => { d.Steps.RemoveRange(at, d.Steps.Count - at); d.Error = null; Rebuild(); });
         if (next.Count > 0 && d.Steps.Count < Recipes.MaxSteps)
-            chain.Children.Add(Pill(d.Picking ? "Close" : d.Steps.Count == 0 ? "+ First step" : "+ Add step", d.Picking, () => { d.Picking = !d.Picking; Rebuild(); }));
+            chain.Children.Add(Pill(d.Picking ? L.T("Close") : d.Steps.Count == 0 ? L.T("+ First step") : L.T("+ Add step"), d.Picking, () => { d.Picking = !d.Picking; Rebuild(); }));
         else if (d.Steps.Count > 0)
-            chain.Children.Add(Caption($"nothing can follow {Recipes.Labels(d.Steps)[^1]}", new Thickness(2, 3, 0, 0)));
+            chain.Children.Add(Caption(L.T("nothing can follow {0}", Recipes.Labels(d.Steps)[^1]), new Thickness(2, 3, 0, 0)));
         sp.Children.Add(chain);
         if (d.Picking && next.Count > 0)
         {
@@ -233,8 +233,8 @@ public sealed partial class TrayPanel
         }
 
         // name and icon
-        sp.Children.Add(Caption("Name", new Thickness(2, 8, 0, 2)));
-        var box = Field(d.Name, "e.g. Web-ready");
+        sp.Children.Add(Caption(L.T("Name"), new Thickness(2, 8, 0, 2)));
+        var box = Field(d.Name, L.T("e.g. {0}", "Web-ready"));
         box.TextChanged += (_, _) => d.Name = box.Text ?? "";
         box.KeyDown += (_, e) => { if (e.Key == Key.Enter) { SaveDraft(d); e.Handled = true; } };
         sp.Children.Add(box);
@@ -255,11 +255,11 @@ public sealed partial class TrayPanel
         sp.Children.Add(icons);
         if (d.Error != null) sp.Children.Add(Note("alert", d.Error, T.Danger));
 
-        var save = Pill(d.Was == null ? "Save recipe" : "Save changes", true, () => SaveDraft(d));
+        var save = Pill(d.Was == null ? L.T("Save recipe") : L.T("Save changes"), true, () => SaveDraft(d));
         save.Padding = new Thickness(14, 5, 14, 6);
         var buttons = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(-2, 10, 0, 0) };
         buttons.Children.Add(save);
-        buttons.Children.Add(FooterButton("x", "Cancel", () => { _draft = null; Rebuild(); }));
+        buttons.Children.Add(FooterButton("x", L.T("Cancel"), () => { _draft = null; Rebuild(); }));
         sp.Children.Add(buttons);
         return sp;
     }
@@ -275,7 +275,7 @@ public sealed partial class TrayPanel
         {
             // saving replaces a recipe of the same name: from here that has to be the one being changed, not another
             if (Recipes.Find(r.Name) is { } other && (d.Was == null || Recipes.IdOf(other) != Recipes.IdOf(d.Was)))
-                throw new ArgumentException($"There's already a recipe called {other.Name}");
+                throw new ArgumentException(L.T("There's already a recipe called {0}", other.Name));
             Recipes.Save(r);
             if (d.Was != null && Recipes.IdOf(d.Was) != Recipes.IdOf(r)) Recipes.Remove(d.Was); // renamed
             _draft = null;
@@ -293,7 +293,7 @@ public sealed partial class TrayPanel
         var place = Output.Global;
         string mode = place == Output.Beside ? "beside" : Path.IsPathFullyQualified(place) ? "folder" : "subfolder";
         var pills = new UniformGrid { Columns = 3, Margin = new Thickness(-2, 4, -2, 2) };
-        foreach (var (id, label) in new[] { ("beside", "Beside it"), ("subfolder", "Subfolder"), ("folder", "Fixed folder") })
+        foreach (var (id, label) in new[] { ("beside", L.T("Beside it")), ("subfolder", L.T("Subfolder")), ("folder", L.T("Fixed folder")) })
             pills.Children.Add(Pill(label, id == mode, () =>
             {
                 // a fixed folder needs picking first (or again, when it's already the choice)
@@ -318,10 +318,10 @@ public sealed partial class TrayPanel
         body.Children.Add(Caption(mode switch
         {
             "folder" => place,
-            "subfolder" => "made inside the original's folder; a recipe can pick its own",
-            _ => "results land next to the original; a recipe can pick its own place",
+            "subfolder" => L.T("made inside the original's folder; a recipe can pick its own"),
+            _ => L.T("results land next to the original; a recipe can pick its own place"),
         }, new Thickness(2, 4, 0, 4)));
-        if (mode == "folder") body.Children.Add(FooterButton("folder", "Change folder…", PickSaveFolder));
+        if (mode == "folder") body.Children.Add(FooterButton("folder", L.T("Change folder…"), PickSaveFolder));
         return Card(body, new Thickness(0));
     }
 
@@ -330,7 +330,7 @@ public sealed partial class TrayPanel
         _picking = true;
         try
         {
-            var picked = await StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions { Title = "Results of every petal go to this folder", AllowMultiple = false });
+            var picked = await StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions { Title = L.T("Results of every petal go to this folder"), AllowMultiple = false });
             if (picked.Count > 0 && picked[0].TryGetLocalPath() is { } path)
             {
                 Settings.Current.SaveFolder = path;

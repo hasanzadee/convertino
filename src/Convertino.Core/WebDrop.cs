@@ -87,7 +87,7 @@ public sealed class WebDrop
     /// <summary>Paths to hand <see cref="Jobs.Start"/> (the card shows their names; the job itself ignores them).</summary>
     public IReadOnlyList<string> Files => Names.Select(n => Path.Combine(Dir, n)).ToList();
 
-    public string HubTitle => Items.Count > 1 ? $"{Items.Count} items" : Items[0].Size > 0 ? Paths.HumanSize(Items[0].Size) : Host;
+    public string HubTitle => Items.Count > 1 ? L.N(Items.Count, "{0} item", "{0} items") : Items[0].Size > 0 ? Paths.HumanSize(Items[0].Size) : Host;
     public string HubSub => Items.Count > 1 ? (Items.Sum(i => i.Size) is > 0 and var s ? Paths.HumanSize(s) : Host) : Names[0];
 
     WebDrop(List<WebItem> items)
@@ -459,7 +459,7 @@ public sealed class WebDrop
     /// <summary>A packed DIB (CF_DIB / CF_DIBV5) with the 14-byte BMP file header in front, so any decoder reads it.</summary>
     public static byte[] DibToBmp(byte[] dib)
     {
-        if (dib.Length < 40) throw new InvalidDataException("Not a bitmap");
+        if (dib.Length < 40) throw new InvalidDataException(L.En("Not a bitmap"));
         int hdr = BitConverter.ToInt32(dib, 0), bits = BitConverter.ToUInt16(dib, 14), compression = BitConverter.ToInt32(dib, 16), used = BitConverter.ToInt32(dib, 32);
         int palette = (used > 0 ? used : bits <= 8 ? 1 << bits : 0) * 4;
         int masks = hdr == 40 && compression == 3 ? 12 : 0; // BI_BITFIELDS after a plain BITMAPINFOHEADER
@@ -475,7 +475,7 @@ public sealed class WebDrop
 
     PetalAction? _save;
     PetalAction SaveA => _save ??= Catalog.Tool("download", Link ? "Download" : "Save", "download",
-        Link ? "Download the page" : Items.Count == 1 ? "Save to Downloads" : $"Save {Items.Count} to Downloads", _ => Task.CompletedTask);
+        Link ? "Download the page" : Items.Count == 1 ? "Save to Downloads" : L.T("Save {0} to Downloads", Items.Count), _ => Task.CompletedTask);
 
     static string ShortcutExt => OperatingSystem.IsWindows() ? "url" : OperatingSystem.IsMacOS() ? "webloc" : "desktop";
 
@@ -483,12 +483,12 @@ public sealed class WebDrop
     public Pages Pages()
     {
         if (Link)
-            return new([SaveA, Catalog.Tool("qrlink", "QR", "qr", "QR code of the link", QrLink), Catalog.Tool("shortcut", "Shortcut", "link", $"Save as .{ShortcutExt}", Shortcut)],
+            return new([SaveA, Catalog.Tool("qrlink", "QR", "qr", "QR code of the link", QrLink), Catalog.Tool("shortcut", "Shortcut", "link", L.T("Save as .{0}", ShortcutExt), Shortcut)],
                 [], Items[0].Title?.Trim() is { Length: > 0 } t ? t : Host, "URL");
         var p = Catalog.For(_catalog);
         List<PetalAction> conv = [SaveA, .. p.Convert];
         string badge = Items.Count > 1 ? Items.Count.ToString() : Kinds.Ext(Names[0]) is { Length: > 0 } e ? (e.Length > 4 ? e[..4] : e).ToUpperInvariant() : Items[0].Image ? "IMG" : "WEB";
-        return p with { Convert = conv, Title = Items.Count == 1 ? Names[0] : $"{Items.Count} items", Badge = badge };
+        return p with { Convert = conv, Title = Items.Count == 1 ? Names[0] : L.N(Items.Count, "{0} item", "{0} items"), Badge = badge };
     }
 
     /// <summary>At the drop, while the drag data is still alive: copy out what it carries (virtual files, raw pictures, temp copies, promises).</summary>
@@ -518,7 +518,7 @@ public sealed class WebDrop
                         {
                             var fi = new FileInfo(src);
                             if (!fi.Exists) return null;
-                            if (fi.Length > Fetch.Cap) throw new Fetch.Refused($"Too big ({Paths.HumanSize(fi.Length)}; {Paths.HumanSize(Fetch.Cap)} at most)");
+                            if (fi.Length > Fetch.Cap) throw new Fetch.Refused(L.En("Too big ({0}; {1} at most)", Paths.HumanSize(fi.Length), Paths.HumanSize(Fetch.Cap)));
                             var p = Path.Combine(dir, Fetch.SafeName(fi.Name));
                             File.Copy(fi.FullName, p);
                             return (string?)p;
@@ -555,7 +555,9 @@ public sealed class WebDrop
     /// <summary>The job for a petal of this flower: the file first (from the drag, or downloaded), kept in Downloads, then the petal on it there.</summary>
     public PetalAction Wrap(PetalAction picked) => new()
     {
-        Id = picked.Id, Label = picked.Label, Hint = picked.Hint, Icon = picked.Icon, Verb = picked.Verb, Short = picked.Short,
+        Id = picked.Id, Label = picked.Label, Hint = picked.Hint, Icon = picked.Icon, Verb = picked.Verb, Short = picked.Short, Out = picked.Out,
+        // what Recent and stats.json keep: the petal's own English, not the translation read back
+        EnglishLabel = picked.EnglishLabel, EnglishVerb = picked.EnglishVerb, EnglishShort = picked.EnglishShort,
         // never interactive itself: the download gets its card and cancel; an editor opens once the file is here
         Run = job => Run(job, picked),
     };
@@ -587,8 +589,8 @@ public sealed class WebDrop
             if (own)
             {
                 job.Outputs.AddRange(kept);
-                job.Title = kept.Count == 1 ? Path.GetFileName(kept[0]) : $"{kept.Count} files saved";
-                job.Summary = $"{Paths.HumanSize(size)} · from {Host}";
+                job.Title = kept.Count == 1 ? Path.GetFileName(kept[0]) : L.N(kept.Count, "{0} file saved", "{0} files saved");
+                job.Summary = L.T("{0} · from {1}", Paths.HumanSize(size), Host);
                 return;
             }
 
@@ -597,8 +599,8 @@ public sealed class WebDrop
             if (action == null)
             {
                 job.Outputs.AddRange(kept);
-                job.Title = kept.Count == 1 ? $"Saved {Path.GetFileName(kept[0])}" : $"{kept.Count} files saved";
-                job.Summary = $"{picked.Label} doesn't apply to {(kept.Count == 1 ? "it" : "them")} · kept in Downloads";
+                job.Title = kept.Count == 1 ? L.T("Saved {0}", Path.GetFileName(kept[0])) : L.N(kept.Count, "{0} file saved", "{0} files saved");
+                job.Summary = L.N(kept.Count, "{1} doesn't apply to it · kept in Downloads", "{1} doesn't apply to them · kept in Downloads", picked.Label);
                 return;
             }
             var sub = new Job { Inputs = kept, Action = action, Where = job.Where, Token = job.Token, OnProgress = p => job.Report(0.4 + 0.6 * p) };
@@ -663,7 +665,9 @@ public sealed class WebDrop
                     if (it.Image && Kinds.Of(r.Path) != Kind.Image)
                     {
                         FileTools.TryDeleteFile(r.Path);
-                        throw new Fetch.Refused($"{Fetch.HostOf(r.Source)} sent {(Kinds.Ext(r.Path) is "html" or "htm" ? "a web page" : "something else")} instead of the picture — save it from the browser first");
+                        throw new Fetch.Refused(Kinds.Ext(r.Path) is "html" or "htm"
+                    ? L.En("{0} sent a web page instead of the picture — save it from the browser first", Fetch.HostOf(r.Source))
+                    : L.En("{0} sent something else instead of the picture — save it from the browser first", Fetch.HostOf(r.Source)));
                     }
                     list.Add((r.Path, r.Source));
                     continue;
@@ -680,7 +684,7 @@ public sealed class WebDrop
                 job.Report(share * (i + 1) / n);
                 continue;
             }
-            throw new Fetch.Refused(it.Source == WebSource.Url ? "Nothing to download" : "The app didn't hand the file over — save it first, then drag the saved file");
+            throw new Fetch.Refused(it.Source == WebSource.Url ? L.En("Nothing to download") : L.En("The app didn't hand the file over — save it first, then drag the saved file"));
         }
         return list;
     }
@@ -688,7 +692,7 @@ public sealed class WebDrop
     /// <summary>A file the drag handed over, under the name <see cref="Fetch.FinalName"/> allows (the bytes decide the type, programs are refused).</summary>
     static async Task<string> Checked(string path, string? expected, string? mime, CancellationToken ct)
     {
-        if (new FileInfo(path).Length > Fetch.Cap) throw new Fetch.Refused($"Too big ({Paths.HumanSize(Fetch.Cap)} at most)");
+        if (new FileInfo(path).Length > Fetch.Cap) throw new Fetch.Refused(L.En("Too big ({0} at most)", Paths.HumanSize(Fetch.Cap)));
         var head = new byte[4096];
         int got;
         await using (var fs = File.OpenRead(path)) got = await fs.ReadAsync(head, ct);

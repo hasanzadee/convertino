@@ -80,11 +80,13 @@ public readonly record struct Hotkey(HotMods Mods, string Key)
     {
         bool mac = OperatingSystem.IsMacOS() && !storage;
         bool super = Mods.HasFlag(HotMods.Super);
-        if (super && !mac) yield return storage ? "Super" : OperatingSystem.IsWindows() ? "Win" : "Super";
-        if (Mods.HasFlag(HotMods.Ctrl)) yield return mac ? "Control" : "Ctrl";
-        if (Mods.HasFlag(HotMods.Alt)) yield return mac ? "Option" : "Alt";
-        if (Mods.HasFlag(HotMods.Shift)) yield return "Shift";
-        if (super && mac) yield return "Command";
+        // stored as written here; shown the way the UI language names the keys (German Strg …)
+        string Name(string key) => storage ? key : L.T(key);
+        if (super && !mac) yield return storage ? "Super" : OperatingSystem.IsWindows() ? Name("Win") : Name("Super");
+        if (Mods.HasFlag(HotMods.Ctrl)) yield return mac ? Name("Control") : Name("Ctrl");
+        if (Mods.HasFlag(HotMods.Alt)) yield return mac ? Name("Option") : Name("Alt");
+        if (Mods.HasFlag(HotMods.Shift)) yield return Name("Shift");
+        if (super && mac) yield return Name("Command");
         yield return Key;
     }
 }

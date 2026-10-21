@@ -71,7 +71,7 @@ public static class Fetch
                      && string.Equals(p.Host, host, StringComparison.OrdinalIgnoreCase) && p.Port == ctx.DnsEndPoint.Port;
         bool localOk = proxy || (ctx.InitialRequestMessage.Options.TryGetValue(LocalOk, out var ok) && ok);
         if (!localOk) addrs = addrs.Where(a => !IsLocal(a)).ToArray();
-        if (addrs.Length == 0) throw new Refused($"{host} is on the local network — a link from the web isn't followed there");
+        if (addrs.Length == 0) throw new Refused(L.En("{0} is on the local network — a link from the web isn't followed there", host));
         var s = new System.Net.Sockets.Socket(System.Net.Sockets.SocketType.Stream, System.Net.Sockets.ProtocolType.Tcp) { NoDelay = true };
         try
         {
@@ -106,9 +106,9 @@ public static class Fetch
     public static string? RedirectRefusal(Uri from, Uri? to, bool localOk, bool toLocal)
     {
         // file:, ftp:, data: and the rest never; nor https → http; nor from the web into the local network
-        if (to == null || IsData(to)) return $"{HostOf(from)} redirected to a link Convertino doesn't open";
-        if (from.Scheme == "https" && to.Scheme == "http") return $"{HostOf(from)} redirected from https to plain http";
-        if (!localOk && toLocal) return $"{HostOf(from)} redirected into the local network";
+        if (to == null || IsData(to)) return L.En("{0} redirected to a link Convertino doesn't open", HostOf(from));
+        if (from.Scheme == "https" && to.Scheme == "http") return L.En("{0} redirected from https to plain http", HostOf(from));
+        if (!localOk && toLocal) return L.En("{0} redirected into the local network", HostOf(from));
         return null;
     }
 
@@ -159,30 +159,30 @@ public static class Fetch
             req.Options.Set(LocalOk, localOk);
             HttpResponseMessage resp;
             try { resp = await Http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, idle.Token); }
-            catch (OperationCanceledException) when (!ct.IsCancellationRequested) { throw new Refused($"{HostOf(current)} didn't answer for {IdleTimeout.TotalSeconds:0} s"); }
+            catch (OperationCanceledException) when (!ct.IsCancellationRequested) { throw new Refused(L.En("{0} didn't answer for {1:0} s", HostOf(current), IdleTimeout.TotalSeconds)); }
             catch (HttpRequestException ex) when (ex.InnerException is Refused r) { throw r; }
-            catch (HttpRequestException ex) { throw new Refused($"Couldn't reach {HostOf(current)}" + (ex.HttpRequestError == HttpRequestError.NameResolutionError ? " (no such site)" : "")); }
+            catch (HttpRequestException ex) { throw new Refused(ex.HttpRequestError == HttpRequestError.NameResolutionError ? L.En("Couldn't reach {0} (no such site)", HostOf(current)) : L.En("Couldn't reach {0}", HostOf(current))); }
             using (resp)
             {
                 int code = (int)resp.StatusCode;
                 if (code is 301 or 302 or 303 or 307 or 308)
                 {
-                    if (hop >= MaxRedirects) throw new Refused("Too many redirects");
+                    if (hop >= MaxRedirects) throw new Refused(L.En("Too many redirects"));
                     var loc = resp.Headers.Location;
-                    if (loc == null) throw new Refused($"{HostOf(current)} redirected nowhere");
+                    if (loc == null) throw new Refused(L.En("{0} redirected nowhere", HostOf(current)));
                     var next = Parse(new Uri(current, loc).AbsoluteUri);
                     bool toLocal = next != null && !IsData(next) && !localOk && await IsLocalHost(next.Host, ct);
                     if (RedirectRefusal(current, next, localOk, toLocal) is { } why) throw new Refused(why);
                     current = next!;
                     continue;
                 }
-                if (code is 401 or 403 or 407) throw new Refused(SignIn);
-                if (code is < 200 or > 299) throw new Refused($"{HostOf(current)} answered {code} {resp.ReasonPhrase}".TrimEnd());
+                if (code is 401 or 403 or 407) throw new Refused(L.En(SignIn));
+                if (code is < 200 or > 299) throw new Refused(L.En("{0} answered {1}", HostOf(current), $"{code} {resp.ReasonPhrase}".TrimEnd()));
 
                 var mime = resp.Content.Headers.ContentType?.MediaType?.ToLowerInvariant();
-                if (expectFile && mime is "text/html" or "application/xhtml+xml" && LooksLikeSignIn(url, current)) throw new Refused(SignIn);
+                if (expectFile && mime is "text/html" or "application/xhtml+xml" && LooksLikeSignIn(url, current)) throw new Refused(L.En(SignIn));
                 long? total = resp.Content.Headers.ContentLength;
-                if (total > Cap) throw new Refused($"Too big to download ({Paths.HumanSize(total.Value)}; {Paths.HumanSize(Cap)} at most)");
+                if (total > Cap) throw new Refused(L.En("Too big to download ({0}; {1} at most)", Paths.HumanSize(total.Value), Paths.HumanSize(Cap)));
 
                 var landed = UrlName(current);
                 bool real = landed != null && Path.GetExtension(landed) is { Length: > 1 } le && !PageExts.Contains(le[1..]);
@@ -203,17 +203,17 @@ public static class Fetch
                             idle.CancelAfter(IdleTimeout);
                             int n;
                             try { n = await body.ReadAsync(buf, idle.Token); }
-                            catch (OperationCanceledException) when (!ct.IsCancellationRequested) { throw new Refused($"{HostOf(current)} stopped sending for {IdleTimeout.TotalSeconds:0} s"); }
-                            catch (Exception ex) when (ex is IOException or HttpRequestException) { throw new Refused($"The download from {HostOf(current)} broke off"); }
+                            catch (OperationCanceledException) when (!ct.IsCancellationRequested) { throw new Refused(L.En("{0} stopped sending for {1:0} s", HostOf(current), IdleTimeout.TotalSeconds)); }
+                            catch (Exception ex) when (ex is IOException or HttpRequestException) { throw new Refused(L.En("The download from {0} broke off", HostOf(current))); }
                             if (n == 0) break;
                             done += n;
-                            if (done > Cap) throw new Refused($"Too big to download ({Paths.HumanSize(Cap)} at most)");
+                            if (done > Cap) throw new Refused(L.En("Too big to download ({0} at most)", Paths.HumanSize(Cap)));
                             if (headLen < head.Length) { int k = Math.Min(n, head.Length - headLen); Buffer.BlockCopy(buf, 0, head, headLen, k); headLen += k; }
                             await file.WriteAsync(buf.AsMemory(0, n), ct);
                             if (done - lastTick > 256 * 1024) { lastTick = done; progress?.Invoke(done, total); }
                         }
                     }
-                    if (total is { } t && done < t) throw new Refused($"The download from {HostOf(current)} broke off");
+                    if (total is { } t && done < t) throw new Refused(L.En("The download from {0} broke off", HostOf(current)));
                     progress?.Invoke(done, done);
                     var final = Unique(dir, FinalName(name, expected, head.AsSpan(0, headLen), mime));
                     File.Move(part, final);
@@ -260,7 +260,7 @@ public static class Fetch
     public static (string Mime, byte[] Bytes) DataUri(string s)
     {
         int comma = s.IndexOf(',');
-        if (!s.StartsWith("data:", StringComparison.OrdinalIgnoreCase) || comma < 0) throw new Refused("A broken data: link");
+        if (!s.StartsWith("data:", StringComparison.OrdinalIgnoreCase) || comma < 0) throw new Refused(L.En("A broken data: link"));
         var meta = s[5..comma].Split(';');
         var mime = meta[0].Trim().ToLowerInvariant();
         if (mime.Length == 0) mime = "text/plain";
@@ -270,10 +270,10 @@ public static class Fetch
         {
             var bytes = b64 ? Convert.FromBase64String(Uri.UnescapeDataString(payload).Replace(" ", "").Replace("\n", "").Replace("\r", ""))
                             : Encoding.UTF8.GetBytes(Uri.UnescapeDataString(payload));
-            if (bytes.Length > Cap) throw new Refused($"Too big ({Paths.HumanSize(Cap)} at most)");
+            if (bytes.Length > Cap) throw new Refused(L.En("Too big ({0} at most)", Paths.HumanSize(Cap)));
             return (mime, bytes);
         }
-        catch (FormatException) { throw new Refused("A broken data: link"); }
+        catch (FormatException) { throw new Refused(L.En("A broken data: link")); }
     }
 
     // ---------- names ----------
@@ -452,7 +452,7 @@ public static class Fetch
         var name = FixExtension(SafeName(shown != null ? expected : candidate, "download"), Sniff(head), mime);
         var ext = Path.GetExtension(name).TrimStart('.').ToLowerInvariant();
         if (IsProgram(head) && !Programs.Contains(ext) && !Active.Contains(ext))
-            throw new Refused($"The site sent a program instead of {(ext.Length > 0 ? $"a .{ext} file" : "a file")} — not kept");
+            throw new Refused(ext.Length > 0 ? L.En("The site sent a program instead of a .{0} file — not kept", ext) : L.En("The site sent a program instead of a file — not kept"));
         if (Active.Contains(ext) || (Programs.Contains(ext) && ext != shown)) name += ".download";
         return name;
     }

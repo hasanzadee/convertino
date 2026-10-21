@@ -226,14 +226,14 @@ public sealed partial class Flyout : Window
         }, new Thickness(0)));
 
         // no drag needed: the clipboard's flower and an area of the screen, each on a global shortcut
-        stack.Children.Add(Label("Clipboard & screenshots"));
+        stack.Children.Add(Label(L.T("Clipboard & screenshots")));
         stack.Children.Add(Card(new StackPanel
         {
             Children =
             {
-                HotkeyRow("Flower for the clipboard", capture: false),
-                HotkeyRow("Capture an area", capture: true),
-                FooterButton(Ui.Icons.Glyph("folder") ?? "", @"Open Pictures\Convertino", () => { Shell.Open(Captures.Folder); HideAnimated(); }),
+                HotkeyRow(L.T("Flower for the clipboard"), capture: false),
+                HotkeyRow(L.T("Capture an area"), capture: true),
+                FooterButton(Ui.Icons.Glyph("folder") ?? "", L.T(@"Open Pictures\Convertino"), () => { Shell.Open(Captures.Folder); HideAnimated(); }),
             },
         }, new Thickness(0)));
 
@@ -242,9 +242,9 @@ public sealed partial class Flyout : Window
         stack.Children.Add(WatchCard());
 
         // your own chains of petals, and where results go (FlyoutRecipes.cs)
-        stack.Children.Add(Label("Recipes"));
+        stack.Children.Add(Label(L.T("Recipes")));
         stack.Children.Add(RecipesCard());
-        stack.Children.Add(Label("Save results"));
+        stack.Children.Add(Label(L.T("Save results")));
         stack.Children.Add(SaveCard());
 
         // recent
@@ -511,7 +511,7 @@ public sealed partial class Flyout : Window
         var chip = new Border
         {
             CornerRadius = new CornerRadius(6), Padding = new Thickness(7, 2, 7, 3), Margin = new Thickness(0, 4, 0, 0), Cursor = Cursors.Hand,
-            Background = B(A(T.SubText, .12)), ToolTip = "Click for another shortcut",
+            Background = B(A(T.SubText, .12)), ToolTip = L.T("Click for another shortcut"),
             Child = new TextBlock { Text = key.Label, FontFamily = TextF, FontSize = 11.5, Foreground = B(T.Text) },
         };
         chip.MouseEnter += (_, _) => chip.Background = B(A(T.SubText, .22));
@@ -527,7 +527,7 @@ public sealed partial class Flyout : Window
         };
         var keys = new StackPanel { Orientation = Orientation.Horizontal, Children = { chip } };
         if (problem != null)
-            keys.Children.Add(new TextBlock { Text = problem, FontFamily = TextF, FontSize = 11, Foreground = B(T.Danger), Margin = new Thickness(8, 4, 0, 0), VerticalAlignment = VerticalAlignment.Center });
+            keys.Children.Add(new TextBlock { Text = L.Saved(problem), FontFamily = TextF, FontSize = 11, Foreground = B(T.Danger), Margin = new Thickness(8, 4, 0, 0), VerticalAlignment = VerticalAlignment.Center });
         var left = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
         left.Children.Add(new TextBlock { Text = text, FontFamily = TextF, FontSize = 13, Foreground = B(T.Text) });
         left.Children.Add(keys);

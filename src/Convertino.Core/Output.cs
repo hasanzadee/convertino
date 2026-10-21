@@ -46,9 +46,9 @@ public static class Output
     /// <summary>"next to the original", "in Web", "in D:\Web" — for the panels and the CLI.</summary>
     public static string Describe(string? place) => Valid(place) switch
     {
-        null or Beside => "next to the original",
-        var p when Path.IsPathFullyQualified(p) => "in " + p,
-        var p => $"in a {p} subfolder",
+        null or Beside => L.T("next to the original"),
+        var p when Path.IsPathFullyQualified(p) => L.T("in {0}", p),
+        var p => L.T("in a {0} subfolder", p),
     };
 
     /// <summary>Petals whose results stay where they are made.</summary>

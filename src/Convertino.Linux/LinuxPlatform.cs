@@ -147,7 +147,7 @@ public sealed class LinuxPlatform : IPlatform
         if (wayland) get = type => Output("wl-paste", type == null ? ["--list-types"] : ["--no-newline", "--type", type]);
         else if (!string.IsNullOrEmpty(Environment.GetEnvironmentVariable("DISPLAY")) && Paths.Which("xclip") != null)
             get = type => Output("xclip", ["-selection", "clipboard", "-o", "-t", type ?? "TARGETS"]);
-        else throw new InvalidOperationException("Reading the clipboard needs wl-clipboard (Wayland) or xclip (X11)");
+        else throw new InvalidOperationException(L.En("Reading the clipboard needs wl-clipboard (Wayland) or xclip (X11)"));
 
         var types = Encoding.UTF8.GetString(get(null) ?? []).Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
         if (types.Count == 0) return null;

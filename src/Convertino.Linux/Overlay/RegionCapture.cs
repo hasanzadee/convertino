@@ -227,7 +227,7 @@ public sealed class RegionCapture
             Log.Info($"capture with {name}: {(r == true ? "ok" : "cancelled")}");
             return r == true ? (path, at) : null;
         }
-        throw new InvalidOperationException("On Wayland, area capture needs Spectacle (KDE), gnome-screenshot (GNOME), Flameshot, or grim + slurp (Sway, Hyprland)");
+        throw new InvalidOperationException(L.En("On Wayland, area capture needs Spectacle (KDE), gnome-screenshot (GNOME), Flameshot, or grim + slurp (Sway, Hyprland)"));
     }
 
     /// <summary>
@@ -310,7 +310,7 @@ sealed class RegionView(RegionCapture owner, Bitmap frozen) : Control
             // the hint at the top of the screen the pointer is on
             var screen = owner.Screens.FirstOrDefault(m => m.Contains(owner.Cursor), owner.Screens[0]);
             var top = Local(screen.X + screen.Width / 2, screen.Y);
-            Pill(dc, "Drag to capture  ·  click: whole screen  ·  Esc: cancel", new Point(top.X, top.Y + 28), full, t, centre: true);
+            Pill(dc, L.T("Drag to capture  ·  click: whole screen  ·  Esc: cancel"), new Point(top.X, top.Y + 28), full, t, centre: true);
         }
     }
 

@@ -675,7 +675,7 @@ public sealed class Preview : IDisposable
         if (InputBytes > 0)
         {
             double d = (b - InputBytes) * 100.0 / InputBytes;
-            pct = Math.Abs(d) < 0.5 ? " · same" : d < 0 ? $" · −{-d:0}%" : $" · +{d:0}%";
+            pct = Math.Abs(d) < 0.5 ? " · " + L.T("same") : d < 0 ? $" · −{-d:0}%" : $" · +{d:0}%";
         }
         // dims only when the petal changes them (Half, Square …), and only for one picture
         return withDims && l.Dims != null && _inDims != "-" && l.Dims != _inDims ? $"{l.Dims} · {size}" : size + pct;

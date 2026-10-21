@@ -314,15 +314,16 @@ public static class Recipes
         return kind != Kind.Folder && Canon(Kinds.Ext(path)) == e;
     }
 
-    /// <summary>"images", "JPG, PNG", "any file" — what a recipe or command is for, in words.</summary>
+    /// <summary>"images", "JPG, PNG", "any file" — what a recipe or command is for, in words (in the UI language).</summary>
     public static string ForText(IReadOnlyList<string> spec) =>
-        spec.Count == 0 ? "any file" : string.Join(", ", spec.Select(s => KindNamed(s) is { } k ? Samples.FirstOrDefault(x => x.Kind == k).Name ?? k.ToString() : s.Trim().TrimStart('.').ToUpperInvariant()));
+        spec.Count == 0 ? L.T("any file") : string.Join(", ", spec.Select(s => KindNamed(s) is { } k ? L.T(Samples.FirstOrDefault(x => x.Kind == k).Name ?? k.ToString()) : s.Trim().TrimStart('.').ToUpperInvariant()));
 
-    static string TypeName(string? type) => type switch
+    /// <summary>"doesn't work on folders / PNG files / that" (a whole phrase per type: languages put the type in different cases).</summary>
+    static string NotOn(string? type, bool sentence = false) => type switch
     {
-        FolderType => "folders",
-        null or NoFile => "that",
-        _ => type.ToUpperInvariant() + " files",
+        FolderType => sentence ? L.T("It doesn't work on folders") : L.T("doesn't work on folders"),
+        null or NoFile => sentence ? L.T("It doesn't work on that") : L.T("doesn't work on that"),
+        _ => sentence ? L.T("It doesn't work on {0} files", type.ToUpperInvariant()) : L.T("doesn't work on {0} files", type.ToUpperInvariant()),
     };
 
     /// <summary>A stand-in path of this type.</summary>
@@ -373,9 +374,10 @@ public static class Recipes
     static List<PetalAction> StepsFor(IReadOnlyList<string> files, RecipeFile file) =>
         [.. Catalog.Builtin(files), .. Commands.For(files, file)];
 
+    // English labels: the cache outlives a change of the UI language
     static readonly Dictionary<string, (string Label, string? Icon)> Known = [];
 
-    /// <summary>A petal's name without files at hand ("fithd" → "Full HD"), or null if no such petal exists.</summary>
+    /// <summary>A petal's English name without files at hand ("fithd" → "Full HD"), or null if no such petal exists.</summary>
     static (string Label, string? Icon)? Lookup(string id, RecipeFile file)
     {
         if (id.StartsWith("cmd-")) return file.Commands.FirstOrDefault(c => IdOf(c) == id) is { } c ? (c.Name, c.Icon ?? "terminal") : null;
@@ -385,13 +387,13 @@ public static class Recipes
                 foreach (var (_, _, types) in Samples)
                     foreach (var t in types)
                         foreach (var a in Catalog.Builtin([Probe(t)]))
-                            Known.TryAdd(a.Id, (a.Label, a.Icon));
+                            Known.TryAdd(a.Id, (a.EnglishLabel, a.Icon));
             if (Known.TryGetValue(id, out var k)) return k;
         }
         return id.StartsWith("to-") && id.Length > 3 ? (id[3..].ToUpperInvariant(), null) : null;
     }
 
-    static string LabelOf(string id, RecipeFile file) => Lookup(id, file)?.Label ?? id;
+    static string LabelOf(string id, RecipeFile file) => Lookup(id, file)?.Label is { } label ? L.T(label) : id;
 
     /// <summary>One step as it would run on a type: its petal (null when it's passed over or can't run) and what's wrong.</summary>
     public sealed record Step(string Id, string Label, PetalAction? Action, string? Problem);
@@ -409,8 +411,8 @@ public static class Recipes
             if (type is null or NoFile)
             {
                 steps.Add(new(id, LabelOf(id, file), null, type == NoFile
-                    ? $"can't follow {before}: it only copies to the clipboard, so it has to be the last step"
-                    : $"can't follow {before}: what it makes can't be told ahead, so it has to be the last step"));
+                    ? L.T("can't follow {0}: it only copies to the clipboard, so it has to be the last step", before)
+                    : L.T("can't follow {0}: what it makes can't be told ahead, so it has to be the last step", before)));
                 return (steps, null);
             }
             var a = (i == 0 && first != null ? first : StepsFor(current, file)).FirstOrDefault(x => x.Id == id);
@@ -423,9 +425,9 @@ public static class Recipes
             if (a == null || a.Interactive)
             {
                 steps.Add(new(id, a?.Label ?? LabelOf(id, file), null,
-                    a != null ? "opens an editor, so it can't be part of a recipe"
-                    : Lookup(id, file) == null ? $"isn't a petal ('{id}'; see convertino actions)"
-                    : $"doesn't work on {TypeName(type)}"));
+                    a != null ? L.T("opens an editor, so it can't be part of a recipe")
+                    : Lookup(id, file) == null ? L.T("isn't a petal ('{0}'; see convertino actions)", id)
+                    : NotOn(type)));
                 return (steps, null);
             }
             steps.Add(new(id, a.Label, a, null));
@@ -436,8 +438,11 @@ public static class Recipes
         return (steps, type);
     }
 
-    static string? FirstProblem(List<Step> walk) =>
-        walk.FindIndex(s => s.Problem != null) is var i and >= 0 ? $"Step {i + 1} ({walk[i].Label}) {walk[i].Problem}" : null;
+    static string? FirstProblem(List<Step> walk) => FirstProblem(walk, out _);
+
+    /// <summary>"Step 2 (Full HD) doesn't work on PDF files"; <paramref name="at"/> is that step's index.</summary>
+    static string? FirstProblem(List<Step> walk, out int at) =>
+        (at = walk.FindIndex(s => s.Problem != null)) >= 0 ? L.T("Step {0} ({1}) {2}", at + 1, walk[at].Label, walk[at].Problem) : null;
 
     /// <summary>
     /// Why this recipe can't be saved, or null. Each step has to take what the one before it makes, for every kind it's
@@ -446,15 +451,16 @@ public static class Recipes
     public static string? Check(Recipe r, RecipeFile? file = null)
     {
         file ??= Load();
-        if (string.IsNullOrWhiteSpace(r.Name)) return "Give the recipe a name";
-        if (r.Steps.Count == 0) return "Add at least one step";
-        if (r.Steps.Count > MaxSteps) return $"A recipe has at most {MaxSteps} steps";
-        if (r.Out != null && Output.Valid(r.Out) == null) return "Results go \"beside\" the original, into a subfolder (a plain name) or into a full folder path";
-        string? Try(string[] types)
+        if (string.IsNullOrWhiteSpace(r.Name)) return L.T("Give the recipe a name");
+        if (r.Steps.Count == 0) return L.T("Add at least one step");
+        if (r.Steps.Count > MaxSteps) return L.T("A recipe has at most {0} steps", MaxSteps);
+        if (r.Out != null && Output.Valid(r.Out) == null) return L.T("Results go \"beside\" the original, into a subfolder (a plain name) or into a full folder path");
+        string? Try(string[] types, out int at)
         {
             string? problem = null;
+            at = -1;
             foreach (var t in types)
-                if ((problem = FirstProblem(Walk(r.Steps, [Probe(t)], file).Steps)) == null) return null;
+                if ((problem = FirstProblem(Walk(r.Steps, [Probe(t)], file).Steps, out at)) == null) return null;
             return problem;
         }
         if (r.For.Count > 0)
@@ -462,8 +468,8 @@ public static class Recipes
             foreach (var entry in r.For)
             {
                 var types = TypesOf(entry);
-                if (types.Length == 0) return $"'{entry}' isn't a file type or kind";
-                if (Try(types) is { } p) return r.For.Count > 1 ? $"{p} ({ForText([entry])})" : p;
+                if (types.Length == 0) return L.T("'{0}' isn't a file type or kind", entry);
+                if (Try(types, out _) is { } p) return r.For.Count > 1 ? $"{p} ({ForText([entry])})" : p;
             }
             return null;
         }
@@ -477,14 +483,14 @@ public static class Recipes
         string? why = null;
         foreach (var (kind, _, types) in Samples)
         {
-            var p = Try(types);
+            var p = Try(types, out int at);
             if (p == null) kinds.Add(kind.ToString().ToLowerInvariant());
-            else if (why == null && !p.StartsWith("Step 1 ")) why = p; // the first step worked there: the most telling problem
+            else if (why == null && at > 0) why = p; // the first step worked there: the most telling problem
         }
         if (kinds.Count == 0)
             return why ?? (Lookup(r.Steps[0], file) == null
-                ? $"Step 1 ('{r.Steps[0]}') isn't a petal (see convertino actions)"
-                : $"Step 1 ({LabelOf(r.Steps[0], file)}) doesn't work on any kind of file");
+                ? L.T("Step 1 ('{0}') isn't a petal (see convertino actions)", r.Steps[0])
+                : L.T("Step 1 ({0}) doesn't work on any kind of file", LabelOf(r.Steps[0], file)));
         r.For = kinds;
         return null;
     }
@@ -516,7 +522,7 @@ public static class Recipes
     {
         var file = Load();
         return Samples.Where(s => s.Kind != Kind.Folder && s.Types.Any(t => StepsFor([Probe(t)], file).Any(a => !a.Interactive)))
-            .Select(s => (s.Kind, s.Name)).ToList();
+            .Select(s => (s.Kind, L.T(s.Name))).ToList();
     }
 
     /// <summary>For the builder: the petals that can come after these steps, for files of this kind (none after a clipboard step).</summary>
@@ -573,7 +579,7 @@ public static class Recipes
     {
         var file = Load();
         problem = null;
-        if (!Matches(r.For, files)) { problem = $"{r.Name} is for {ForText(r.For)}"; return null; }
+        if (!Matches(r.For, files)) { problem = L.T("{0} is for {1}", r.Name, ForText(r.For)); return null; }
         var (walk, _) = Walk(r.Steps, files, file, [.. Catalog.Builtin(files), .. Commands.For(files, file)]);
         problem = FirstProblem(walk);
         return problem == null ? Petal(r, walk) : null;
@@ -586,6 +592,8 @@ public static class Recipes
         Icon = string.IsNullOrWhiteSpace(r.Icon) ? "recipe" : r.Icon,
         Verb = string.Join(" → ", walk.Select(s => s.Label)),
         Short = r.Name,
+        // the user's own name: what Recent and stats.json keep, in any language
+        EnglishLabel = r.Name.Length > 12 ? r.Name[..11].TrimEnd() + "…" : r.Name, EnglishVerb = r.Name, EnglishShort = r.Name,
         Out = r.Out,
         Run = job => Run(r, job),
     };
@@ -643,7 +651,7 @@ public static class Recipes
                 var label = action?.Label ?? LabelOf(id, file);
                 if (action == null || action.Interactive)
                 {
-                    Stop(job, r, s, label, action == null ? $"It doesn't work on {TypeName(TypeOf(current[0]))}" : "It opens an editor");
+                    Stop(job, r, s, label, action == null ? NotOn(TypeOf(current[0]), sentence: true) : L.T("It opens an editor"));
                     return;
                 }
                 bool last = s == n - 1;
@@ -684,7 +692,7 @@ public static class Recipes
             }
             // nothing changed at all: no copy of the original under the recipe's name
             if (!finished && changed) Finish(r, job, current, root);
-            else if (!finished) job.Title = $"{r.Name}: nothing to change";
+            else if (!finished) job.Title = L.T("{0}: nothing to change", r.Name);
             job.Report(1);
         }
         finally
@@ -730,9 +738,9 @@ public static class Recipes
         }
         job.Outputs.Clear();
         job.Failed = true;
-        job.Title = $"{r.Name} stopped at step {step + 1}: {label}";
+        job.Title = L.T("{0} stopped at step {1}: {2}", r.Name, step + 1, label);
         job.Summary = why;
-        Log.Info($"recipe {r.Name}: step {step + 1} ({label}) failed: {why}");
+        Log.Info($"recipe {r.Name}: step {step + 1} ({r.Steps[step]}) failed: {L.English(why)}");
     }
 
     static string FolderName(string path)

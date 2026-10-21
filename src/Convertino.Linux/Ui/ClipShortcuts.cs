@@ -53,7 +53,8 @@ public sealed class ClipShortcuts
         Hotkey.CaptureProblem = s.Enabled && s.CaptureHotkeyOn ? _keys.Register(s.CaptureKey, Capture) : null;
         if (!announce) return;
         foreach (var (key, problem) in new[] { (s.ClipboardKey, Hotkey.ClipboardProblem), (s.CaptureKey, Hotkey.CaptureProblem) })
-            if (problem != null) Card($"{key.Label} isn't free", $"{char.ToUpperInvariant(problem[0])}{problem[1..]} — pick another in the Convertino panel", "clipboard");
+            if (problem != null && L.Saved(problem) is { Length: > 0 } why)
+                Card(L.T("{0} isn't free", key.Label), L.T("{0} — pick another in the Convertino panel", char.ToUpper(why[0], L.Culture) + why[1..]), "clipboard");
     }
 
     /// <summary>The flower for whatever is on the clipboard, at the pointer (click mode).</summary>
@@ -76,10 +77,10 @@ public sealed class ClipShortcuts
         catch (Exception ex)
         {
             Log.Error("clipboard flower", ex);
-            Card("Couldn't read the clipboard", Jobs.Friendly(ex), "clipboard");
+            Card(L.T("Couldn't read the clipboard"), Jobs.Friendly(ex), "clipboard");
             return;
         }
-        if (offer == null) { Card("The clipboard is empty", "Copy a file, a picture or some text first", "clipboard"); return; }
+        if (offer == null) { Card(L.T("The clipboard is empty"), L.T("Copy a file, a picture or some text first"), "clipboard"); return; }
         _open(offer, null);
     }
 
@@ -104,7 +105,7 @@ public sealed class ClipShortcuts
         catch (Exception ex)
         {
             Log.Error("capture", ex);
-            Card("Couldn't capture the screen", Jobs.Friendly(ex), "capture");
+            Card(L.T("Couldn't capture the screen"), Jobs.Friendly(ex), "capture");
         }
         finally { _capturing = false; }
     }

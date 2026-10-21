@@ -305,22 +305,22 @@ public sealed partial class TrayPanel : Window
         }, new Thickness(0)));
 
         // no drag needed: the clipboard's flower and an area of the screen, each on a global shortcut
-        stack.Children.Add(Label("Clipboard & screenshots"));
+        stack.Children.Add(Label(L.T("Clipboard & screenshots")));
         var shots = new StackPanel
         {
             Children =
             {
-                HotkeyRow("Flower for the clipboard", capture: false),
-                HotkeyRow("Capture an area", capture: true),
+                HotkeyRow(L.T("Flower for the clipboard"), capture: false),
+                HotkeyRow(L.T("Capture an area"), capture: true),
             },
         };
         if (ClipShortcuts.Current is { HasHotkeys: false } || (OperatingSystem.IsLinux() && Environment.GetEnvironmentVariable("XDG_SESSION_TYPE") == "wayland"))
             shots.Children.Add(new TextBlock
             {
-                Text = "Wayland: bind “convertino menu --clipboard” and “convertino menu --capture” to keys in your desktop's keyboard settings",
+                Text = L.T("Wayland: bind “convertino menu --clipboard” and “convertino menu --capture” to keys in your desktop's keyboard settings"),
                 FontSize = 11, Foreground = B(T.SubText), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 2, 0, 4),
             });
-        shots.Children.Add(FooterButton("folder", OperatingSystem.IsMacOS() ? "Open Pictures/Convertino" : "Open the captures folder",
+        shots.Children.Add(FooterButton("folder", OperatingSystem.IsMacOS() ? L.T("Open Pictures/Convertino") : L.T("Open the captures folder"),
             () => { Platform.Current.Open(Captures.Folder); HideAnimated(); }));
         stack.Children.Add(Card(shots, new Thickness(0)));
 
@@ -329,9 +329,9 @@ public sealed partial class TrayPanel : Window
         stack.Children.Add(WatchCard());
 
         // your own chains of petals, and where results go (TrayPanelRecipes.cs)
-        stack.Children.Add(Label("Recipes"));
+        stack.Children.Add(Label(L.T("Recipes")));
         stack.Children.Add(RecipesCard());
-        stack.Children.Add(Label("Save results"));
+        stack.Children.Add(Label(L.T("Save results")));
         stack.Children.Add(SaveCard());
 
         // recent
@@ -627,7 +627,7 @@ public sealed partial class TrayPanel : Window
             CornerRadius = new CornerRadius(6), Padding = new Thickness(7, 2, 7, 3), Background = rest, Cursor = new Cursor(StandardCursorType.Hand),
             Child = new TextBlock { Text = key.Label, FontSize = 11.5, Foreground = B(T.Text) },
         };
-        ToolTip.SetTip(chip, "Click for another shortcut");
+        ToolTip.SetTip(chip, L.T("Click for another shortcut"));
         chip.PointerEntered += (_, _) => chip.Background = B(A(T.SubText, .22));
         chip.PointerExited += (_, _) => chip.Background = rest;
         chip.PointerReleased += (_, e) =>
@@ -642,7 +642,7 @@ public sealed partial class TrayPanel : Window
         };
         var keys = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 4, 0, 0), Children = { chip } };
         if (problem != null)
-            keys.Children.Add(new TextBlock { Text = problem, FontSize = 11, Foreground = B(T.Danger), Margin = new Thickness(8, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center });
+            keys.Children.Add(new TextBlock { Text = L.Saved(problem), FontSize = 11, Foreground = B(T.Danger), Margin = new Thickness(8, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center });
         var toggle = ToggleRow(text, on, v =>
         {
             if (capture) s.CaptureHotkeyOn = v; else s.ClipboardHotkeyOn = v;

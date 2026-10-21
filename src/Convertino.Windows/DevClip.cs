@@ -57,11 +57,11 @@ static class DevClip
             ("dib24", Data((DataFormats.Dib, new MemoryStream(Dib(desktop, 333, 211, 24)))), "Image",
                 o => o != null && o.HubTitle == "333×211"),
             ("hdrop", Data((DataFormats.FileDrop, new[] { wallpaper, @"C:\no\such\file.png" })), "Files",
-                o => o != null && o.Files.Count == 1 && o.Pages.Rings[0].Name == "Convert"),
+                o => o != null && o.Files.Count == 1 && o.Pages.Rings[0].Key == "Convert"),
             ("hdrop-mixed", Data((DataFormats.FileDrop, new[] { wallpaper, sample })), "Files",
                 o => o != null && o.Files.Count == 2),
             ("text", Data((DataFormats.UnicodeText, "Meeting notes\n- ship 1.4\n- write the changelog")), "Text",
-                o => o != null && Ids(o) == "clip-txt clip-md clip-qr" && o.HubTitle == "9 words"),
+                o => o != null && Ids(o) == "clip-txt clip-md clip-qr" && o.HubTitle == L.N(9, "{0} word", "{0} words")),
             ("url", Data((DataFormats.UnicodeText, "https://github.com/hasanzadee/convertino")), "Text",
                 o => o != null && Ids(o).StartsWith("clip-qr ") && o.HubTitle == "github.com" && o.Pages.Badge == "URL"),
             ("json", Data((DataFormats.UnicodeText, "{\"name\":\"Convertino\",\"rings\":[\"Convert\",\"Tools\"]}")), "Text",
@@ -73,9 +73,9 @@ static class DevClip
                 o => o != null && o.Pages.Badge == "TEXT"),
             // password managers mark their copies (KeePass, Bitwarden, 1Password …): shown as "Hidden text", no preview, no JSON/CSV sniffing
             ("secret", Data((DataFormats.UnicodeText, "hunter2-correct-horse"), ("ExcludeClipboardContentFromMonitorProcessing", new MemoryStream(new byte[4]))), "Text",
-                o => o != null && o.HubTitle == "Hidden text" && o.HubSub == "21 chars" && Ids(o) == "clip-txt clip-md clip-qr"),
+                o => o != null && o.HubTitle == L.T("Hidden text") && o.HubSub == L.N(21, "{0} char", "{0} chars") && Ids(o) == "clip-txt clip-md clip-qr"),
             ("no-history", Data((DataFormats.UnicodeText, "hunter2-correct-horse"), ("CanIncludeInClipboardHistory", new MemoryStream(new byte[4]))), "Text",
-                o => o != null && o.HubTitle == "Hidden text"),
+                o => o != null && o.HubTitle == L.T("Hidden text")),
             ("long-link", Data((DataFormats.UnicodeText, "https://example.com/?q=" + new string('a', 3000))), "Text",
                 o => o != null && o.Pages.Badge == "URL" && !Ids(o).Contains("clip-qr")),
             ("empty", Data(), "nothing", o => o == null),
@@ -168,7 +168,7 @@ static class DevClip
             File.WriteAllBytes(path, Captures.BgraToPng(cut, cw, ch));
             var shot = ClipFlower.ForScreenshot(path);
             Check(shot.HubTitle == "760×440" && shot.Use()[0] == path && Ids(shot).StartsWith("copyimg ocr readqr annotate crop redact to-jpg to-webp to-pdf"),
-                $"screenshot 760×440 → {Path.GetFileName(path)} · {string.Join(" · ", shot.Pages.Rings.Select(r => $"{r.Name} ({r.Petals.Count})"))}");
+                $"screenshot 760×440 → {Path.GetFileName(path)} · {string.Join(" · ", shot.Pages.Rings.Select(r => $"{r.Key} ({r.Petals.Count})"))}");
             Render(shot, Path.Combine(outDir, "screenshot.png"));
         }
 

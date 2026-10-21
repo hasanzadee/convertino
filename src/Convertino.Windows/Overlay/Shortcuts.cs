@@ -37,7 +37,7 @@ public sealed class Shortcuts : IDisposable
         Hotkey.CaptureProblem = s.Enabled && s.CaptureHotkeyOn ? _keys.Register(s.CaptureKey, Capture) : null;
         if (!announce) return;
         foreach (var (key, problem) in new[] { (s.ClipboardKey, Hotkey.ClipboardProblem), (s.CaptureKey, Hotkey.CaptureProblem) })
-            if (problem != null) Card($"{key.Label} isn't free", $"{Upper(problem)} — pick another in the Convertino panel", "clipboard");
+            if (problem != null) Card(L.T("{0} isn't free", key.Label), L.T("{0} — pick another in the Convertino panel", Upper(L.Saved(problem))), "clipboard");
     }
 
     /// <summary>The flower for whatever is on the clipboard, at the cursor (click mode).</summary>
@@ -55,10 +55,10 @@ public sealed class Shortcuts : IDisposable
         catch (Exception ex)
         {
             Log.Error("clipboard flower", ex);
-            Card("Couldn't read the clipboard", Jobs.Friendly(ex), "clipboard");
+            Card(L.T("Couldn't read the clipboard"), Jobs.Friendly(ex), "clipboard");
             return;
         }
-        if (offer == null) { Card("The clipboard is empty", "Copy a file, a picture or some text first", "clipboard"); return; }
+        if (offer == null) { Card(L.T("The clipboard is empty"), L.T("Copy a file, a picture or some text first"), "clipboard"); return; }
         _overlay.Open(offer, at);
     }
 
@@ -84,7 +84,7 @@ public sealed class Shortcuts : IDisposable
         catch (Exception ex)
         {
             Log.Error("capture", ex);
-            Card("Couldn't capture the screen", Jobs.Friendly(ex), "capture");
+            Card(L.T("Couldn't capture the screen"), Jobs.Friendly(ex), "capture");
         }
         finally { _capturing = false; }
     }
@@ -97,7 +97,7 @@ public sealed class Shortcuts : IDisposable
         _ => "nothing",
     };
 
-    static string Upper(string s) => s.Length > 0 ? char.ToUpperInvariant(s[0]) + s[1..] : s;
+    static string Upper(string s) => s.Length > 0 ? char.ToUpper(s[0], L.Culture) + s[1..] : s;
 
     static void Card(string title, string text, string icon)
     {

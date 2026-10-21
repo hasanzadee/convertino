@@ -151,7 +151,7 @@ public static class ClipFlower
         };
         string dims = "";
         try { var info = new MagickImageInfo(png); dims = $"{info.Width}×{info.Height}"; } catch (Exception ex) { Log.Error("picture size", ex); }
-        return new Offer { Files = [png], Pages = pages, HubTitle = dims.Length > 0 ? dims : Paths.HumanSize(Paths.SizeOf(png)), HubSub = what, Pasted = pasted };
+        return new Offer { Files = [png], Pages = pages, HubTitle = dims.Length > 0 ? dims : Paths.HumanSize(Paths.SizeOf(png)), HubSub = L.T(what), Pasted = pasted };
     }
 
     // ---------- text ----------
@@ -178,18 +178,18 @@ public static class ClipFlower
         if (!secret && IsJson(text)) petals.Add(SaveAs(text, secret, "json", "JSON", "pretty"));
         if (!secret && Table(text) != null) petals.Add(SaveAs(text, secret, "csv", "CSV", "table"));
         string badge = link != null ? "URL" : "TEXT";
-        var pages = new Pages(petals.Take(Pages.MaxPetals).ToList(), [], link != null ? "Link" : "Text", badge);
+        var pages = new Pages(petals.Take(Pages.MaxPetals).ToList(), [], link != null ? L.T("Link") : L.T("Text"), badge);
         return new Offer
         {
             // nothing at this path: it only names the input on cards ("Clipboard text")
             Files = [Path.Combine(Path.GetTempPath(), "Clipboard text")],
             Pages = pages,
-            HubTitle = secret ? "Hidden text" : link != null ? link.Host : Count(text),
-            HubSub = secret ? $"{text.Length} chars" : link != null ? "Link" : Short(text),
+            HubTitle = secret ? L.T("Hidden text") : link != null ? link.Host : Count(text),
+            HubSub = secret ? L.N(text.Length, "{0} char", "{0} chars") : link != null ? L.T("Link") : Short(text),
         };
     }
 
-    static string Said(string text, bool secret) => secret ? $"Hidden text, {text.Length} chars" : Ocr.Preview(text);
+    static string Said(string text, bool secret) => secret ? L.N(text.Length, "Hidden text, {0} char", "Hidden text, {0} chars") : Ocr.Preview(text);
 
     static PetalAction QrPetal(string text, bool secret) => Catalog.Tool("clip-qr", "QR", "qr", "Make a QR code", async job =>
     {
@@ -199,7 +199,7 @@ public static class ClipFlower
 
     static PetalAction SaveAs(string text, bool secret, string ext, string label, string hint) => new()
     {
-        Id = "clip-" + ext, Label = label, Hint = hint, Verb = $"Save as .{ext}", Short = $"→ {label}",
+        Id = "clip-" + ext, Label = label, Hint = L.T(hint), Verb = L.T("Save as .{0}", ext), Short = $"→ {label}",
         Run = async job =>
         {
             job.Outputs.Add(await Task.Run(() => SaveText(text, ext), job.Token));
@@ -223,14 +223,14 @@ public static class ClipFlower
             }
             case "json":
             {
-                if (!IsJson(text)) throw new InvalidOperationException("The clipboard text isn't JSON");
+                if (!IsJson(text)) throw new InvalidOperationException(L.En("The clipboard text isn't JSON"));
                 var dst = Captures.NewPath("Clipboard", "json", dir);
                 File.WriteAllText(dst, Data.Json(JsonNode.Parse(text), indent: true) + "\n", new UTF8Encoding(false));
                 return dst;
             }
             case "csv":
             {
-                var rows = Table(text) ?? throw new InvalidOperationException("The clipboard text isn't a table (tab-separated cells)");
+                var rows = Table(text) ?? throw new InvalidOperationException(L.En("The clipboard text isn't a table (tab-separated cells)"));
                 var dst = Captures.NewPath("Clipboard", "csv", dir);
                 // with a BOM: Excel opens UTF-8 CSV right only then
                 File.WriteAllText(dst, string.Join("\r\n", rows.Select(r => string.Join(",", r.Select(CsvCell)))) + "\r\n", new UTF8Encoding(true));
@@ -243,7 +243,7 @@ public static class ClipFlower
                 return dst;
             }
             default:
-                throw new InvalidOperationException($"Text can be saved as txt, md, json, csv or qr, not {ext}");
+                throw new InvalidOperationException(L.En("Text can be saved as txt, md, json, csv or qr, not {0}", ext));
         }
     }
 
@@ -292,7 +292,7 @@ public static class ClipFlower
     static string Count(string text)
     {
         int words = text.Split((char[])[' ', '\t', '\r', '\n'], StringSplitOptions.RemoveEmptyEntries).Length;
-        return words == 1 ? $"{text.Trim().Length} chars" : $"{words} words";
+        return words == 1 ? L.N(text.Trim().Length, "{0} char", "{0} chars") : L.N(words, "{0} word", "{0} words");
     }
 
     static string Short(string text)
@@ -310,7 +310,7 @@ public static class ClipFlower
     public static async Task<string> CopyBack(IReadOnlyList<string> outputs)
     {
         var items = outputs.Where(p => File.Exists(p) || Directory.Exists(p)).ToList();
-        if (items.Count == 0) throw new FileNotFoundException("The result isn't there any more");
+        if (items.Count == 0) throw new FileNotFoundException(L.En("The result isn't there any more"));
         if (items.Count == 1 && File.Exists(items[0]))
         {
             var f = items[0];
@@ -319,16 +319,16 @@ public static class ClipFlower
             {
                 var job = new Job { Inputs = [f], Action = Catalog.Tool("copyimg", "Copy", "image", "Copy image", ImageTools.CopyImage, quick: true) };
                 await ImageTools.CopyImage(job);
-                return job.Title ?? "Image copied";
+                return job.Title ?? L.T("Image copied");
             }
             if (IsTextFile(f))
             {
                 Platform.Current.SetClipboardText(TextFiles.Decode(await File.ReadAllBytesAsync(f)));
-                return "Text copied";
+                return L.T("Text copied");
             }
         }
         Platform.Current.SetClipboardFiles(items);
-        return items.Count == 1 ? "Copied — paste it in a folder or a chat" : $"{items.Count} files copied";
+        return items.Count == 1 ? L.T("Copied — paste it in a folder or a chat") : L.N(items.Count, "{0} file copied", "{0} files copied");
     }
 
     static bool IsTextFile(string f) =>

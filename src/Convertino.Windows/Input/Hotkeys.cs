@@ -29,7 +29,7 @@ public sealed class Hotkeys : IDisposable
     /// <summary>Register a shortcut; null when it worked, otherwise why not (shown in the panel and a card).</summary>
     public string? Register(Hotkey key, Action action)
     {
-        if (VirtualKey(key.Key) is not { } vk) return "unknown key";
+        if (VirtualKey(key.Key) is not { } vk) return L.En("unknown key");
         uint mods = MOD_NOREPEAT;
         if (key.Mods.HasFlag(HotMods.Ctrl)) mods |= MOD_CONTROL;
         if (key.Mods.HasFlag(HotMods.Alt)) mods |= MOD_ALT;
@@ -40,7 +40,7 @@ public sealed class Hotkeys : IDisposable
         {
             int err = Marshal.GetLastWin32Error();
             Log.Info($"hotkey {key.Label} not registered: {err}");
-            return err == ERROR_HOTKEY_ALREADY_REGISTERED ? "another app uses it" : $"Windows refused it ({err})";
+            return err == ERROR_HOTKEY_ALREADY_REGISTERED ? L.En("another app uses it") : L.En("Windows refused it ({0})", err);
         }
         _actions[id] = action;
         Log.Info($"hotkey {key.Label} registered");

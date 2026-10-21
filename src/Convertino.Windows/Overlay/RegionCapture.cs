@@ -318,7 +318,7 @@ sealed class RegionView(RegionCapture owner, RECT monitor, BitmapSource frozen) 
                 dc.DrawLine(GuideDark, new Point(c.X + 1.5, 0), new Point(c.X + 1.5, h));
                 dc.DrawLine(GuideLight, new Point(0, c.Y + 0.5), new Point(w, c.Y + 0.5));
                 dc.DrawLine(GuideLight, new Point(c.X + 0.5, 0), new Point(c.X + 0.5, h));
-                Pill(dc, "Drag to capture  ·  click: whole screen  ·  Esc: cancel", new Point(w / 2, 28), full, ppd, t, centre: true);
+                Pill(dc, L.T("Drag to capture  ·  click: whole screen  ·  Esc: cancel"), new Point(w / 2, 28), full, ppd, t, centre: true);
             }
         }
     }

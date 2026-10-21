@@ -19,8 +19,10 @@ public static partial class Commands
         Id = Recipes.IdOf(c),
         Label = c.Name.Length > 12 ? c.Name[..11].TrimEnd() + "…" : c.Name,
         Icon = string.IsNullOrWhiteSpace(c.Icon) ? "terminal" : c.Icon,
-        Verb = $"Run {c.Name}",
+        Verb = L.T("Run {0}", c.Name),
         Short = c.Name,
+        // the user's own name: what Recent and stats.json keep, in any language
+        EnglishLabel = c.Name.Length > 12 ? c.Name[..11].TrimEnd() + "…" : c.Name, EnglishVerb = c.Name, EnglishShort = c.Name,
         Run = job => Run(c, job),
     };
 
@@ -72,16 +74,19 @@ public static partial class Commands
     /// The program's full path, or null with what's wrong. A bare name is looked up on PATH. Windows batch files are refused:
     /// they run through cmd.exe, which would read &amp;, | and ^ in a file name as commands of their own.
     /// </summary>
-    public static string? Resolve(string program, out string problem)
+    public static string? Resolve(string program, out string problem) => Resolve(program, out problem, out _);
+
+    static string? Resolve(string program, out string problem, out bool script)
     {
         problem = "";
+        script = false;
         var p = program.Trim().Trim('"');
         if (p.StartsWith("~/")) p = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), p[2..]);
         string? found = null;
         if (Path.IsPathFullyQualified(p)) found = File.Exists(p) ? p : null;
         else if (p.Contains('/') || p.Contains('\\'))
         {
-            problem = $"\"{program}\" needs to be a full path or a name on PATH";
+            problem = L.T("\"{0}\" needs to be a full path or a name on PATH", program);
             return null;
         }
         else
@@ -106,13 +111,14 @@ public static partial class Commands
         }
         if (found == null)
         {
-            problem = $"{Path.GetFileName(p)} not found";
+            problem = L.T("{0} not found", Path.GetFileName(p));
             return null;
         }
         // Windows opens "run.bat." or "run.bat " as run.bat: only real programs are let through, nothing cmd.exe would run
         if (OperatingSystem.IsWindows() && Path.GetExtension(found.TrimEnd('.', ' ')).ToLowerInvariant() is not (".exe" or ".com"))
         {
-            problem = "Only .exe and .com programs can run";
+            problem = L.T("Only .exe and .com programs can run");
+            script = true;
             return null;
         }
         return found;
@@ -120,13 +126,13 @@ public static partial class Commands
 
     static async Task Run(CustomCommand c, Job job)
     {
-        if (Resolve(c.Program, out var problem) is not { } exe)
+        if (Resolve(c.Program, out var problem, out bool script) is not { } exe)
         {
             job.Failed = true;
             job.Title = problem;
-            job.Summary = problem.StartsWith("Only")
-                ? "Batch files and scripts would go through cmd.exe, which reads & | ^ in file names as commands: point \"program\" at an .exe (powershell.exe -File …, python.exe …)"
-                : $"Install it, or give its full path in recipes.json ({c.Name})";
+            job.Summary = script
+                ? L.T("Batch files and scripts would go through cmd.exe, which reads & | ^ in file names as commands: point \"program\" at an .exe (powershell.exe -File …, python.exe …)")
+                : L.T("Install it, or give its full path in recipes.json ({0})", c.Name);
             return;
         }
         int n = job.Inputs.Count;
@@ -142,7 +148,7 @@ public static partial class Commands
             if (output != null && Refused(output, job.Inputs) is { } why)
             {
                 job.Failed = true;
-                job.Title = $"{c.Name} wasn't run";
+                job.Title = L.T("{0} wasn't run", c.Name);
                 job.Summary = where + why;
                 return;
             }
@@ -167,28 +173,28 @@ public static partial class Commands
             if (code == null)
             {
                 job.Failed = true;
-                job.Title = $"{c.Name} took too long";
-                job.Summary = $"{where}stopped after {c.Timeout} s (\"timeout\" in recipes.json)";
+                job.Title = L.T("{0} took too long", c.Name);
+                job.Summary = where + L.T("stopped after {0} s (\"timeout\" in recipes.json)", c.Timeout);
                 return;
             }
             if (code != 0)
             {
                 job.Failed = true;
-                job.Title = $"{c.Name} failed";
-                job.Summary = where + (last is { Length: > 0 } l ? (l.Length > 160 ? l[..160] + "…" : l) : $"exit code {code}");
+                job.Title = L.T("{0} failed", c.Name);
+                job.Summary = where + (last is { Length: > 0 } l ? (l.Length > 160 ? l[..160] + "…" : l) : L.T("exit code {0}", code));
                 return;
             }
             if (output == null) continue;
             if (!File.Exists(output) && !Directory.Exists(output))
             {
                 job.Failed = true;
-                job.Title = $"{c.Name} made nothing";
-                job.Summary = $"{where}it finished, but {Path.GetFileName(output)} isn't there (check \"output\" in recipes.json)";
+                job.Title = L.T("{0} made nothing", c.Name);
+                job.Summary = where + L.T("it finished, but {0} isn't there (check \"output\" in recipes.json)", Path.GetFileName(output));
                 return;
             }
             job.Outputs.Add(output);
         }
-        if (job.Outputs.Count == 0) job.Title = $"{c.Name} finished";
+        if (job.Outputs.Count == 0) job.Title = L.T("{0} finished", c.Name);
     }
 
     /// <summary>
@@ -203,11 +209,11 @@ public static partial class Commands
         foreach (var i in inputs)
         {
             var f = Path.TrimEndingDirectorySeparator(Path.GetFullPath(i));
-            if (string.Equals(o, f, cmp)) return $"\"output\" is the file itself ({Path.GetFileName(f)}): leave it out for a command that changes files in place";
-            if (f.StartsWith(o + Path.DirectorySeparatorChar, cmp)) return $"\"output\" is the folder the file is in ({o})";
+            if (string.Equals(o, f, cmp)) return L.T("\"output\" is the file itself ({0}): leave it out for a command that changes files in place", Path.GetFileName(f));
+            if (f.StartsWith(o + Path.DirectorySeparatorChar, cmp)) return L.T("\"output\" is the folder the file is in ({0})", o);
         }
         if (File.Exists(o) || Directory.Exists(o))
-            return $"{Path.GetFileName(o)} is already there: put {{out}} in \"args\" so it gets a free name, or change \"output\"";
+            return L.T("{0} is already there: put {{out}} in \"args\" so it gets a free name, or change \"output\"", Path.GetFileName(o));
         return null;
     }
 
@@ -226,7 +232,7 @@ public static partial class Commands
         p.OutputDataReceived += (_, e) => Line(e.Data, false);
         p.ErrorDataReceived += (_, e) => Line(e.Data, true);
         try { p.Start(); }
-        catch (Win32Exception ex) { return (-1, $"couldn't start {Path.GetFileName(psi.FileName)}: {ex.Message}"); }
+        catch (Win32Exception ex) { return (-1, L.T("couldn't start {0}: {1}", Path.GetFileName(psi.FileName), ex.Message)); }
         try { p.StandardInput.Close(); } catch { } // nothing to read: a program waiting for input gets end-of-file, not a hang
         p.BeginOutputReadLine();
         p.BeginErrorReadLine();

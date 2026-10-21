@@ -221,7 +221,7 @@ static class Dev
 
         // your recipes get a ring of their own, one flip from Convert
         var mine = new Pages([.. many.Take(2)], [.. many.Take(3)], "", "") { Recipes = [.. many.Take(1)], More = [.. many.Take(1)] }.Rings;
-        got = string.Join(" · ", mine.Select(r => r.Name));
+        got = string.Join(" · ", mine.Select(r => r.Key));
         bool mineOk = got == "Convert · Recipes · Tools · More tools";
         if (!mineOk) failed++;
         report.Add($"{(mineOk ? "PASS" : "FAIL")}  {"recipes ring",-36} → {got}");

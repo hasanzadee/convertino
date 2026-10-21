@@ -53,10 +53,10 @@ public sealed unsafe class X11Hotkeys : IHotkeys, IDisposable
 
     public string? Register(Hotkey key, Action action)
     {
-        if (_dpy == IntPtr.Zero) return "no X display";
+        if (_dpy == IntPtr.Zero) return L.En("no X display");
         var name = key.Key.Length == 1 ? key.Key.ToLowerInvariant() : key.Key; // keysyms: "x", "5", "F12"
         int code = XKeysymToKeycode(_dpy, XStringToKeysym(name));
-        if (code == 0) return "no such key on this keyboard";
+        if (code == 0) return L.En("no such key on this keyboard");
         uint mods = 0;
         if (key.Mods.HasFlag(HotMods.Shift)) mods |= ShiftMask;
         if (key.Mods.HasFlag(HotMods.Ctrl)) mods |= ControlMask;
@@ -84,7 +84,7 @@ public sealed unsafe class X11Hotkeys : IHotkeys, IDisposable
                 foreach (var v in LockVariants) XUngrabKey(_dpy, code, mods | v, root);
                 XSync(_dpy, 0);
                 Log.Info($"shortcut {key.Label} refused by the X server (taken)");
-                return "another app uses it";
+                return L.En("another app uses it");
             }
             _keys.Add((code, mods, action));
         }

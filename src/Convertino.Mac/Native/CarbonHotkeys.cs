@@ -35,14 +35,14 @@ public sealed unsafe class CarbonHotkeys : IHotkeys
     public string? Register(Hotkey key, Action action)
     {
         // letters and digits where the current layout has them (AZERTY's A is the US Q key), F-keys where they are
-        if (((key.Key.Length == 1 ? LayoutKeyCode(key.Key[0]) : null) ?? KeyCode(key.Key)) is not { } code) return "no such key";
+        if (((key.Key.Length == 1 ? LayoutKeyCode(key.Key[0]) : null) ?? KeyCode(key.Key)) is not { } code) return L.En("no such key");
         try
         {
             if (!_installed)
             {
                 var spec = new EventTypeSpec { Class = FourCC("keyb"), Kind = 5 }; // kEventHotKeyPressed
                 int st = InstallEventHandler(GetEventDispatcherTarget(), (IntPtr)(delegate* unmanaged[Cdecl]<IntPtr, IntPtr, IntPtr, int>)&OnHotKey, 1, &spec, IntPtr.Zero, out _);
-                if (st != 0) return $"macOS refused the handler ({st})";
+                if (st != 0) return L.En("macOS refused the handler ({0})", st);
                 _installed = true;
             }
             uint mods = 0;
@@ -55,7 +55,7 @@ public sealed unsafe class CarbonHotkeys : IHotkeys
             if (r != 0)
             {
                 Log.Info($"hot key {key.Label} not registered: {r}");
-                return r == eventHotKeyExistsErr ? "another app uses it" : $"macOS refused it ({r})";
+                return r == eventHotKeyExistsErr ? L.En("another app uses it") : L.En("macOS refused it ({0})", r);
             }
             Actions[id] = action;
             _refs.Add(hotKey);
@@ -65,7 +65,7 @@ public sealed unsafe class CarbonHotkeys : IHotkeys
         catch (Exception ex) when (ex is DllNotFoundException or EntryPointNotFoundException)
         {
             Log.Error("carbon hot keys", ex);
-            return "no hot-key service";
+            return L.En("no hot-key service");
         }
     }
 
