@@ -47,9 +47,15 @@ public static class Icons
         ["grid"] = "M3 3h7v7H3z M14 3h7v7h-7z M14 14h7v7h-7z M3 14h7v7H3z",
         ["slideshow"] = "M3 4h18a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z M10 8l5 2.5-5 2.5z M8 21h8 M12 17v4",
         ["compare"] = "M12 2v20 M9 5H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h4 M15 5h4a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2h-4 M16.5 12h.01",
+        ["clipboard"] = "M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2 M9 2h6a1 1 0 0 1 1 1v2a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1z",
+        ["capture"] = "M3 8V5a2 2 0 0 1 2-2h3 M16 3h3a2 2 0 0 1 2 2v3 M21 16v3a2 2 0 0 1-2 2h-3 M8 21H5a2 2 0 0 1-2-2v-3 M12 9v6 M9 12h6",
+        ["keyboard"] = "M4 6h16a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2z M6 10h.01 M10 10h.01 M14 10h.01 M18 10h.01 M7 14h10",
         ["check"] = "M20 6L9 17l-5-5",
         ["search"] = "M11 3a8 8 0 1 0 0 16a8 8 0 1 0 0-16z M21 21l-4.35-4.35",
+        ["chevron"] = "M6 9l6 6 6-6",
+        ["chevronup"] = "M6 15l6-6 6 6",
         ["update"] = "M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4 M7 10l5 5 5-5 M12 15V3",
+        ["download"] = "M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4 M7 10l5 5 5-5 M12 15V3",
         ["x"] = "M18 6L6 18 M6 6l12 12",
         ["alert"] = "M12 9v4 M12 17h.01 M10.3 3.9L1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z",
         ["file"] = "M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z M14 2v6h6",
@@ -65,6 +71,11 @@ public static class Icons
         ["flip"] = "M12 3v18 M16 7l4 5-4 5 M8 7l-4 5 4 5",
         ["log"] = "M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z M14 2v6h6 M16 13H8 M16 17H8 M10 9H8",
         ["power"] = "M18.36 6.64a9 9 0 1 1-12.73 0 M12 2v10",
+        ["recipe"] = "M13 2L3 14h9l-1 8 10-12h-9l1-8z",
+        ["terminal"] = "M4 17l6-6-6-6 M12 19h8",
+        ["down"] = "M6 9l6 6 6-6",
+        ["up"] = "M18 15l-6-6-6 6",
+        ["plus"] = "M12 5v14 M5 12h14",
     };
 
     static readonly Dictionary<string, Geometry> Cache = [];

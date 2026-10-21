@@ -29,6 +29,7 @@ public sealed class ToastWindow : Window
     readonly Border _bar;
     readonly Button _close;
     readonly Button _folder;
+    readonly Button _copy;
     readonly StackPanel _buttons;
     readonly TranslateTransform _slide = new();
     readonly DispatcherTimer _life = new();
@@ -109,12 +110,23 @@ public sealed class ToastWindow : Window
         };
         var text = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(12, 0, 6, 0), Children = { _title, _sub, _barTrack } };
 
-        _folder = IconButton("", "Show in folder");
+        _folder = IconButton("", L.T("Show in folder"));
         _folder.Click += (_, _) => { if (Outputs.Count > 0) Shell.Reveal(Outputs[0]); Dismiss(); };
         _folder.Visibility = Visibility.Collapsed;
-        _close = IconButton("", "Close");
+        // the result straight back to the clipboard: a picture as a picture, text as text, anything else as files
+        _copy = IconButton(Icons.Glyph("copy") ?? "", L.T("Copy the result"));
+        _copy.Click += async (_, _) =>
+        {
+            _life.Stop();
+            try { _sub.Text = await Task.Run(() => Services.ClipFlower.CopyBack([.. Outputs])); }
+            catch (Exception ex) { Log.Error("copy result", ex); _sub.Text = Jobs.Friendly(ex); }
+            _sub.Visibility = Visibility.Visible;
+            if (!IsMouseOver) _life.Start();
+        };
+        _copy.Visibility = Visibility.Collapsed;
+        _close = IconButton("", L.T("Close"));
         _close.Click += (_, _) => { if (Running) OnCancel?.Invoke(); Dismiss(); };
-        _buttons = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center, Children = { _folder, _close } };
+        _buttons = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center, Children = { _copy, _folder, _close } };
 
         var grid = new Grid { Margin = new Thickness(14, 0, 10, 0) };
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
@@ -233,6 +245,7 @@ public sealed class ToastWindow : Window
         if (error) _iconBox.Background = new SolidColorBrush(Theme.Current.Danger);
         if (thumb != null) { _thumb.Source = thumb; _thumb.Opacity = 0; _thumb.BeginAnimation(OpacityProperty, new DoubleAnimation(1, TimeSpan.FromMilliseconds(250))); }
         _folder.Visibility = Outputs.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        _copy.Visibility = Outputs.Count > 0 && !error ? Visibility.Visible : Visibility.Collapsed;
         _life.Interval = TimeSpan.FromSeconds(error ? 9 : 5);
         if (!_card.IsMouseOver) _life.Start();
         // little "pop" so the eye catches completion
@@ -256,6 +269,7 @@ public sealed class ToastWindow : Window
         _barTrack.Visibility = Visibility.Collapsed;
         _glyph.Text = glyph;
         _folder.Visibility = Visibility.Collapsed;
+        _copy.Visibility = Visibility.Collapsed;
         _close.Visibility = Visibility.Collapsed;
         _card.Cursor = Cursors.Arrow;
         if (tip != null) _card.ToolTip = tip;

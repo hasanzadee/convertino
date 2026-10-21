@@ -22,6 +22,32 @@ jobs:
           Copy-Item packaging/linux/icons/convertino-256.png smoke.png
           $p = Start-Process dist/win-x64/Convertino.exe -ArgumentList 'convert','smoke.png','--to','webp' -Wait -PassThru
           if (-not (Test-Path smoke.webp)) { throw "conversion failed ($($p.ExitCode))" }
+          $env:CONVERTINO_APPDATA = Join-Path $PWD 'ci-appdata'
+          $p = Start-Process dist/win-x64/Convertino.exe -ArgumentList 'recipe','add','Web-ready','--steps','fithd,to-webp,meta' -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "recipe add failed ($($p.ExitCode))" }
+          $p = Start-Process dist/win-x64/Convertino.exe -ArgumentList 'recipe','run','Web-ready','smoke.png' -Wait -PassThru
+          if (-not (Test-Path 'smoke (Web-ready).webp')) { throw "recipe run failed ($($p.ExitCode))" }
+          if (Get-ChildItem (Join-Path $env:TEMP 'convertino') -Filter 'recipe-*' -ErrorAction SilentlyContinue) { throw "a recipe work folder was left behind" }
+      - name: Browser drop self-test
+        shell: pwsh
+        run: |
+          $p = Start-Process dist/win-x64/Convertino.exe -ArgumentList '--browser-drop-selftest','webtest' -Wait -PassThru
+          Get-Content webtest/results.txt
+          if ($p.ExitCode -ne 0) { throw "$($p.ExitCode) browser-drop checks failed" }
+      - name: Clipboard + capture self-tests
+        shell: pwsh
+        run: |
+          # synthetic clipboard payloads through the real reader, offers and petals; flowers and the overlay as PNGs
+          Start-Process dist/win-x64/Convertino.exe -ArgumentList '--clip-selftest', "$PWD\clip-selftest" -Wait
+          Get-Content clip-selftest/results.txt
+          if (-not (Select-String -Path clip-selftest/results.txt -Pattern '^ALL PASS' -Quiet)) { throw "clipboard self-test failed" }
+          Start-Process dist/win-x64/Convertino.exe -ArgumentList '--capture-selftest', "$PWD\clip-selftest\capture-overlay.png" -Wait
+          if (-not (Test-Path clip-selftest/capture-overlay.png)) { throw "capture overlay didn't render" }
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: windows-clip-selftest
+          path: clip-selftest/
 
   linux:
     runs-on: ubuntu-latest
@@ -58,8 +84,32 @@ jobs:
           printf 'a :hover { color : red } /* x */\n' > site.css
           ./dist/linux-x64/convertino run minify site.css
           grep -qx 'a :hover{color:red}' 'site (min).css'
+          # live preview: every petal worked out ahead, the "drop" on WEBP served from that run (smoke.webp exists: "smoke (2).webp")
+          ./dist/linux-x64/convertino preview smoke.png --take to-webp | tee preview.log
+          grep -q 'to-avif' preview.log
+          test -s 'smoke (2).webp'
+          test -z "$(ls -A /tmp/convertino/preview 2>/dev/null)"
+      - name: UI translations
+        run: ./dist/linux-x64/convertino lang-check
       - name: Archives and file tools
         run: bash tools/files-smoke.sh dist/linux-x64/convertino
+      - name: Recipes and custom commands
+        run: bash tools/recipes-smoke.sh dist/linux-x64/convertino
+      - name: Browser drops (self-test, fetch)
+        run: |
+          ./dist/linux-x64/convertino --browser-drop-selftest webtest
+          mkdir -p site && cp smoke.png site/pic.png
+          (cd site && python3 -m http.server 8765 --bind 127.0.0.1 >/dev/null 2>&1 &)
+          sleep 1
+          ./dist/linux-x64/convertino fetch http://127.0.0.1:8765/pic.png --to jpg --out fetched
+          test -s fetched/pic.png && test -s fetched/pic.jpg
+          getfattr -n user.xdg.origin.url fetched/pic.png fetched/pic.jpg || true
+      - name: Clipboard (Xvfb + xclip)
+        run: |
+          sudo apt-get install -y -qq xvfb xclip > /dev/null
+          Xvfb :91 -screen 0 1280x800x24 &
+          sleep 2
+          DISPLAY=:91 bash tools/clip-smoke.sh dist/linux-x64/convertino
 
   macos:
     strategy:

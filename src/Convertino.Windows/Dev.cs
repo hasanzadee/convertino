@@ -34,12 +34,13 @@ static class Dev
     }
 
     /// <summary>
-    /// Convertino.exe --snapshot out.png [theme] [img|tools|more|formats|pdf|video] [hover]: one ring of the flower as a PNG.
-    /// img, tools, more and formats are the four rings of an image (Convert, Tools, More tools, More formats).
+    /// Convertino.exe --snapshot out.png [theme] [img|tools|more|formats|pdf|video] [hover] [quick|exact] [file]: one ring of the flower as a PNG.
+    /// img, tools, more and formats are the four rings of an image (Convert, Tools, More tools, More formats);
+    /// quick / exact also run the live preview first (estimates and the hub's look, or the full runs' exact sizes).
     /// </summary>
-    public static void Snapshot(string outPath, string kind, int hover)
+    public static void Snapshot(string outPath, string kind, int hover, string? ahead = null, string? file = null)
     {
-        var sample = kind switch
+        var sample = file ?? kind switch
         {
             "pdf" => @"C:\Windows\Help\sample.pdf",
             "video" => @"C:\x\clip.mp4",
@@ -53,16 +54,25 @@ static class Dev
         view.Appear();
         view.SetMode(HubMode.Info);
         var rings = pages.Rings.ToList();
-        string name = kind switch { "tools" => "Tools", "more" => "More tools", "formats" => "More formats", _ => "Convert" };
-        int page = Math.Max(0, rings.FindIndex(r => r.Name == name));
+        string name = kind switch { "tools" => "Tools", "more" => "More tools", "formats" => "More formats", "recipes" => "Recipes", _ => "Convert" };
+        int page = Math.Max(0, rings.FindIndex(r => r.Key == name));
         view.SetPages(rings.Count, page);
         view.SetPetals(rings[page].Petals, 1);
+        Preview? pv = null;
+        if (ahead is "quick" or "exact") Settings.Current.LivePreview = true;
+        if (ahead is "quick" or "exact" && (pv = Preview.For([sample])) != null)
+        {
+            Task.Run(() => pv.Settle(rings[page].Petals, ahead == "exact")).GetAwaiter().GetResult(); // not on the dispatcher: Settle awaits
+            view.Ahead = pv;
+        }
         view.SetHover(hover);
         Render(view, outPath);
+        pv?.Dispose();
+        pv?.Closed.Wait(10_000);
     }
 
     /// <summary>The flower over a fake warm wallpaper (like the macOS demo), at 2×, animations settled.</summary>
-    static void Render(FlowerView view, string outPath)
+    internal static void Render(FlowerView view, string outPath)
     {
         var size = new Size(RadialWindow.SizeDip, RadialWindow.SizeDip);
         var bg = new DrawingVisual();
@@ -99,6 +109,18 @@ static class Dev
     }
 
     /// <summary>
+    /// Convertino.exe --browser-drop-selftest outDir: drags laid out the way Chrome, Edge and Firefox lay them out (virtual
+    /// files as HGLOBAL or IStream, DownloadURL, x-moz-url, CF_HTML, their CF_HDROP temp copies, raw PNG / DIB) handed to WPF
+    /// as foreign OLE data objects, read by the overlay's own code and dropped on petals against a local web server
+    /// (<see cref="WebSelfTest"/>). Nothing is shown, nothing leaves localhost, results go to outDir\Downloads. Returns the failures.
+    /// </summary>
+    public static Task<int> BrowserDropSelfTest(string outDir) => WebSelfTest.Run(outDir, "windows", c =>
+    {
+        var data = new DataObject(new FakeBrowserDrag(c));
+        return (new ComDrag(data), OverlayController.DevFiles(data));
+    });
+
+    /// <summary>
     /// Convertino.exe --paging-selftest outDir: feeds the real hook callbacks (GlobalInput) the WM_MOUSEWHEEL, VK_TAB and Shift
     /// data Windows sends mid-drag and checks that the real overlay (OverlayController) cycles every ring, that Tab and the
     /// wheel over the flower are swallowed and nothing else is (Alt/Win/Ctrl+Tab, the wheel elsewhere, half a Tab press). Touches nothing on the desktop: no hooks are installed, no
@@ -107,6 +129,7 @@ static class Dev
     public static void PagingSelfTest(string outDir)
     {
         Directory.CreateDirectory(outDir);
+        Settings.Current.LivePreview = false; // paging only: no background runs for the sample picture
         const int VK_LSHIFT = 0xA0, VK_LCONTROL = 0xA2, VK_CONTROL = 0x11, VK_LWIN = 0x5B, VK_TAB = 0x09, VK_ESCAPE = 0x1B;
         var input = new GlobalInput(Application.Current.Dispatcher); // never started: no hooks
         var held = new HashSet<int>();
@@ -115,6 +138,7 @@ static class Dev
         var at = new RECT { Left = 100, Top = 100, Right = 560, Bottom = 560 };
         var report = new List<string>();
         int failed = 0;
+        Recipes.Enabled = false; // the sample picture's four rings, whatever recipes.json holds
 
         void Pump() => Application.Current.Dispatcher.Invoke(() => { }, DispatcherPriority.Background);
         void Step(string what, Func<IntPtr> act, bool swallowed, string ring, int pauseMs = 260)
@@ -190,10 +214,17 @@ static class Dev
         // a list longer than Pages.MaxPetals carries on in a second ring of the same name, spread evenly
         var many = Enumerable.Range(1, 23).Select(i => Catalog.Tool($"t{i}", $"T{i}", "tag", "test", _ => Task.CompletedTask)).ToList();
         var split = new Pages([], many, "", "").Rings;
-        string got = string.Join(" · ", split.Select(r => $"{r.Name} ({r.Petals.Count})"));
+        string got = string.Join(" · ", split.Select(r => $"{r.Key} ({r.Petals.Count})"));
         bool splitOk = got == "Tools (8) · Tools 2 (8) · Tools 3 (7)";
         if (!splitOk) failed++;
         report.Add($"{(splitOk ? "PASS" : "FAIL")}  {"23 tools",-36} → {got}");
+
+        // your recipes get a ring of their own, one flip from Convert
+        var mine = new Pages([.. many.Take(2)], [.. many.Take(3)], "", "") { Recipes = [.. many.Take(1)], More = [.. many.Take(1)] }.Rings;
+        got = string.Join(" · ", mine.Select(r => r.Key));
+        bool mineOk = got == "Convert · Recipes · Tools · More tools";
+        if (!mineOk) failed++;
+        report.Add($"{(mineOk ? "PASS" : "FAIL")}  {"recipes ring",-36} → {got}");
 
         report.Add(failed == 0 ? "ALL PASS" : $"{failed} FAILED");
         File.WriteAllLines(Path.Combine(outDir, "results.txt"), report);

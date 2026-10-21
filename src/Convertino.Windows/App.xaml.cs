@@ -14,6 +14,7 @@ public partial class App : Application
     EventWaitHandle? _wake;
     GlobalInput? _input;
     OverlayController? _overlay;
+    Shortcuts? _shortcuts;
     TrayIcon? _tray;
 
     [System.Runtime.InteropServices.DllImport("kernel32.dll")]
@@ -68,11 +69,36 @@ public partial class App : Application
             return;
         }
 
+        if (e.Args.Length == 2 && e.Args[0] == "--browser-drop-selftest")
+        {
+            AttachConsole(-1);
+            Shutdown(await Dev.BrowserDropSelfTest(System.IO.Path.GetFullPath(e.Args[1])));
+            return;
+        }
+
+        if (e.Args.Length == 2 && e.Args[0] == "--clip-selftest")
+        {
+            Settings.Load();
+            Theme.Apply("Mocha");
+            DevClip.ClipSelfTest(System.IO.Path.GetFullPath(e.Args[1]));
+            Shutdown();
+            return;
+        }
+
+        if (e.Args.Length == 2 && e.Args[0] == "--capture-selftest")
+        {
+            Theme.Apply("Mocha");
+            DevClip.CaptureSelfTest(System.IO.Path.GetFullPath(e.Args[1]));
+            Shutdown();
+            return;
+        }
+
         if (e.Args.Length >= 2 && e.Args[0] == "--snapshot")
         {
             Settings.Load();
             Theme.Apply(e.Args.Length > 2 ? e.Args[2] : "Mocha");
-            Dev.Snapshot(e.Args[1], e.Args.Length > 3 ? e.Args[3] : "img", e.Args.Length > 4 ? int.Parse(e.Args[4]) : 2);
+            Dev.Snapshot(e.Args[1], e.Args.Length > 3 ? e.Args[3] : "img", e.Args.Length > 4 ? int.Parse(e.Args[4]) : 2,
+                e.Args.Length > 5 ? e.Args[5] : null, e.Args.Length > 6 ? e.Args[6] : null);
             Shutdown();
             return;
         }
@@ -81,7 +107,8 @@ public partial class App : Application
         {
             Settings.Load();
             Theme.Apply(e.Args.Length > 2 ? e.Args[2] : Settings.Current.Theme);
-            Flyout.Snapshot(e.Args[1], e.Args.Length > 3 && e.Args[3] == "demo" ? Stats.Demo() : Stats.Load());
+            Flyout.Snapshot(e.Args[1], e.Args.Length > 3 && e.Args[3] == "demo" ? Stats.Demo() : Stats.Load(),
+                e.Args.FirstOrDefault(a => a is "recipes" or "builder"), langs: e.Args.Contains("langs"));
             Shutdown();
             return;
         }
@@ -128,6 +155,8 @@ public partial class App : Application
         string[] menuFiles = e.Args.Length > 0 && e.Args[0] == "menu"
             ? e.Args.Skip(1).Select(System.IO.Path.GetFullPath).Where(p => System.IO.File.Exists(p) || System.IO.Directory.Exists(p)).ToArray()
             : [];
+        // "Convertino.exe menu --clipboard" / "--capture": the same as the shortcuts, for launchers and mouse buttons
+        if (e.Args is ["menu", "--clipboard" or "--capture"]) menuFiles = [e.Args[1]];
         if (!first && menuFiles.Length > 0)
         {
             MenuPipe.Send(menuFiles);
@@ -157,8 +186,9 @@ public partial class App : Application
         _input = new GlobalInput(Dispatcher);
         _input.Start();
         _overlay = new OverlayController(_input);
-        MenuPipe.Listen(files => Dispatcher.BeginInvoke(() => _overlay?.Menu(files)));
-        if (menuFiles.Length > 0) Dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle, () => _overlay.Menu(menuFiles));
+        _shortcuts = new Shortcuts(_overlay, _input);
+        MenuPipe.Listen(files => Dispatcher.BeginInvoke(() => Menu(files)));
+        if (menuFiles.Length > 0) Dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle, () => Menu(menuFiles));
         _tray = new TrayIcon();
         _tray.Attach(_input);
         Watches.StartAll();
@@ -178,15 +208,23 @@ public partial class App : Application
             Dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle, () =>
             {
                 var t = Toasts.Create(Win32.Cursor);
-                t.SetDone("Convertino is running", $"Drag any file and {Settings.Current.TriggerKey.Tap()} — the flower opens under your cursor.", AppIcon.Render(84), "");
+                t.SetDone(L.T("Convertino is running"), L.T("Drag any file and {0} — the flower opens under your cursor.", Settings.Current.TriggerKey.Tap()), AppIcon.Render(84), "");
                 Toasts.Show(t);
             });
         }
         Dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle, UpdateCards.Start);
     }
 
+    void Menu(IReadOnlyList<string> files)
+    {
+        if (files is ["--clipboard"]) _shortcuts?.Clipboard();
+        else if (files is ["--capture"]) _shortcuts?.Capture(delayMs: 0);
+        else _overlay?.Menu(files);
+    }
+
     protected override void OnExit(ExitEventArgs e)
     {
+        _shortcuts?.Dispose();
         _input?.Dispose();
         _tray?.Dispose();
         base.OnExit(e);

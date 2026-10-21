@@ -93,6 +93,15 @@ public static unsafe class X11
         XSync(dpy, false);
     }
 
+    [DllImport(Lib)] static extern int XSetInputFocus(IntPtr dpy, IntPtr window, int revertTo, IntPtr time);
+
+    /// <summary>Give an override-redirect window the keyboard, which no window manager will: then its text boxes can be typed in.</summary>
+    public static void Focus(IntPtr dpy, IntPtr window)
+    {
+        XSetInputFocus(dpy, window, 2 /* RevertToParent */, IntPtr.Zero /* CurrentTime */);
+        XFlush(dpy);
+    }
+
     // XShape
     [DllImport(Ext)] public static extern bool XShapeQueryExtension(IntPtr dpy, out int eventBase, out int errorBase);
 

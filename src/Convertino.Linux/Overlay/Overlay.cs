@@ -51,9 +51,15 @@ public sealed class OverlayController
     State _state = State.Hidden;
     IReadOnlyList<string> _files = [];
     Pages? _pages;
+    Offer? _offer; // the clipboard or a screenshot instead of a drag
     readonly RingPager _pager = new();
     int _session;
     PixelRect _rect;
+    // live preview: the petals' results worked out while the flower is open
+    Preview? _ahead;
+    string? _aheadHover;
+    // a drag out of a browser: links or pictures instead of paths
+    WebDrop? _web;
     bool _shaped;
     bool _pinned = Environment.GetEnvironmentVariable("CONVERTINO_PIN") != null;
 
@@ -66,7 +72,7 @@ public sealed class OverlayController
         _win.AddHandler(DragDrop.DragOverEvent, OnDragOver);
         _win.AddHandler(DragDrop.DragLeaveEvent, OnDragLeave);
         _win.AddHandler(DragDrop.DropEvent, OnDrop);
-        _win.PointerMoved += (_, e) => { if (_state == State.Click) _win.View.SetHover(_win.View.HitTestPetal(e.GetPosition(_win))); };
+        _win.PointerMoved += (_, e) => { if (_state == State.Click) { _win.View.SetHover(_win.View.HitTestPetal(e.GetPosition(_win))); SyncAhead(); } };
         _win.PointerReleased += OnClick;
         // over the flower itself (click mode; macOS also routes the wheel here during a drag). The pager drops repeats
         // when a global watcher reports the same press or notch too.
@@ -126,11 +132,34 @@ public sealed class OverlayController
     public void Menu(IReadOnlyList<string> files)
     {
         if (files.Count == 0) return;
-        if (_state != State.Hidden) { _state = State.Leaving; FinishHide(); }
+        if (_state != State.Hidden) { _state = State.Leaving; FinishHide(); _offer?.Closed(used: false); _offer = null; }
         var pt = _input?.Pointer ?? CenterOfPrimary();
         ShowAt(pt, State.Click);
         Bloom(files);
         _win.Activate();
+    }
+
+    /// <summary>Open the flower in click mode for something that wasn't dragged: the clipboard, a screenshot. The shortcut again closes it.</summary>
+    public void Open(Offer offer, ScreenPoint? at)
+    {
+        if (_state != State.Hidden)
+        {
+            if (_state == State.Click) Hide();
+            offer.Closed(used: false);
+            return;
+        }
+        ShowAt(at ?? _input?.Pointer ?? CenterOfPrimary(), State.Click);
+        _offer = offer;
+        Bloom(offer.Files, offer: offer);
+        _win.Activate();
+    }
+
+    /// <summary>Close the flower if it is open (before a screen capture, so it isn't in the picture); true if it was.</summary>
+    public bool CloseIfOpen()
+    {
+        if (!Visible) return false;
+        Hide();
+        return true;
     }
 
     ScreenPoint CenterOfPrimary()
@@ -145,6 +174,7 @@ public sealed class OverlayController
         _releaseTimer.Stop();
         _leaveTimer.Stop();
         var v = _win.View;
+        DisposeAhead();
         v.Reset();
         var screen = _win.Screens.ScreenFromPoint(new PixelPoint(pt.X, pt.Y)) ?? _win.Screens.Primary;
         double scale = screen?.Scaling ?? 1;
@@ -194,15 +224,15 @@ public sealed class OverlayController
         catch (Exception ex) { Log.Error("backdrop", ex); return null; }
     }
 
-    void Bloom(IReadOnlyList<string> files)
+    void Bloom(IReadOnlyList<string> files, WebDrop? web = null, Offer? offer = null)
     {
         _seedTimeout.Stop();
         _files = files;
-        _pages = Catalog.For(files);
+        _pages = web?.Pages() ?? offer?.Pages ?? Catalog.For(files);
         _pager.Reset(_pages);
         var v = _win.View;
-        v.HubTitle = files.Count == 1 ? Paths.HumanSize(Paths.SizeOf(files[0])) : $"{files.Count} items";
-        v.HubSub = files.Count == 1 ? _pages.Title : Paths.HumanSize(files.Sum(Paths.SizeOf));
+        v.HubTitle = web?.HubTitle ?? offer?.HubTitle ?? (files.Count == 1 ? Paths.HumanSize(Paths.SizeOf(files[0])) : L.N(files.Count, "{0} item", "{0} items"));
+        v.HubSub = web?.HubSub ?? offer?.HubSub ?? (files.Count == 1 ? _pages.Title : Paths.HumanSize(files.Sum(Paths.SizeOf)));
         v.HubBadge = _pages.Badge;
         v.SetMode(HubMode.Info);
         v.SetPages(_pager.Count, 0);
@@ -215,6 +245,48 @@ public sealed class OverlayController
         {
             if (session == _session && t.Result != null) Dispatcher.UIThread.Post(() => { v.Thumb = t.Result; v.InvalidateVisual(); });
         });
+        StartAhead(files, session);
+    }
+
+    // ---------- live preview ----------
+
+    void StartAhead(IReadOnlyList<string> files, int session)
+    {
+        DisposeAhead();
+        // Preview.For reads the pictures' headers: off the UI thread (a slow share mustn't stall the bloom)
+        Task.Run(() => Preview.For(files)).ContinueWith(t => Dispatcher.UIThread.Post(() =>
+        {
+            var pv = t.Result;
+            if (pv == null) return;
+            if (session != _session || _pages == null || _state is not (State.Drag or State.Click)) { pv.Dispose(); return; }
+            _ahead = pv;
+            var v = _win.View;
+            v.Ahead = pv;
+            pv.Changed += () => Dispatcher.UIThread.Post(() => { if (ReferenceEquals(_ahead, pv)) v.AheadChanged(); });
+            pv.Show(_pager.Current);
+            _aheadHover = null;
+            SyncAhead();
+        }));
+    }
+
+    /// <summary>Tell the preview which petal the cursor is on — only when that changes, since it restarts the dwell.</summary>
+    void SyncAhead()
+    {
+        if (_ahead == null) return;
+        var acts = _win.View.CurrentActions;
+        int i = _win.View.HoverIndex;
+        var a = i >= 0 && i < acts.Count ? acts[i] : null;
+        if (a?.Id == _aheadHover) return;
+        _aheadHover = a?.Id;
+        _ahead.Hover(a);
+    }
+
+    void DisposeAhead()
+    {
+        _ahead?.Dispose();
+        _ahead = null;
+        _aheadHover = null;
+        _win.View.Ahead = null;
     }
 
     /// <summary>Show the next (+1) or previous (−1) ring; 0 = the input didn't ask for a flip.</summary>
@@ -222,9 +294,11 @@ public sealed class OverlayController
     {
         if (dir == 0 || _pages == null || _state is not (State.Drag or State.Click)) return;
         if (!_pager.Step(dir)) { _win.View.Nudge(); return; }
-        if (Diag) Log.Info($"ring {_pager.Page + 1}/{_pager.Count} {_pager.Name} ({why})");
+        if (Diag) Log.Info($"ring {_pager.Page + 1}/{_pager.Count} {_pager.Key} ({why})");
         _win.View.SetPages(_pager.Count, _pager.Page, _pager.Name);
         _win.View.SetPetals(_pager.Current, dir);
+        _ahead?.Show(_pager.Current);
+        SyncAhead();
     }
 
     async void Hide()
@@ -241,6 +315,7 @@ public sealed class OverlayController
 
     async void FinishHide()
     {
+        DisposeAhead();
         _win.View.Reset();
         await Task.Delay(34);
         if (_state != State.Leaving) return;
@@ -250,7 +325,10 @@ public sealed class OverlayController
         if (_input != null) _input.Hot = false;
         _files = [];
         _pages = null;
+        _web = null;
         _pager.Clear();
+        _offer?.Closed(used: false);
+        _offer = null;
     }
 
     // ---------- XDND ----------
@@ -277,8 +355,10 @@ public sealed class OverlayController
         if (_state == State.Seed)
         {
             var files = FilesOf(e);
-            if (files == null || files.Count == 0) { e.DragEffects = DragDropEffects.None; Hide(); return; }
-            Bloom(files);
+            _web = AvaloniaDrag.Read(e.DataTransfer, files); // null for an ordinary file drag
+            if (_web != null) Bloom(_web.Files, _web);
+            else if (files == null || files.Count == 0) { e.DragEffects = DragDropEffects.None; Hide(); return; }
+            else Bloom(files);
         }
         Feedback(e);
     }
@@ -293,6 +373,7 @@ public sealed class OverlayController
     {
         int idx = _win.View.HitTestPetal(e.GetPosition(_win));
         _win.View.SetHover(idx);
+        SyncAhead();
         // never MOVE: with Shift held a file manager would delete the source after a "move" drop
         e.DragEffects = idx >= 0 ? DragDropEffects.Copy : DragDropEffects.None;
     }
@@ -300,6 +381,7 @@ public sealed class OverlayController
     void OnDragLeave(object? sender, DragEventArgs e)
     {
         _win.View.SetHover(-1);
+        SyncAhead();
         if (_state == State.Drag) _leaveTimer.Start();
     }
 
@@ -309,7 +391,10 @@ public sealed class OverlayController
         _releaseTimer.Stop();
         if (_state != State.Drag) { Hide(); return; }
         e.DragEffects = DragDropEffects.Copy;
-        Launch(_win.View.HitTestPetal(e.GetPosition(_win)));
+        int idx = _win.View.HitTestPetal(e.GetPosition(_win));
+        // the picture a browser drags lives only as long as the drop: copy it out now
+        if (_web != null && idx >= 0 && idx < _win.View.CurrentActions.Count) _web.Grab(new AvaloniaDrag(e.DataTransfer));
+        Launch(idx);
     }
 
     // ---------- click mode ----------
@@ -327,7 +412,15 @@ public sealed class OverlayController
         var actions = _win.View.CurrentActions;
         if (idx < 0 || idx >= actions.Count) { Hide(); return; }
         var action = actions[idx];
-        var files = _files;
+        var offer = _offer;
+        _offer = null;
+        // worked out already (or still working on it)? the job picks that up instead of starting over
+        var ready = _ahead?.Take(action);
+        DisposeAhead();
+        // from a browser: the file first (out of the drag, or downloaded), kept in Downloads, then the petal on it there
+        if (_web != null) action = _web.Wrap(action);
+        // a pasted picture moves from temp into Pictures/Convertino only now, when a petal uses it
+        var files = offer?.Use() ?? _files;
         var where = new ScreenPoint(_rect.X + _rect.Width / 2, _rect.Y + _rect.Height / 2);
         _state = State.Leaving;
         _seedTimeout.Stop();
@@ -339,6 +432,7 @@ public sealed class OverlayController
             _win.View.Collapse();
             _ = Task.Delay(220).ContinueWith(_ => Dispatcher.UIThread.Post(() => { if (session == _session) FinishHide(); }));
         }
-        await Jobs.Start(action, files, where);
+        await Jobs.Start(action, files, where, ready);
+        offer?.Closed(used: true);
     }
 }

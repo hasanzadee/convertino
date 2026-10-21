@@ -51,7 +51,7 @@ public static class EditorHost
         var src = job.Inputs[0];
         MagickImage img;
         try { img = await Task.Run(() => Images.Load(src)); }
-        catch (Exception ex) { throw new IOException("Couldn't open this image: " + ex.Message, ex); }
+        catch (Exception ex) { throw new IOException(L.En("Couldn't open this image: {0}", ex.Message), ex); }
         using (img)
         {
             var editor = make(src, img);
@@ -228,17 +228,17 @@ public sealed class CropEditor : Editor
         Update();
         var chips = new WrapPanel();
         void R(string label, double? r, bool on = false) => chips.Children.Add(Kit.Chip(label, "ratio", on, () => _surface.ApplyRatio(r)));
-        R("Free", null, true); R("Original", img.Width / (double)img.Height); R("1:1", 1); R("4:3", 4 / 3.0); R("3:2", 1.5); R("16:9", 16 / 9.0); R("9:16", 9 / 16.0);
+        R(L.T("Free"), null, true); R(L.T("Original"), img.Width / (double)img.Height); R("1:1", 1); R("4:3", 4 / 3.0); R("3:2", 1.5); R("16:9", 16 / 9.0); R("9:16", 9 / 16.0);
         var d = new DockPanel();
         DockPanel.SetDock(_size, Dock.Right);
         d.Children.Add(_size);
-        d.Children.Add(new StackPanel { Orientation = Orientation.Horizontal, Children = { Kit.Label("Aspect"), chips } });
+        d.Children.Add(new StackPanel { Orientation = Orientation.Horizontal, Children = { Kit.Label(L.T("Aspect")), chips } });
         _controls = d;
     }
 
     void Update() => _size.Text = $"{(int)Math.Round(_surface.Crop.Width)} × {(int)Math.Round(_surface.Crop.Height)} px";
     internal override void DevPrepare() => _surface.Crop = new Rect(_img.Width * .25, _img.Height * .25, _img.Width * .5, _img.Height * .4);
-    public override string Title => "Crop";
+    public override string Title => L.T("Crop");
     public override Control Preview => _surface;
     public override Control Controls => _controls;
     public override void Reset() { _surface.Crop = new Rect(0, 0, _img.Width, _img.Height); _surface.Ratio = null; Update(); _surface.InvalidateVisual(); }
@@ -309,7 +309,7 @@ public sealed class RedactEditor : Editor
     readonly string _src;
     readonly MagickImage _img;
     readonly RedactSurface _surface = new();
-    readonly TextBlock _count = Kit.Label("Drag over anything private");
+    readonly TextBlock _count = Kit.Label(L.T("Drag over anything private"));
     readonly Button _detect;
     readonly Control _controls;
 
@@ -321,8 +321,8 @@ public sealed class RedactEditor : Editor
         _surface.ImageSize = new Size(img.Width, img.Height);
         using (var px = EditOps.Pixelate(preview, EditOps.BlockFor(preview))) _surface.Pixelated = Px.ToBitmap(px);
         using (var bl = EditOps.BlurAll(preview)) _surface.Blurred = Px.ToBitmap(bl);
-        _surface.Changed += () => _count.Text = _surface.Boxes.Count == 0 ? "Drag over anything private" : $"{_surface.Boxes.Count} areas · right-click removes";
-        _detect = Kit.Btn("Find text", async () => await Detect());
+        _surface.Changed += () => _count.Text = _surface.Boxes.Count == 0 ? L.T("Drag over anything private") : L.N(_surface.Boxes.Count, "{0} area", "{0} areas") + " · " + L.T("right-click removes");
+        _detect = Kit.Btn(L.T("Find text"), async () => await Detect());
         var d = new DockPanel();
         DockPanel.SetDock(_count, Dock.Right);
         d.Children.Add(_count);
@@ -331,12 +331,12 @@ public sealed class RedactEditor : Editor
             Orientation = Orientation.Horizontal,
             Children =
             {
-                Kit.Label("Style"),
-                Kit.Chip("Pixelate", "rs", true, () => { _surface.Mode = RedactStyle.Pixelate; _surface.InvalidateVisual(); }),
-                Kit.Chip("Blur", "rs", false, () => { _surface.Mode = RedactStyle.Blur; _surface.InvalidateVisual(); }),
-                Kit.Chip("Black", "rs", false, () => { _surface.Mode = RedactStyle.Black; _surface.InvalidateVisual(); }),
+                Kit.Label(L.T("Style")),
+                Kit.Chip(L.T("Pixelate"), "rs", true, () => { _surface.Mode = RedactStyle.Pixelate; _surface.InvalidateVisual(); }),
+                Kit.Chip(L.T("Blur"), "rs", false, () => { _surface.Mode = RedactStyle.Blur; _surface.InvalidateVisual(); }),
+                Kit.Chip(L.T("Black"), "rs", false, () => { _surface.Mode = RedactStyle.Black; _surface.InvalidateVisual(); }),
                 _detect,
-                Kit.Btn("Undo", Undo),
+                Kit.Btn(L.T("Undo"), Undo),
             },
         });
         _controls = d;
@@ -347,7 +347,7 @@ public sealed class RedactEditor : Editor
     async Task Detect()
     {
         _detect.IsEnabled = false;
-        _detect.Content = "Reading…";
+        _detect.Content = L.T("Reading…");
         try
         {
             double k = 1;
@@ -365,15 +365,15 @@ public sealed class RedactEditor : Editor
                 _surface.Boxes.Add(new Rect(line.X / k - pad, line.Y / k - pad, line.Width / k + pad * 2, line.Height / k + pad * 2));
             }
             _surface.InvalidateVisual();
-            _count.Text = res.Lines.Count == 0 ? "No text found" : $"{_surface.Boxes.Count} areas · right-click removes";
+            _count.Text = res.Lines.Count == 0 ? L.T("No text found") : L.N(_surface.Boxes.Count, "{0} area", "{0} areas") + " · " + L.T("right-click removes");
         }
-        catch (Exception ex) { _count.Text = ex.Message; }
-        _detect.Content = "Find text";
+        catch (Exception ex) { _count.Text = L.Saved(ex.Message); }
+        _detect.Content = L.T("Find text");
         _detect.IsEnabled = true;
     }
 
     internal override void DevPrepare() => _surface.Boxes.Add(new Rect(_img.Width * .1, _img.Height * .1, _img.Width * .4, _img.Height * .2));
-    public override string Title => "Redact";
+    public override string Title => L.T("Redact");
     public override Control Preview => _surface;
     public override Control Controls => _controls;
     public override void Reset() { _surface.Boxes.Clear(); _surface.InvalidateVisual(); }
@@ -419,18 +419,18 @@ public sealed class AdjustEditor : Editor
             return row;
         }
         var grid = new Avalonia.Controls.Primitives.UniformGrid { Columns = 3 };
-        grid.Children.Add(S("Brightness", -60, 60, p => p.Brightness, (p, v) => p with { Brightness = v }));
-        grid.Children.Add(S("Contrast", -60, 60, p => p.Contrast, (p, v) => p with { Contrast = v }));
-        grid.Children.Add(S("Saturation", -100, 100, p => p.Saturation, (p, v) => p with { Saturation = v }));
-        grid.Children.Add(S("Warmth", -100, 100, p => p.Warmth, (p, v) => p with { Warmth = v }));
-        grid.Children.Add(S("Sharpness", 0, 100, p => p.Sharpness, (p, v) => p with { Sharpness = v }));
-        grid.Children.Add(S("Vignette", 0, 100, p => p.Vignette, (p, v) => p with { Vignette = v }));
+        grid.Children.Add(S(L.T("Brightness"), -60, 60, p => p.Brightness, (p, v) => p with { Brightness = v }));
+        grid.Children.Add(S(L.T("Contrast"), -60, 60, p => p.Contrast, (p, v) => p with { Contrast = v }));
+        grid.Children.Add(S(L.T("Saturation"), -100, 100, p => p.Saturation, (p, v) => p with { Saturation = v }));
+        grid.Children.Add(S(L.T("Warmth"), -100, 100, p => p.Warmth, (p, v) => p with { Warmth = v }));
+        grid.Children.Add(S(L.T("Sharpness"), 0, 100, p => p.Sharpness, (p, v) => p with { Sharpness = v }));
+        grid.Children.Add(S(L.T("Vignette"), 0, 100, p => p.Vignette, (p, v) => p with { Vignette = v }));
         var row2 = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 6, 0, 0) };
-        row2.Children.Add(Kit.Label("Size"));
+        row2.Children.Add(Kit.Label(L.T("Size")));
         foreach (var pct in new[] { 100, 75, 50, 25 })
             row2.Children.Add(Kit.Chip(pct == 100 ? $"100% · {img.Width}×{img.Height}" : $"{pct}%", "scale", pct == 100, () => { _p = _p with { Scale = pct }; Kick(); }));
-        row2.Children.Add(Kit.Icon("rotate", "Rotate right", () => { _p = _p with { Rotate = (_p.Rotate + 90) % 360 }; Kick(); }));
-        row2.Children.Add(Kit.Icon("flip", "Flip horizontal", () => { _p = _p with { FlipH = !_p.FlipH }; Kick(); }));
+        row2.Children.Add(Kit.Icon("rotate", L.T("Rotate right"), () => { _p = _p with { Rotate = (_p.Rotate + 90) % 360 }; Kick(); }));
+        row2.Children.Add(Kit.Icon("flip", L.T("Flip horizontal"), () => { _p = _p with { FlipH = !_p.FlipH }; Kick(); }));
         _controls = new StackPanel { Children = { grid, row2 } };
     }
 
@@ -453,7 +453,7 @@ public sealed class AdjustEditor : Editor
     }
 
     internal override void DevPrepare() => _p = _p with { Brightness = 15, Contrast = 20, Saturation = 30, Warmth = 40, Sharpness = 50, Vignette = 60, Rotate = 90, Scale = 50 };
-    public override string Title => "Adjust";
+    public override string Title => L.T("Adjust");
     public override Control Preview => _surface;
     public override Control Controls => _controls;
     public override void Reset() { _p = AdjustParams.Default; foreach (var s in _sliders) s.Value = 0; _ = Render(); }

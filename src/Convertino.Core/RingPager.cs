@@ -25,6 +25,8 @@ public sealed class RingPager
     public int Count => _rings.Count;
     public IReadOnlyList<PetalAction> Current => _rings.Count == 0 ? [] : _rings[Page].Petals;
     public string Name => _rings.Count == 0 ? "" : _rings[Page].Name;
+    /// <summary>The English name, for the log.</summary>
+    public string Key => _rings.Count == 0 ? "" : _rings[Page].Key;
 
     public void Reset(Pages pages) { _rings = pages.Rings; Page = 0; _triggerPending = false; }
 

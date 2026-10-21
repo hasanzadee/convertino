@@ -32,8 +32,11 @@ Converting a file usually means opening an app, finding *Export…*, picking a f
 
 | | |
 |---|---|
+| 🔮 **Live preview** | Hover a petal and the centre shows the result — the B&W version, the square, the cut-out on a checkerboard — and every format petal shows what the file would weigh (`AVIF 127 KB`, `PNG 4.4 MB`). Estimated within a blink, exact a moment later: the petals run while you aim, so the drop is instant |
+| 📋 **No drag needed** | <kbd>Win</kbd>+<kbd>Shift</kbd>+<kbd>X</kbd> opens the flower for **whatever you copied**: files from Explorer / Finder / a file manager, a picture, text or a link. <kbd>Win</kbd>+<kbd>Shift</kbd>+<kbd>A</kbd> **captures an area of the screen** and opens the flower for it (Copy, Text, Read QR, Annotate, JPG, PDF…). Every result card has **Copy**, straight back to the clipboard ([more](#clipboard--screenshots)) |
 | ✿ **Rings** | **Convert** (formats), **Tools** (editors & actions) and, for images, **More tools** (one tap: Half, Full HD, B&W) and **More formats** (TIFF, ICO, BMP, JPEG XL, QOI…). Tap the key again, press <kbd>Tab</kbd> or turn the mouse wheel mid-drag to flip between them. |
 | 🖼 **Images** | PNG · JPG · WEBP · AVIF · GIF · PDF · TIFF · ICO · BMP · JPEG XL · QOI, from anything ImageMagick reads (HEIC, PSD, RAW, SVG…); **Half**, **Full HD** (fit in 1920 × 1080) and **B&W** in one tap |
+| 🌐 **From the browser** | Drag a picture, a file or a link straight out of Chrome, Edge, Firefox or Safari and tap <kbd>Shift</kbd>: **Save** it, convert it, edit it — or for a link **Download**, **QR** and **Shortcut**. Results land in Downloads, marked as coming from the internet |
 | 📄 **Documents** | PDF ⇄ DOCX, DOCX/XLSX/PPTX → PDF, slides → PNG, Markdown → HTML/PDF/DOCX (Microsoft Office or LibreOffice) |
 | 🧾 **Data** | JSON ⇄ YAML ⇄ TOML ⇄ XML, JSON / CSV ⇄ XLSX (every sheet), CSV / XLSX → Markdown and HTML tables, JSON Lines, Pretty / Minify for JSON, XML and CSS; no office suite needed ([rules](docs/data-formats.md)) |
 | 🎞 **Video & audio** | MP4 · WEBM · GIF · MOV · MKV · MP3 · WAV · FLAC · OGG · OPUS · M4A, plus compress, 720p, mute, grab frame, loudness, trim silence |
@@ -46,13 +49,22 @@ Converting a file usually means opening an app, finding *Export…*, picking a f
 | 🗜 **Compress** | Smart image compression with the savings shown: `1.2 MB → 340 KB (−72%)` |
 | 📑 **PDF tools** | Merge, split, rotate, page numbers, cover image, extract every image at original quality, compress (with Ghostscript) |
 | 📥 **Watch folders** | New files in a folder convert by themselves into its `Converted` subfolder (panel, or `convertino watch`) |
+| 🧪 **Recipes** | Chain petals into one: *Web-ready* = Full HD → WEBP → Clean, *Email PDF* = PDF → Compress, *Insta square* = Square → JPG. They get a ring of their own right after Convert; make them in the panel (one-click templates or a small builder), with `convertino recipe add` or in `recipes.json`. Only the final result lands ([how](#recipes-and-your-own-commands)) |
+| ⚙️ **Your commands** | Your own programs as petals (`optipng`, `ffmpeg`, an upload script…) with `{in}` / `{out}` placeholders, run without a shell so file names can't inject anything; they can be recipe steps too |
+| 📂 **Save results** | Next to the original, in a subfolder, or in one fixed folder, for every petal; a recipe can pick its own place |
 | 🗃 **Archives** | Extract ZIP · 7Z · RAR · TAR · TAR.GZ / BZ2 / XZ · GZ · BZ2 · XZ into a new folder, refusing `../` and absolute paths, skipping links and stopping decompression bombs; pack folders as ZIP · 7Z · TAR.GZ |
 | 🧰 **File tools** | Split big files into 25 / 50 / 100 MB… parts and join the `.001` back; find duplicates (an HTML report, nothing is deleted); verify a `.sha256` / `SHA256SUMS` (*Matches ✓*); copy MD5 · SHA-1 · SHA-256 · SHA-512 |
 | 🧰 **Image tools** | One tap, no questions: **Messenger** (≤ 2560 px JPEG, GPS gone), **Square** (blurred fill), **Rounded** (corners + shadow), **Palette**, **Favicon** set, **Copy** the picture itself, **Read QR** / make a **QR** from a text or link file; for several images **Contact sheet**, **Slideshow** (GIF + WEBP) and **Compare** |
 | 📦 **Everything else** | Copy path, data URI |
 | 🎨 **Themes** | Catppuccin **Mocha** & **Latte**, **Sunset**, **Graphite** |
+| 🌍 **Languages** | English · Русский · Azərbaycanca · Türkçe · Українська · Deutsch · Español · Français · Português (Brasil) · 简体中文 · 日本語 — follows your system language, switch any time under **Language** in the panel or the tray / menu-bar menu |
 | 📊 **Activity** | The tray / menu-bar panel charts your last two weeks: files handled, space saved, day streak, favourite actions |
-| ⌨️ **CLI** | `convertino convert IMG_0042.HEIC --to jpg` — the same engine without the UI |
+| ⌨️ **CLI** | `convertino convert IMG_0042.HEIC --to jpg` — the same engine without the UI; `convertino clip` saves what's on the clipboard |
+
+<div align="center">
+<img src="docs/live-preview.png" width="100%" alt="Live preview: the WEBP petal shows 249 KB (−84%) in the centre with the other formats' sizes on their petals; Cut out shows the result on a checkerboard; Square shows 3840×3840 · 1.04 MB" />
+<sub>Live preview: real sizes on the format petals · the cut-out before you drop · Square's result and size</sub>
+</div>
 
 <div align="center">
 <img src="docs/themes.png" width="100%" alt="The four themes: Mocha, Sunset (tools ring), Latte (PDF ring), Graphite" />
@@ -97,7 +109,7 @@ sudo pacman -S ffmpeg poppler tesseract tesseract-data-eng libreoffice-fresh   #
 
 <img src="docs/linux-tools.png" width="300" align="right" alt="The Tools ring on Linux (Avalonia build) over a file manager" />
 
-> **X11 vs Wayland.** The drag + <kbd>Shift</kbd> gesture needs to see the pointer and keyboard globally, which X11 allows and Wayland (by design) does not. On a Wayland session it works over X11/XWayland apps; everywhere else use **right-click → Convertino** (or `convertino menu <files>`) — same flower, click a petal.
+> **X11 vs Wayland.** The drag + <kbd>Shift</kbd> gesture needs to see the pointer and keyboard globally, which X11 allows and Wayland (by design) does not. On a Wayland session it works over X11/XWayland apps; everywhere else use **right-click → Convertino** (or `convertino menu <files>`), or copy the files and open the [clipboard flower](#clipboard--screenshots) — same flower, click a petal.
 
 ### macOS 13 or later (Apple silicon or Intel)
 
@@ -120,7 +132,7 @@ brew install --cask libreoffice      # Word / Excel / PowerPoint petals
 
 PDF rendering and OCR use what's built into macOS (CoreGraphics, the Vision framework), so they need nothing extra.
 
-**Permissions.** Convertino watches the mouse buttons and the trigger key by polling their state (no keyboard tap). That works without any permission (seen on a MacBook M4 with macOS 27 and in CI), and no Accessibility or Screen Recording access is needed either: the frosted glass is the system's own blur. If the flower doesn't open on your Mac, macOS may be holding back the Shift key: click the first-start card (or *Input Monitoring…* in the menu you get by right-clicking the menu-bar icon), switch Convertino on in *System Settings → Privacy & Security → Input Monitoring*, then quit and reopen Convertino.
+**Permissions.** Convertino watches the mouse buttons and the trigger key by polling their state (no keyboard tap). That works without any permission (seen on a MacBook M4 with macOS 27 and in CI), and no Accessibility or Screen Recording access is needed either: the frosted glass is the system's own blur. Only *Capture an area* asks for Screen Recording, the first time you use it. If the flower doesn't open on your Mac, macOS may be holding back the Shift key: click the first-start card (or *Input Monitoring…* in the menu you get by right-clicking the menu-bar icon), switch Convertino on in *System Settings → Privacy & Security → Input Monitoring*, then quit and reopen Convertino.
 
 **Gatekeeper.** Convertino isn't signed with an Apple Developer ID or notarized. `install.sh` clears the download quarantine for the copy it installs, so it opens normally. If you move `Convertino.app` somewhere yourself instead, macOS says it *can't verify* the app: click *Done*, open *System Settings → Privacy & Security*, scroll down to *"Convertino" was blocked…* and click **Open Anyway** (once). Or, in Terminal: `xattr -dr com.apple.quarantine /path/to/Convertino.app`.
 
@@ -140,13 +152,18 @@ convertino model install
 |---|---|
 | Drag file(s) · tap <kbd>Shift</kbd> | The flower opens under the cursor on the **Convert** ring |
 | <kbd>Shift</kbd> again, <kbd>Tab</kbd> or the mouse wheel | Next ring: **Convert** → **Tools** → **More tools** → **More formats** (images) → Convert; the centre names the ring for a moment. <kbd>Shift</kbd>+<kbd>Tab</kbd> or wheel up goes back, so the rarer formats are one step back from Convert |
-| Drop on a petal | Runs it; the result appears beside the source and a card shows the outcome |
+| Hover a petal *(pictures)* | The centre shows the result and its size; format petals show what each file would weigh — `≈` while estimated, exact once worked out |
+| Drop on a petal | Runs it; the result appears beside the source and a card shows the outcome. If the preview already worked it out, it's there the instant you drop |
 | Drop on the centre · drag away · <kbd>Esc</kbd> | Cancel — nothing happens, the flower fades |
 | Double-tap <kbd>Shift</kbd> in Explorer / on the desktop *(Windows)* | Same flower for the selected files — click a petal |
 | Right-click → **Send to → Convertino** *(Windows)* | Same flower for the selected files |
 | Right-click → **Convertino** *(Linux file managers)* | Same flower for the selected files |
 | Right-click → **Quick Actions → Convertino** *(macOS Finder)* | Same flower for the selected files |
-| Click the result card | Open the file · folder icon reveals it · × cancels a running job |
+| <kbd>Win</kbd>+<kbd>Shift</kbd>+<kbd>X</kbd> (<kbd>⌃</kbd><kbd>⌥</kbd><kbd>X</kbd> on macOS) | The flower for what's on the clipboard, at the cursor — click a petal |
+| <kbd>Win</kbd>+<kbd>Shift</kbd>+<kbd>A</kbd> (<kbd>⌃</kbd><kbd>⌥</kbd><kbd>A</kbd> on macOS) | Capture an area of the screen, then its flower where you let go |
+| Click the result card | Open the file · folder icon reveals it · copy icon puts the result on the clipboard · × cancels a running job |
+
+The interface speaks your system's language when there's a translation for it (English otherwise). To pick another one, open **Language** in the tray panel or the tray / menu-bar menu: the panel, the menus and the next flower switch at once, no restart. The command line always speaks English.
 
 <kbd>Shift</kbd> is the default. To use another key, pick it under **Open with** in the tray panel or the tray / menu-bar menu: <kbd>Shift</kbd>, <kbd>Shift</kbd> twice, <kbd>Ctrl</kbd> or <kbd>Alt</kbd> (<kbd>⌃ Control</kbd> / <kbd>⌥ Option</kbd> on macOS). The gestures above then use that key.
 
@@ -154,10 +171,41 @@ The wheel flips the rings while the pointer is over the flower; a touchpad swipe
 
 While dragging over a petal, the caption under the Explorer drag image says what will happen (*Convert to DOCX*, *Crop*…). Convertino always copies — even though <kbd>Shift</kbd> normally means *move*, the source file is never touched.
 
+### Dragging from the browser
+
+Drag a picture, a file link or any link out of a web page, tap <kbd>Shift</kbd> and the flower opens just like for a file. Its petals are picked before anything is downloaded, from what the drag says (the picture's type, the file name, the link's extension): a picture gets **Save** followed by the image rings, a PDF link gets **Save** and the PDF petals, and a link to a page gets **Download** · **QR** (a QR code of the link) · **Shortcut** (`.url` on Windows, `.webloc` on macOS, a `.desktop` link on Linux).
+
+Drop on a petal and Convertino takes the original file the browser hands over with the drag (most pictures need no download at all: a virtual file on Windows, a file promise on macOS, a direct save on Linux), or downloads it: http, https and `data:` only, up to 2 GB, no cookies or passwords sent, every redirect checked, with progress and cancel on the card. The real type is read from the file itself, so a `photo.jpg` that is a PNG becomes `photo.png`, and file names from the server lose folders, device names (`CON`) and look-alike tricks. The server can't turn what you picked into another type: a program sent in place of a picture is refused, and program or Explorer-active types you didn't see before the drop (`.exe`, `.url`, `.scf`, `.library-ms` …) are kept as `name.ext.download`. Links from the web never reach your local network. The file is kept in your **Downloads** folder and the petal's result lands beside it; both are marked as coming from the internet (Mark-of-the-Web on Windows, quarantine on macOS, `user.xdg.origin.url` on Linux). A page that needs a sign-in says so: *save the file first* and drag it from there.
+
+| Browser | Windows | Linux (X11) | macOS *(beta)* |
+|---|---|---|---|
+| **Chrome · Edge** | pictures (taken from the drag), links, attachments that pages offer for dragging (`DownloadURL`) | pictures (taken from the drag), links | pictures (file promise, else the picture's address), links |
+| **Firefox** | pictures (taken from the drag), links | pictures (Firefox saves the original itself), links | pictures, links |
+| **Safari** | | | pictures (file promise, else the picture's address), links |
+
+On Windows, files dragged out of Outlook (attachments, and mails as `.msg`) open the flower the same way.
+
 <div align="center">
 <img src="docs/addbg-example.png" width="720" alt="Example output of the Add BG editor: a screenshot on a gradient with a window frame, rounded corners and shadow" />
 <br/><sub>Add BG: any screenshot on a gradient, with padding, corners, shadow and an optional window frame</sub>
 </div>
+
+## Clipboard & screenshots
+
+No file to drag? Two global shortcuts open the same flower anyway (on Linux, <kbd>Win</kbd> is <kbd>Super</kbd>):
+
+| Shortcut | What you get |
+|---|---|
+| <kbd>Win</kbd>+<kbd>Shift</kbd>+<kbd>X</kbd> · macOS <kbd>⌃ Control</kbd>+<kbd>⌥ Option</kbd>+<kbd>X</kbd> | The flower for **what's on the clipboard**, at the cursor. **Files** copied in Explorer, Finder or a file manager get their usual flower — handy on Wayland or whenever drag + key is awkward. A **picture** (a copied image, a screenshot tool's output) gets the image flower. **Text** gets TXT · MD · QR, plus JSON when it is JSON and CSV for cells copied from a spreadsheet; a **link** gets a QR code first. A password copied from a password manager shows as *Hidden text · 16 chars*, never as itself. |
+| <kbd>Win</kbd>+<kbd>Shift</kbd>+<kbd>A</kbd> · macOS <kbd>⌃ Control</kbd>+<kbd>⌥ Option</kbd>+<kbd>A</kbd> | **Capture an area**: the screens dim, drag a rectangle (its size shows live), click for the whole screen, <kbd>Esc</kbd> or right-click to cancel. Works across monitors with different scaling. The capture is saved as PNG and the image flower opens where you let go, starting with a **Quick** ring: Copy · Text (OCR to the clipboard) · Read QR · Annotate · Crop · Redact · JPG · WEBP · PDF · Cut out. |
+
+- Captures, and pasted pictures once you pick a petal, are real files, not temp: `Pictures/Convertino/Screenshot 2026-10-20 14.32.05.png`, `Clipboard 2026-10-20 14.32.05.png` (the Pictures folder wherever Windows or `XDG_PICTURES_DIR` put it). Results land next to them, as always. Until then a pasted picture waits in a private temp folder and is gone when the flower closes unused, so nothing reaches a synced Pictures folder just because the flower opened. Copied text stays in memory until a petal writes its own result.
+- Password managers mark what they copy (KeePass, KeePassXC, Bitwarden, 1Password …: `ExcludeClipboardContentFromMonitorProcessing` on Windows, `org.nspasteboard.ConcealedType` on macOS, `x-kde-passwordManagerHint` on Linux). Such text is shown as *Hidden text* with its length, and cards never quote it.
+- Every result card has a **copy** button: a picture goes onto the clipboard as a picture, a text file as its text, anything else as files to paste into a folder or a chat.
+- **Why these keys:** the obvious ones are taken — <kbd>Win</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd> / <kbd>V</kbd> / <kbd>C</kbd> / <kbd>T</kbd> belong to Snipping Tool and PowerToys, <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+letter to browsers, Office and IDEs, and <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+letter *is* <kbd>AltGr</kbd> on Polish, German, Czech… keyboards, where it types ą, €, @. On macOS, <kbd>⌘</kbd>+<kbd>⇧</kbd>+letter belongs to apps and <kbd>⌥</kbd> alone types characters, so it's <kbd>⌃</kbd><kbd>⌥</kbd>.
+- **Change or switch off** either shortcut under *Clipboard & screenshots* in the tray / menu-bar panel (click a shortcut to step through the alternatives: <kbd>Win</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd>, <kbd>Q</kbd>; macOS <kbd>⌃</kbd><kbd>⌥</kbd><kbd>V</kbd>, <kbd>S</kbd>), or set any combination in `settings.json` (`"ClipboardHotkey": "Super+Shift+J"`, `"CaptureHotkey"`, `…HotkeyOn`) — with <kbd>Ctrl</kbd> or <kbd>Win</kbd> in it, since <kbd>Shift</kbd> or <kbd>Alt</kbd> alone with a letter types characters. If another app already owns a shortcut, a card and the panel say so. While Convertino is paused (*Enabled* off) the shortcuts are released. On macOS the letter follows your keyboard layout (on AZERTY, <kbd>⌃</kbd><kbd>⌥</kbd><kbd>A</kbd> is the A key). The tray / menu-bar menu has both actions too.
+- **Linux:** the shortcuts are X11 key grabs, and the capture freezes the screen with XGetImage. On **Wayland**, the desktop only lets its own settings bind keys: add shortcuts there for `convertino menu --clipboard` and `convertino menu --capture`. The capture then uses the desktop's own picker: Spectacle on KDE, `gnome-screenshot` on GNOME, `grim` + `slurp` on Sway, Hyprland and other wlroots compositors, otherwise whichever of them or Flameshot is installed. Reading the clipboard from the command line needs `wl-clipboard` (Wayland) or `xclip` (X11); the app itself needs neither on X11.
+- **macOS:** the capture is macOS's own `screencapture -i`; the first time, macOS asks for *Screen Recording* permission. The shortcuts need no permission.
 
 ## What's on each ring
 
@@ -184,11 +232,58 @@ While dragging over a petal, the caption under the Explorer drag image says what
 | **Folder** | Zip · 7Z · TAR.GZ · Duplicates · Path · Copy | |
 | **Anything else** | Zip · Path · SHA-256 · Base64 | Split into 25 / 50 / 100 MB… *(files over 10 MB)* · MD5 · SHA-1 · SHA-512 |
 | **Several files** | the ring for their kind, plus Duplicates; mixed kinds: Zip · 7Z · TAR.GZ · Duplicates · Path · Copy | |
+| **Picture or file from a browser** | Save, then the ring for its kind | the ring for its kind |
+| **Link from a browser** | Download · QR · Shortcut | |
 
 Images (one or several) also get **More tools**: Half · Full HD · B&W, and **More formats**: HEIC *(where the codec allows)* · TIFF · ICO · BMP · JXL · QOI. Half, Full HD and B&W keep the source's format and write beside it: `photo (2016x1512).jpg`, `photo (1920x1080).jpg`, `photo (grayscale).jpg`. Full HD only ever shrinks (portrait images fit in 1080 × 1920), and animated GIF / WebP stay animated. No ring shows more than 10 petals; a longer list carries on in a second ring of the same name.
 
 Petals only appear when the engine behind them is available (e.g. office formats need Microsoft Office or LibreOffice).
 Plain-text files of any kind (TXT, Markdown, CSV/TSV, JSON, YAML, XML, INI, HTML, scripts, subtitles…) also get **UTF-8** and **LF** or **CRLF** (whichever the file doesn't use) at the front of their tools; files with NUL bytes are treated as binary and never get them.
+
+## Recipes and your own commands
+
+A **recipe** is a chain of petals that shows up as one petal, on a **Recipes** ring right after Convert (one more tap of the key, <kbd>Tab</kbd> or a turn of the wheel). Drop a photo on *Web-ready* and you get `photo (Web-ready).webp`: shrunk to fit Full HD, saved as WEBP, metadata gone. The steps work on copies in a temporary folder, so nothing half-done appears next to your files and only the final result lands; cancelling cleans up, and a step that fails says which one it was (*Web-ready stopped at step 2: WEBP*). The ring only shows the recipes whose every step works on the files you're dragging.
+
+Make one in the panel (**Recipes → New recipe…**: pick a kind of file, add steps — only those that can take the previous step's result are offered — then a name and an icon), click a template (*Web-ready*, *Email PDF*, *Insta square*, *Podcast*; without Ghostscript *Email PDF* compresses the pictures before they go into the PDF), or from the command line:
+
+```bash
+convertino recipe add Web-ready --steps fithd,to-webp,meta           # for images: worked out from the steps
+convertino recipe add "Email PDF" --steps to-pdf,compress --for jpg,png,heic --out Mail
+convertino recipe list
+convertino recipe run Web-ready *.jpg --out Web                        # or: convertino run recipe-web-ready *.jpg
+convertino recipe remove Web-ready
+```
+
+Steps are the petal ids `convertino actions <file>` lists. Each one has to work on what the step before it makes (an image tool can't follow → PDF, a clipboard petal like Path can only come last), or the recipe isn't saved.
+
+**Custom commands** put your own programs on the same ring. They live in `recipes.json`, next to the settings (**Recipes → recipes.json** in the panel opens it; comments and trailing commas are fine):
+
+```jsonc
+{
+  "recipes": [
+    { "name": "Web-ready", "icon": "globe", "steps": ["fithd", "to-webp", "meta"], "for": ["image"] },
+    { "name": "Email PDF", "icon": "send", "steps": ["to-pdf", "compress"], "for": ["jpg", "png"], "out": "Mail" },
+    { "name": "Tiny PNG", "steps": ["cmd-optipng", "to-webp"], "for": ["png"] }
+  ],
+  "commands": [
+    { "name": "optipng", "for": ["png"], "program": "optipng", "args": ["-o5", "-out", "{out}", "{in}"], "output": "{name}.min.png" },
+    { "name": "Opus", "icon": "volume", "for": ["audio"], "program": "ffmpeg",
+      "args": ["-i", "{in}", "-c:a", "libopus", "-b:a", "96k", "{out}"], "output": "{name}.opus", "timeout": 600 },
+    { "name": "Upload", "program": "/usr/local/bin/my-upload", "args": ["{in}"] }
+  ]
+}
+```
+
+- **`program`** is a name on `PATH` or a full path. **`args`** is a list, one entry per argument, with `{in}` (the file's full path), `{name}` (its name without the extension), `{ext}`, `{dir}` and `{out}` filled in. The arguments are handed to the program as they are, never through a shell, so a file called `a & del *.jpg` is only a name. For the same reason Windows only runs `.exe` and `.com` programs (batch files and scripts would go through `cmd.exe`): for a script, run e.g. `powershell.exe` with `-File script.ps1 {in}`, or `python.exe`.
+- **`output`** names the file it makes, relative to the file's folder; `{out}` is that path, with ` (2)` added if the name is taken (with `{out}` in `args` but no `output`, it's `name (Command).ext`). Leave both out for a command that makes no file, or that changes the file in place. A result has to be new: a command whose `output` is the file itself, the folder it's in, or a file that's already there (and no `{out}` in `args` to pick a free name) isn't run, so nothing of yours is ever treated as its result, moved or removed. A command that makes a file can also be a recipe step (`cmd-<name>`).
+- **`for`** takes extensions (`"png"`) or kinds (`"image"`, `"video"`, `"audio"`, `"pdf"`, `"document"`, `"text"`, `"data"`…); without it a command is offered for any file. **`timeout`** is in seconds (300 by default). The program runs once per file; what it prints goes to the log, and a non-zero exit shows its last line on the card.
+- **`icon`**: `recipe`, `terminal`, `globe`, `send`, `squareimg`, `compress`, `picture`, `volume`, `zip`, or any other petal's icon.
+
+> ⚠️ **`recipes.json` runs programs.** Convertino only ever reads it from your settings folder, never from the files you convert, and only you (or the panel and CLI on your behalf) write it. Don't paste in commands you don't understand.
+
+### Where results go
+
+**Save results** in the panel: *Beside it* (the default), in a *Subfolder* of the original's folder (`Converted`, or a name you type), or in a *Fixed folder*. It applies to every petal that makes a new file when you drop on it; a taken name gets ` (2)`. On the command line results stay next to the original unless you say otherwise with `--out <subfolder|full path>` (`convert`, `run`, `recipe run`). Editors, clipboard petals and *Extract here* / *Join* keep their place, and watch folders keep their own `Converted` folder. A recipe can choose its own: `"out": "Mail"` (a subfolder), `"beside"`, or a full folder path (`recipe add … --out`).
 
 ## Command line
 
@@ -206,10 +301,17 @@ convertino run extract backup.tar.xz              # → backup/
 convertino run split-100mb video.mkv              # → video.mkv.001, .002 …  (join: convertino run join video.mkv.001)
 convertino run verify ubuntu.iso SHA256SUMS       # Matches ✓ / Doesn't match ✗ (exit code 1)
 convertino actions report.pdf                     # what's possible for these files
+convertino preview photo.jpg --full               # what each petal would give: look + estimated, then exact size
 convertino menu photo.png notes.md                # open the flower for them (used by file-manager menus)
+convertino menu --clipboard                       # the flower for the clipboard (bind it to a key on Wayland); --capture: an area
+convertino clip                                   # save the clipboard: a picture → PNG, text → .txt, copied files listed
+convertino clip --to jpg --out ~/Desktop          # also webp, pdf…; text: md, json, csv, qr; copied files: --to <format> converts them
 convertino model install | status | remove        # the AI cut-out model
 convertino watch ~/Inbox --to pdf                 # convert every new file there, until Ctrl+C
 convertino watch add ~/Inbox --to webp            # same, run by the desktop app (also: watch list | remove)
+convertino recipe add Web-ready --steps fithd,to-webp,meta   # a chain of petals as one (also: recipe list | run | remove)
+convertino fetch https://example.com/a.heic --to jpg   # download into Downloads (same checks as a browser drop), then convert
+convertino fetch https://example.com/report --out .    # --out: another folder; the name comes from the server or the link
 ```
 
 On Windows the executable is `Convertino.exe` (in `%LOCALAPPDATA%\Programs\Convertino`); on macOS the installer puts a `convertino` wrapper for `~/Applications/Convertino.app` in `~/.local/bin`.
@@ -237,6 +339,7 @@ On Windows the executable is `Convertino.exe` (in `%LOCALAPPDATA%\Programs\Conve
 - **Catching the drop.** The flower is a transparent, topmost, non-activating window that *is* a drop target: Explorer's OLE drag (or the file manager's XDND drag, or Finder's drag session) hands it the file list the moment the cursor enters. Hit-testing follows the petal shapes; on Windows and X11 the corners pass drops through to whatever is underneath.
 - **The glass.** On Windows and X11 the screen behind the flower is captured just before it appears, downscaled, blurred and saturated on the CPU, then drawn under each petal — real frosted glass without compositor tricks. On macOS the window server does it: a behind-window `NSVisualEffectView`, masked to the petal shapes.
 - **The motion.** Every petal, the hub and the hover state are damped springs, so the bloom overshoots slightly and settles like something physical.
+- **Working ahead.** While the flower is open, the petals' own actions run in the background: first on a 640 px copy (and a 320 px one — two sizes give the curve to scale the file size up to the real picture), so the centre can show the result and the petals an estimate within ~0.1 s; then on a full copy in a temporary sandbox, for the exact size. Dropping on a petal whose run has finished just moves its result beside the source (named as a normal run would name it, and only if the source hasn't changed). Nothing is written next to your files until you drop, the sandbox is removed when the flower closes, and only one-tap actions that create a new file take part (no clipboard, no editors). Switch it off with **Live preview** in the panel.
 - **The work.** Actions run in the background and report progress to a card in the corner. Office conversions work on a private copy, so a document you have open is never touched.
 
 ```
@@ -272,7 +375,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for developer flags (render the flower to
 
 **An app I drop files into uses Shift too (Claude attaches a file on Shift + drop).** Set **Open with** to *Shift twice*. A single Shift then goes to the app, and a quick double-tap during the drag opens the flower. Or pick <kbd>Ctrl</kbd> or <kbd>Alt</kbd>.
 
-**Where are my settings?** `%APPDATA%\Convertino` on Windows, `~/.config/convertino` on Linux, `~/Library/Application Support/Convertino` on macOS (`settings.json`, `convertino.log`, `models/`).
+**Where are my settings?** `%APPDATA%\Convertino` on Windows, `~/.config/convertino` on Linux, `~/Library/Application Support/Convertino` on macOS (`settings.json`, `recipes.json`, `watch.json`, `convertino.log`, `models/`). Set `CONVERTINO_APPDATA` to a folder to keep them there instead (a portable copy, tests).
 
 **macOS?** Yes — see [Install](#macos-13-or-later-apple-silicon-or-intel). It's the newest port; it has been tested on a MacBook M4 with macOS 27, and CI runs it on Apple silicon and Intel.
 

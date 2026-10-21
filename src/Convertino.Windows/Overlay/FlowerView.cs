@@ -83,6 +83,16 @@ public sealed class FlowerView : FrameworkElement
     public BitmapSource? Thumb { get; set; }
     public double Progress { get; set; } = double.NaN;
 
+    /// <summary>Petal results worked out ahead (live preview), or null.</summary>
+    public Preview? Ahead { get; set; }
+
+    // the hub turns into a lens showing the hovered petal's result
+    Spring _lens = new(240, 26);
+    Spring _swap = new(260, 28);
+    BitmapSource? _lensImg, _lensPrev;
+    bool _lensAlpha, _prevAlpha, _working;
+    readonly Dictionary<string, (Preview.Look Look, BitmapSource Bmp)> _lensCache = [];
+
     Theme T => Theme.Current;
 
     public FlowerView()
@@ -109,6 +119,11 @@ public sealed class FlowerView : FrameworkElement
         HubTitle = HubSub = HubBadge = "";
         Progress = double.NaN;
         Mode = HubMode.Seed;
+        Ahead = null;
+        _lensCache.Clear();
+        _lensImg = _lensPrev = null;
+        _lens.Snap(0); _swap.Snap(1);
+        _working = false;
         _pageCount = 1; _page = 0; _ringName = ""; _ringUntil = 0;
         InvalidateVisual();
     }
@@ -160,6 +175,7 @@ public sealed class FlowerView : FrameworkElement
             });
         }
         _hover = -1;
+        UpdateLens(); // the old ring's picture goes with it
         Kick();
     }
 
@@ -171,6 +187,7 @@ public sealed class FlowerView : FrameworkElement
         _time = time;
         _petals.RemoveAll(p => p.Leaving);
         foreach (var p in _petals) { p.Bloom.Snap(p.Bloom.Target); p.Hover.Snap(p.Hover.Target); p.Delay = 0; }
+        _lens.Snap(_lens.Target); _swap.Snap(1); _lensPrev = null;
         InvalidateVisual();
     }
 
@@ -230,7 +247,45 @@ public sealed class FlowerView : FrameworkElement
         _hover = index;
         var live = _petals.Where(p => !p.Leaving).ToList();
         for (int i = 0; i < live.Count; i++) live[i].Hover.Target = i == index ? 1 : 0;
+        UpdateLens();
         Kick();
+    }
+
+    /// <summary>The preview worked something out: new sizes on the petals, maybe a picture for the lens.</summary>
+    public void AheadChanged()
+    {
+        UpdateLens();
+        Kick();
+    }
+
+    PetalAction? Hovered => _hover >= 0 && _hover < CurrentActions.Count ? CurrentActions[_hover] : null;
+
+    void UpdateLens()
+    {
+        var a = Hovered;
+        var look = a == null ? null : Ahead?.Get(a);
+        if (a == null || look?.Bgra == null) { _lens.Target = 0; return; } // the last picture stays while it fades
+        var bmp = LensBitmap(a.Id, look);
+        if (!ReferenceEquals(bmp, _lensImg))
+        {
+            // another petal: cross-fade; the same petal's sharper picture (its full run finished): just swap
+            if (_lensImg != null && _lensId != a.Id && _lens.X > 0.05) { _lensPrev = _lensImg; _prevAlpha = _lensAlpha; _swap.Snap(0); _swap.Target = 1; }
+            _lensImg = bmp;
+            _lensAlpha = look.Alpha;
+            _lensId = a.Id;
+        }
+        _lens.Target = 1;
+    }
+
+    string? _lensId;
+
+    BitmapSource LensBitmap(string id, Preview.Look look)
+    {
+        if (_lensCache.TryGetValue(id, out var c) && ReferenceEquals(c.Look, look)) return c.Bmp;
+        var bmp = BitmapSource.Create(look.W, look.H, 96, 96, PixelFormats.Bgra32, null, look.Bgra!, look.W * 4);
+        bmp.Freeze();
+        _lensCache[id] = (look, bmp);
+        return bmp;
     }
 
     #endregion
@@ -260,6 +315,11 @@ public sealed class FlowerView : FrameworkElement
         busy |= _hub.Step(dt);
         busy |= _nudge.Step(dt);
         busy |= _hubPulse.Step(dt);
+        busy |= _lens.Step(dt);
+        busy |= _swap.Step(dt);
+        if (_lens.X <= 0.002 && _lens.Target == 0) _lensImg = _lensPrev = null;
+        _working = Mode == HubMode.Info && Hovered is { } ha && Ahead?.Working(ha) == true;
+        if (_working) busy = true; // spinner on the hub's rim
         foreach (var p in _petals)
         {
             if (p.Delay > 0) { p.Delay -= dt; busy = true; continue; }
@@ -397,13 +457,24 @@ public sealed class FlowerView : FrameworkElement
         if (act.Icon != null)
         {
             DrawText(dc, Ui.Icons.Glyph(act.Icon) ?? "", IconFace, 19 * scale / g, lc.X, lc.Y - 9 * scale, k);
-            DrawText(dc, act.Label.ToUpperInvariant(), SmallFace, 9.2 * scale / g, lc.X, lc.Y + 12 * scale, k, spacing: true);
+            // letter-spaced capitals while they fit the petal, then unspaced, then smaller
+            var caps = PetalText.Caps(act.Label);
+            double room = PetalText.Room(n, p.Index, R1, R2, Gap);
+            bool spaced = PetalText.Spaceable(caps) && Width1(Spaced(caps), SmallFace) * 9.2 <= room;
+            DrawText(dc, caps, SmallFace, (spaced ? 9.2 : Fit(caps, SmallFace, 9.2, room, 6.5)) * scale / g, lc.X, lc.Y + 12 * scale, k, spacing: spaced);
         }
         else
         {
             bool hint = !string.IsNullOrEmpty(act.Hint);
-            DrawText(dc, act.Label, LabelFace, (act.Label.Length > 4 ? 14 : 16) * scale / g, lc.X, lc.Y - (hint ? 6 : 0) * scale, k);
-            if (hint) DrawText(dc, act.Hint, HintFace, 9.5 * scale / g, lc.X, lc.Y + 11 * scale, k, sub: true);
+            double room = PetalText.Room(n, p.Index, R1, R2, Gap);
+            // live preview: what this format would weigh, in accent when it beats the source
+            var look = Ahead?.Get(act);
+            string? size = look?.Bytes is long b ? (look.Exact ? "" : "≈") + Paths.HumanSize(b) : null;
+            double lift = size != null ? 6 : 0;
+            DrawText(dc, act.Label, LabelFace, Fit(act.Label, LabelFace, act.Label.Length > 4 ? 14 : 16, room, 10) * scale / g, lc.X, lc.Y - ((hint ? 6 : 0) + lift) * scale, k);
+            if (hint) DrawText(dc, act.Hint, HintFace, Fit(act.Hint, HintFace, 9.5, room, 7) * scale / g, lc.X, lc.Y + (11 - lift) * scale, k, sub: true);
+            if (size != null)
+                DrawText(dc, size, SmallFace, 9.5 * scale / g, lc.X, lc.Y + (hint ? 18 : 12) * scale, k, normal: Ahead!.Smaller(look!) ? T.AccentA : T.SubText);
         }
 
         dc.Pop();
@@ -411,13 +482,13 @@ public sealed class FlowerView : FrameworkElement
 
     readonly Dictionary<(string, double, int), FormattedText> _textCache = [];
 
-    void DrawText(DrawingContext dc, string text, Typeface face, double size, double cx, double cy, double accent, bool spacing = false, bool sub = false)
+    void DrawText(DrawingContext dc, string text, Typeface face, double size, double cx, double cy, double accent, bool spacing = false, bool sub = false, Color? normal = null)
     {
         size = Math.Round(size * 4) / 4;
         if (size < 4) return;
-        var normal = sub ? T.SubText : T.Text;
+        var rest = normal ?? (sub ? T.SubText : T.Text);
         var hot = T.AccentText;
-        if (accent < 0.99) Draw(normal, 1 - accent);
+        if (accent < 0.99) Draw(rest, 1 - accent);
         if (accent > 0.01) Draw(hot, accent);
 
         void Draw(Color col, double op)
@@ -438,6 +509,21 @@ public sealed class FlowerView : FrameworkElement
     }
 
     static string Spaced(string s) => string.Join(" ", s.ToCharArray());
+
+    readonly Dictionary<(string, Typeface), double> _widths = [];
+
+    /// <summary>The width of <paramref name="text"/> at font size 1.</summary>
+    double Width1(string text, Typeface face)
+    {
+        if (_widths.TryGetValue((text, face), out var w)) return w;
+        if (_widths.Count > 400) _widths.Clear();
+        var ft = new FormattedText(text, CultureInfo.InvariantCulture, FlowDirection.LeftToRight, face, 100, Brushes.Black, VisualTreeHelper.GetDpi(this).PixelsPerDip);
+        return _widths[(text, face)] = ft.WidthIncludingTrailingWhitespace / 100;
+    }
+
+    /// <summary><paramref name="size"/>, or smaller (not below <paramref name="min"/>) so the text fits <paramref name="room"/>.</summary>
+    double Fit(string text, Typeface face, double size, double room, double min) =>
+        Math.Clamp(room / Math.Max(1e-6, Width1(text, face)), min, size);
 
     void DrawHub(DrawingContext dc, Point c, double g, Rect full)
     {
@@ -473,6 +559,8 @@ public sealed class FlowerView : FrameworkElement
             {
                 double op = Math.Clamp((hs - 0.4) / 0.6, 0, 1);
                 dc.PushOpacity(op);
+                double lens = DrawLens(dc, c, r);
+                dc.PushOpacity(1 - lens);
                 double ts = 40;
                 var tr = new Rect(c.X - ts / 2, c.Y - 33, ts, ts);
                 if (Thumb != null)
@@ -490,6 +578,7 @@ public sealed class FlowerView : FrameworkElement
                     dc.DrawRoundedRectangle(_accent, null, br, 7, 7);
                     DrawText(dc, HubBadge, SmallFace, 10, br.X + br.Width / 2, br.Y + br.Height / 2, 1);
                 }
+                dc.Pop();
                 var acts = CurrentActions;
                 bool hot = _hover >= 0 && _hover < acts.Count;
                 string title = hot ? acts[_hover].Short : HubTitle;
@@ -498,11 +587,20 @@ public sealed class FlowerView : FrameworkElement
                 {
                     var a = acts[_hover];
                     sub = a.Icon != null ? a.Verb : (string.IsNullOrEmpty(HubBadge) ? a.Hint : $"{HubBadge} → {a.Label}");
+                    // live preview: the real (or estimated) size, or why there's nothing to make
+                    if (Ahead?.Get(a) is { } look && Ahead.SizeLine(look) is { } line) sub = line;
                 }
                 bool named = _time < _ringUntil; // just flipped: say which ring this is
                 if (named) { title = _ringName; sub = ""; hot = true; }
-                DrawTextFit(dc, title, LabelFace, hot ? 13 : 12, c.X, c.Y + 17, r * 1.7, hot);
-                DrawTextFit(dc, sub, HintFace, 9.5, c.X, c.Y + 31, r * 1.6, false, sub: true);
+                // over the lens the text sits on a dark scrim: white, whatever the theme
+                Color? onLens = lens > 0.5 ? Colors.White : null;
+                DrawTextFit(dc, title, LabelFace, hot ? 13 : 12, c.X, c.Y + 17, r * 1.7, hot && onLens == null, color: onLens);
+                DrawTextFit(dc, sub, HintFace, 9.5, c.X, c.Y + 31, r * 1.6, false, sub: true, color: onLens != null ? Color.FromArgb(225, 255, 255, 255) : null);
+                if (_working) // the hovered petal is being worked out and there's nothing to show yet
+                {
+                    var pen = new Pen(_accent, 2.4) { StartLineCap = PenLineCap.Round, EndLineCap = PenLineCap.Round };
+                    dc.DrawGeometry(null, pen, Arc(c, r - 3.5, _time * 5, _time * 5 + 1.3));
+                }
                 if (_pageCount > 1)
                 {
                     for (int i = 0; i < _pageCount; i++)
@@ -557,13 +655,69 @@ public sealed class FlowerView : FrameworkElement
         }
     }
 
-    void DrawTextFit(DrawingContext dc, string text, Typeface face, double size, double cx, double cy, double maxW, bool accent, bool sub = false)
+    /// <summary>The hovered petal's result filling the hub, a dark scrim at the bottom for the caption. Returns how visible it is.</summary>
+    double DrawLens(DrawingContext dc, Point c, double r)
+    {
+        double k = Math.Clamp(_lens.X, 0, 1);
+        if (k <= 0.01 || _lensImg == null) return 0;
+        var circle = new EllipseGeometry(c, r - 1, r - 1);
+        dc.PushClip(circle);
+        dc.PushOpacity(k);
+        dc.DrawEllipse(new SolidColorBrush(T.IsDark ? Color.FromRgb(24, 24, 37) : Color.FromRgb(230, 233, 239)), null, c, r, r);
+        double sw = Math.Clamp(_swap.X, 0, 1);
+        if (_lensPrev != null && sw < 0.99) Picture(_lensPrev, _prevAlpha, 1 - sw);
+        Picture(_lensImg, _lensAlpha, _lensPrev != null ? sw : 1);
+        // scrim under the caption
+        var scrim = new LinearGradientBrush { StartPoint = new Point(0, 0), EndPoint = new Point(0, 1) };
+        scrim.GradientStops.Add(new GradientStop(Color.FromArgb(0, 0, 0, 0), 0.38));
+        scrim.GradientStops.Add(new GradientStop(Color.FromArgb(150, 0, 0, 0), 0.72));
+        scrim.GradientStops.Add(new GradientStop(Color.FromArgb(190, 0, 0, 0), 1));
+        dc.DrawRectangle(scrim, null, new Rect(c.X - r, c.Y - r, 2 * r, 2 * r));
+        dc.Pop();
+        dc.Pop();
+        // a fine ring so the lens reads as glass, not a hole
+        dc.DrawEllipse(null, new Pen(new SolidColorBrush(WithA(T.AccentA, .55 * k)), 1.4), c, r - 0.7, r - 0.7);
+        return k;
+
+        void Picture(BitmapSource img, bool alpha, double op)
+        {
+            if (op <= 0.01) return;
+            // cover the circle, easing in from a slight zoom
+            double side = 2 * r, sc = Math.Max(side / img.PixelWidth, side / img.PixelHeight) * (1 + 0.06 * (1 - k));
+            double w = img.PixelWidth * sc, h = img.PixelHeight * sc;
+            var rect = new Rect(c.X - w / 2, c.Y - h / 2, w, h);
+            dc.PushOpacity(op);
+            if (alpha) dc.DrawRectangle(CheckerBrush, null, rect);
+            dc.DrawImage(img, rect);
+            dc.Pop();
+        }
+    }
+
+    // transparency shows as the usual grey checkerboard
+    static readonly Brush CheckerBrush = MakeChecker();
+
+    static Brush MakeChecker()
+    {
+        var g = new DrawingGroup();
+        g.Children.Add(new GeometryDrawing(new SolidColorBrush(Color.FromRgb(236, 236, 240)), null, new RectangleGeometry(new Rect(0, 0, 12, 12))));
+        var dark = new SolidColorBrush(Color.FromRgb(200, 200, 208));
+        g.Children.Add(new GeometryDrawing(dark, null, new RectangleGeometry(new Rect(0, 0, 6, 6))));
+        g.Children.Add(new GeometryDrawing(dark, null, new RectangleGeometry(new Rect(6, 6, 6, 6))));
+        var b = new DrawingBrush(g) { TileMode = TileMode.Tile, Viewport = new Rect(0, 0, 12, 12), ViewportUnits = BrushMappingMode.Absolute };
+        b.Freeze();
+        return b;
+    }
+
+    void DrawTextFit(DrawingContext dc, string text, Typeface face, double size, double cx, double cy, double maxW, bool accent, bool sub = false, Color? color = null)
     {
         if (string.IsNullOrEmpty(text)) return;
-        var col = accent ? T.AccentA : sub ? T.SubText : T.Text;
-        if (accent && !T.IsDark) col = T.AccentA;
+        var col = color ?? (accent ? T.AccentA : sub ? T.SubText : T.Text);
+        double dip = VisualTreeHelper.GetDpi(this).PixelsPerDip;
+        // a little smaller rather than cut off (translations run longer; "3840×3840 · 1.04 MB" in the hub), then the ellipsis
+        double w = Width1(text, face) * size;
+        if (w > maxW) size = Math.Max(size * 0.8, size * maxW / w);
         var ft = new FormattedText(text, CultureInfo.CurrentCulture, FlowDirection.LeftToRight, face, size,
-            new SolidColorBrush(col), VisualTreeHelper.GetDpi(this).PixelsPerDip)
+            new SolidColorBrush(col), dip)
         {
             MaxTextWidth = Math.Max(10, maxW),
             MaxLineCount = 1,

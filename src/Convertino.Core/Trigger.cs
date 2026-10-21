@@ -24,16 +24,16 @@ public static class TriggerKeys
     /// <summary>"Ctrl" on Windows and Linux, "Control" on macOS, and so on.</summary>
     public static string KeyName(this TriggerKey k) => k.Modifier() switch
     {
-        ModifierKey.Ctrl => OperatingSystem.IsMacOS() ? "Control" : "Ctrl",
-        ModifierKey.Alt => OperatingSystem.IsMacOS() ? "Option" : "Alt",
-        _ => "Shift",
+        ModifierKey.Ctrl => OperatingSystem.IsMacOS() ? L.T("Control") : L.T("Ctrl"),
+        ModifierKey.Alt => OperatingSystem.IsMacOS() ? L.T("Option") : L.T("Alt"),
+        _ => L.T("Shift"),
     };
 
     /// <summary>Menu label: "Shift", "Shift twice", "Ctrl" …</summary>
-    public static string Label(this TriggerKey k) => k == TriggerKey.ShiftTwice ? "Shift twice" : k.KeyName();
+    public static string Label(this TriggerKey k) => k == TriggerKey.ShiftTwice ? L.T("Shift twice") : k.KeyName();
 
     /// <summary>Instruction for hints and cards: "tap Shift", "double-tap Shift" …</summary>
-    public static string Tap(this TriggerKey k) => k == TriggerKey.ShiftTwice ? "double-tap Shift" : "tap " + k.KeyName();
+    public static string Tap(this TriggerKey k) => k == TriggerKey.ShiftTwice ? L.T("double-tap Shift") : L.T("tap {0}", k.KeyName());
 }
 
 /// <summary>Decides whether a trigger key press during a drag opens the flower.</summary>

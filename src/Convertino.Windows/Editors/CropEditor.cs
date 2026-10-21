@@ -197,8 +197,8 @@ public sealed class CropEditor : Editor
 
         var chips = new WrapPanel();
         void Ratio(string label, double? r, bool on = false) => chips.Children.Add(UiKit.Chip(label, "ratio", on, () => _surface.ApplyRatio(r)));
-        Ratio("Free", null, true);
-        Ratio("Original", img.Width / (double)img.Height);
+        Ratio(L.T("Free"), null, true);
+        Ratio(L.T("Original"), img.Width / (double)img.Height);
         Ratio("1:1", 1);
         Ratio("4:3", 4 / 3.0);
         Ratio("3:2", 3 / 2.0);
@@ -208,7 +208,7 @@ public sealed class CropEditor : Editor
         var dock = new DockPanel();
         DockPanel.SetDock(_size, Dock.Right);
         dock.Children.Add(_size);
-        dock.Children.Add(new StackPanel { Orientation = Orientation.Horizontal, Children = { UiKit.Label("Aspect"), chips } });
+        dock.Children.Add(new StackPanel { Orientation = Orientation.Horizontal, Children = { UiKit.Label(L.T("Aspect")), chips } });
         _controls = dock;
     }
 
@@ -227,7 +227,7 @@ public sealed class CropEditor : Editor
 
     internal override void DevPrepare() => _surface.Crop = new Rect(_img.Width * .25, _img.Height * .25, _img.Width * .5, _img.Height * .4);
 
-    public override string Title => "Crop";
+    public override string Title => L.T("Crop");
     public override FrameworkElement Preview => _surface;
     public override FrameworkElement Controls => _controls;
 

@@ -32,8 +32,19 @@ cp "$ROOT/packaging/linux/icons/convertino-256.png" smoke.png
 "$D" run compress smoke.png
 "$D" actions smoke.png
 
+step "live preview: worked out ahead, handed over on drop"
+"$D" preview smoke.png --take to-webp | tee preview.log
+grep -q "to-avif" preview.log
+test -s "smoke (2).webp"
+
 step "archives and file tools"
 bash "$ROOT/tools/files-smoke.sh" "$D"
+
+step "recipes and custom commands"
+bash "$ROOT/tools/recipes-smoke.sh" "$D"
+step "browser drops: Safari / Chrome pasteboards → parse → download → petal (local web server)"
+"$D" --browser-drop-selftest "$WORK/webtest" | tail -4
+cp "$WORK/webtest/results.txt" "$OUT/browser-drop-selftest.txt"
 
 step "PDF: PDFsharp writes, CoreGraphics renders"
 "$D" convert smoke.png --to pdf && test -s smoke.pdf
@@ -60,6 +71,21 @@ if [ -n "${CUTOUT:-}" ]; then
   test -s "smoke (cutout).png"
   cp "smoke (cutout).png" "$OUT/cutout.png"
 fi
+
+step "clipboard: convertino clip (the pasteboard: text, a link, a picture, a Finder file)"
+printf 'Meeting notes\n- ship 1.4\n' | pbcopy
+"$D" clip --out "$WORK/clip" | tee clip1.txt
+grep -q 'ship 1.4' "$(tail -1 clip1.txt)"
+printf 'https://github.com/hasanzadee/convertino' | pbcopy
+"$D" clip --to qr --out "$WORK/clip" | tee clip2.txt
+"$D" run readqr "$(tail -1 clip2.txt)" | grep -q 'github.com/hasanzadee/convertino'
+osascript -e "set the clipboard to (read (POSIX file \"$WORK/smoke.png\") as «class PNGf»)"
+"$D" clip --to jpg --out "$WORK/clip" | tee clip3.txt
+[ "$(head -c 3 "$(tail -1 clip3.txt)" | od -An -tx1 | tr -d ' \n')" = ffd8ff ]
+osascript -e "set the clipboard to (POSIX file \"$WORK/smoke.png\")"
+if "$D" clip | grep -q 'smoke.png'; then echo "a Finder-style file on the pasteboard reads as the file"
+else echo "::warning::a file on the pasteboard (AppleScript POSIX file) didn't read as a file"; fi
+cp "$(tail -1 clip3.txt)" "$OUT/clip-picture.jpg"
 
 [ "$GUI" = "--gui" ] || exit 0
 
@@ -243,6 +269,28 @@ grep "overlay window=" "$LOG" | tail -1 || true
 pkill -f "Convertino.app/Contents/MacOS/convertino" || true
 sleep 1
 
+step "app: the clipboard flower (menu --clipboard over IPC, then the Control+Option+X hot key) and Copy"
+CONVERTINO_DEBUG=1 "$D" >> "$OUT/app-stdout.txt" 2>&1 &
+sleep 6
+grep "hot key" "$LOG" | tail -2 || true
+printf 'Meeting notes\n- ship 1.4\n' | pbcopy
+limit 30 "$D" menu --clipboard
+sleep 2
+shot 2c-clipboard-flower
+grep -q "clipboard flower: text" "$LOG" || { echo "menu --clipboard didn't open the clipboard flower"; grep -E "clipboard|hot key" "$LOG" | tail -5; exit 1; }
+osascript -e 'tell application "System Events" to key code 53' || true   # Esc closes it
+sleep 1
+before=$(grep -c "clipboard flower:" "$LOG" || true)
+osascript -e 'tell application "System Events" to keystroke "x" using {control down, option down}' || true
+sleep 2
+shot 2d-hotkey-flower
+after=$(grep -c "clipboard flower:" "$LOG" || true)
+if [ "$after" -gt "$before" ]; then echo "Control+Option+X opened the clipboard flower"
+else echo "::warning::the Control+Option+X hot key didn't reach the app (synthetic keystroke)"; fi
+osascript -e 'tell application "System Events" to key code 53' || true
+pkill -f "Convertino.app/Contents/MacOS/convertino" || true
+sleep 1
+
 step "app: drag a file, tap Shift, drop on a petal (synthetic input)"
 CONVERTINO_DEBUG=1 "$D" >> "$OUT/app-stdout.txt" 2>&1 &
 sleep 6
@@ -261,6 +309,30 @@ else
   grep -E "shift|drag|drop|show|mac " "$LOG" | tail -30 || true
   exit 1
 fi
+pkill -f "Convertino.app/Contents/MacOS/convertino" || true
+sleep 1
+
+step "app: drag a picture out of a web page (file promise + link), tap Shift, drop on JPG"
+CONVERTINO_DEBUG=1 "$D" >> "$OUT/app-stdout.txt" 2>&1 &
+sleep 6
+DL="$HOME/Downloads"
+mkdir -p "$DL"
+rm -f "$DL"/cvt-promise*
+cp smoke.png cvt-promise.png
+swiftc -O "$ROOT/tools/mac-web-drag.swift" -o "$WORK/webdrag"
+# the link points nowhere: a result in Downloads can only have come through the promise
+limit 60 "$WORK/webdrag" "$WORK/cvt-promise.png" "https://example.invalid/cvt-promise.png" 1 6 "$OUT/7-web-drag-over-petal.png" || echo "::warning::webdrag exited with $?"
+sleep 4
+shot 8-after-web-drop
+ls -l "$DL"/cvt-promise* 2>/dev/null || true
+if [ -s "$DL/cvt-promise.png" ] && [ -s "$DL/cvt-promise.jpg" ]; then
+  echo "the promised picture arrived in Downloads and was converted there"
+  xattr -p com.apple.quarantine "$DL/cvt-promise.jpg" || echo "::warning::no quarantine mark on the result"
+else
+  echo "::warning::the file-promise drag didn't land in Downloads"
+fi
+grep -E "dragenter|drop |file promise|browser|job " "$LOG" | tail -12 || true
+rm -f "$DL"/cvt-promise*
 pkill -f "Convertino.app/Contents/MacOS/convertino" || true
 sleep 1
 

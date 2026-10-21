@@ -53,6 +53,7 @@ public sealed class WinPlatform : IPlatform
     public void SetClipboardText(string text) => Clip.SetText(text);
     public void SetClipboardFiles(IEnumerable<string> files) => Clip.SetFiles(files);
     public void SetClipboardImage(byte[] png) => Clip.SetPng(png);
+    public Task<ClipContent?> ReadClipboard() => ClipReader.ReadClipboard();
 
     public Func<Job, Task>? Editor(string id) => id switch
     {
@@ -76,7 +77,7 @@ sealed class WinJobUi : IJobUi
     public IJobView Show(PetalAction action, IReadOnlyList<string> files, ScreenPoint where)
     {
         var t = Toasts.Create(new POINT(where.X, where.Y));
-        t.SetRunning(action.Verb + "…", files.Count == 1 ? System.IO.Path.GetFileName(files[0]) : $"{files.Count} files", Icons.Glyph(action.Icon) ?? "");
+        t.SetRunning(action.Verb + "…", files.Count == 1 ? System.IO.Path.GetFileName(files[0]) : L.N(files.Count, "{0} file", "{0} files"), Icons.Glyph(action.Icon) ?? "");
         Toasts.Show(t);
         return new View(t);
     }

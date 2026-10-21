@@ -292,13 +292,13 @@ public sealed class AnnotateEditor : Editor
             r.Checked += (_, _) => _surface.Tool = tool;
             tools.Children.Add(r);
         }
-        T("", "Arrow (A)", Pen2.Arrow, true);
-        T("", "Pen (P)", Pen2.Pen);
-        T("", "Highlighter (H)", Pen2.Highlighter);
-        T("", "Rectangle (R)", Pen2.Box);
-        T("", "Ellipse (E)", Pen2.Oval);
-        T("", "Text (T)", Pen2.Text);
-        T("", "Numbered step (N)", Pen2.Step);
+        T("", L.T("Arrow (A)"), Pen2.Arrow, true);
+        T("", L.T("Pen (P)"), Pen2.Pen);
+        T("", L.T("Highlighter (H)"), Pen2.Highlighter);
+        T("", L.T("Rectangle (R)"), Pen2.Box);
+        T("", L.T("Ellipse (E)"), Pen2.Oval);
+        T("", L.T("Text (T)"), Pen2.Text);
+        T("", L.T("Numbered step (N)"), Pen2.Step);
         //  may be missing on older Segoe MDL2: fall back to a typographic arrow
         if (!HasGlyph('')) ((TextBlock)((RadioButton)tools.Children[0]).Content).Text = "↗";
         if (!HasGlyph('')) ((TextBlock)((RadioButton)tools.Children[6]).Content).Text = "①";
@@ -314,8 +314,8 @@ public sealed class AnnotateEditor : Editor
                 UiKit.Chip("L", "w", false, () => _surface.Weight = 3.4),
             },
         };
-        var undo = UiKit.Icon("", "Undo (Ctrl+Z)", () => _surface.Undo());
-        var redo = UiKit.Icon("", "Redo (Ctrl+Y)", () => _surface.RedoOne());
+        var undo = UiKit.Icon("", L.T("Undo (Ctrl+Z)"), () => _surface.Undo());
+        var redo = UiKit.Icon("", L.T("Redo (Ctrl+Y)"), () => _surface.RedoOne());
         var row1 = new DockPanel { Margin = new Thickness(0, 0, 0, 8) };
         var ur = new StackPanel { Orientation = Orientation.Horizontal, Children = { undo, redo } };
         DockPanel.SetDock(ur, Dock.Right);
@@ -392,7 +392,7 @@ public sealed class AnnotateEditor : Editor
         _surface.Marks.Add(new InkMark([new(w * .2, h * .3), new(w * .3, h * .35), new(w * .35, h * .25), new(w * .45, h * .3)], UiKit.Hex("#40c057"), 2, false));
     }
 
-    public override string Title => "Annotate";
+    public override string Title => L.T("Annotate");
     public override FrameworkElement Preview => _previewGrid;
     public override FrameworkElement Controls => _controls;
 

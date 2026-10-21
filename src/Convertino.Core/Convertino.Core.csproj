@@ -28,4 +28,9 @@
     <PackageReference Include="System.Security.Cryptography.Pkcs" Version="10.0.13" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- UI translations (see L.cs); the macOS app embeds the same files under the same names -->
+    <EmbeddedResource Include="Lang\*.json" LogicalName="Convertino.Lang.%(Filename).json" />
+  </ItemGroup>
+
 </Project>

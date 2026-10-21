@@ -4,7 +4,11 @@ using Convertino.Services;
 namespace Convertino;
 
 /// <summary>One page of the flower: its petals and the name the hub shows when you flip to it.</summary>
-public sealed record Ring(string Name, IReadOnlyList<PetalAction> Petals);
+public sealed record Ring(string Name, IReadOnlyList<PetalAction> Petals)
+{
+    /// <summary>The English name ("Tools 2") for the log and tests; <see cref="Name"/> is the one shown, in the UI language.</summary>
+    public string Key { get; init; } = Name;
+}
 
 public sealed record Pages(List<PetalAction> Convert, List<PetalAction> Tools, string Title, string Badge)
 {
@@ -17,15 +21,24 @@ public sealed record Pages(List<PetalAction> Convert, List<PetalAction> Tools, s
     /// <summary>Rarer output formats. Last in the cycle, so they sit one step back from Convert (images: HEIC, TIFF, ICO, BMP, JPEG XL, QOI).</summary>
     public List<PetalAction> MoreFormats { get; init; } = [];
 
-    /// <summary>The rings in flip order, Convert → Tools → More tools → More formats, empty ones left out.</summary>
-    public IReadOnlyList<Ring> Rings => [.. Split("Convert", Convert), .. Split("Tools", Tools), .. Split("More tools", More), .. Split("More formats", MoreFormats)];
+    /// <summary>Your recipes and commands that fit these files (<see cref="Convertino.Recipes"/>): one flip from Convert.</summary>
+    public List<PetalAction> Recipes { get; init; } = [];
+
+    /// <summary>What the first ring is called when it isn't plain conversions (a screenshot's "Quick" ring).</summary>
+    public string FirstRing { get; init; } = "Convert";
+
+    /// <summary>The rings in flip order, Convert → Recipes → Tools → More tools → More formats, empty ones left out.</summary>
+    public IReadOnlyList<Ring> Rings => [.. Split(FirstRing, Convert), .. Split("Recipes", Recipes), .. Split("Tools", Tools), .. Split("More tools", More), .. Split("More formats", MoreFormats)];
 
     static IEnumerable<Ring> Split(string name, List<PetalAction> petals)
     {
         if (petals.Count == 0) yield break;
         int rings = (petals.Count + MaxPetals - 1) / MaxPetals, size = (petals.Count + rings - 1) / rings;
         for (int i = 0; i < rings; i++)
-            yield return new(i == 0 ? name : $"{name} {i + 1}", petals.Skip(i * size).Take(size).ToList());
+        {
+            string n = i == 0 ? "" : $" {i + 1}";
+            yield return new(L.T(name) + n, petals.Skip(i * size).Take(size).ToList()) { Key = name + n };
+        }
     }
 }
 
@@ -39,15 +52,15 @@ public static class Catalog
     {
         Id = "to-" + ext,
         Label = label ?? ext.ToUpperInvariant(),
-        Hint = hint,
-        Verb = $"Convert to {label ?? ext.ToUpperInvariant()}",
+        Hint = L.T(hint),
+        Verb = L.T("Convert to {0}", label ?? ext.ToUpperInvariant()),
         Short = $"→ {label ?? ext.ToUpperInvariant()}",
         Run = run,
     };
 
     public static PetalAction Tool(string id, string label, string icon, string verb, Func<Job, Task> run, bool interactive = false, bool quick = false) => new()
     {
-        Id = id, Label = label, Icon = icon, Verb = verb, Short = label, Run = run, Interactive = interactive, Quick = quick,
+        Id = id, Label = L.T(label), Icon = icon, Verb = L.T(verb), Short = L.T(label), Run = run, Interactive = interactive, Quick = quick,
     };
 
     static PetalAction ZipA => Tool("zip", "Zip", "zip", "Compress to .zip", Misc.Zip);
@@ -62,7 +75,7 @@ public static class Catalog
 
     static PetalAction Pack(string ext, string label, string hint, Func<Job, Task> run) => new()
     {
-        Id = "to-" + ext, Label = label, Hint = hint, Verb = $"Compress to .{ext}", Short = $"→ {label}", Run = run,
+        Id = "to-" + ext, Label = label, Hint = L.T(hint), Verb = L.T("Compress to .{0}", ext), Short = $"→ {label}", Run = run,
     };
 
     /// <summary>For the Tools ring: split presets that fit one file (none under 10 MB), then MD5 / SHA-1 / SHA-512.</summary>
@@ -72,25 +85,38 @@ public static class Catalog
             foreach (var p in FileTools.SplitPresets(Paths.SizeOf(files[0])))
                 yield return new()
                 {
-                    Id = "split-" + p.Id, Label = p.Label, Hint = p.Hint, Verb = $"Split into {p.Label} parts", Short = $"Split {p.Label}",
+                    Id = "split-" + p.Id, Label = p.Label, Hint = p.Hint, Verb = L.T("Split into {0} parts", p.Label), Short = L.T("Split {0}", p.Label),
                     Run = j => FileTools.Split(j, p.Bytes),
                 };
         foreach (var (id, label) in new[] { ("md5", "MD5"), ("sha1", "SHA-1"), ("sha512", "SHA-512") })
-            yield return Tool(id, label, "hash", $"Copy {label} hash", j => FileTools.CopyHash(j, label));
+            yield return Tool(id, label, "hash", L.T("Copy {0} hash", label), j => FileTools.CopyHash(j, label));
     }
 
     /// <summary>Every action reachable for these files (all rings), for the CLI.</summary>
     public static IEnumerable<PetalAction> All(IReadOnlyList<string> files)
     {
         var p = For(files);
+        return p.Convert.Concat(p.Recipes).Concat(p.Tools).Concat(p.More).Concat(p.MoreFormats);
+    }
+
+    /// <summary>The built-in petals alone, without your recipes and commands: what a recipe's steps are made of.</summary>
+    public static IEnumerable<PetalAction> Builtin(IReadOnlyList<string> files)
+    {
+        var p = Base(files);
         return p.Convert.Concat(p.Tools).Concat(p.More).Concat(p.MoreFormats);
     }
 
     public static Pages For(IReadOnlyList<string> files)
     {
+        var p = Base(files);
+        return Convertino.Recipes.Petals(files, p) is { Count: > 0 } mine ? p with { Recipes = mine } : p;
+    }
+
+    static Pages Base(IReadOnlyList<string> files)
+    {
         var kinds = files.Select(Kinds.Of).Distinct().ToList();
         int n = files.Count;
-        string title = n == 1 ? Path.GetFileName(files[0].TrimEnd('\\', '/')) : $"{n} items";
+        string title = n == 1 ? Path.GetFileName(files[0].TrimEnd('\\', '/')) : L.N(n, "{0} item", "{0} items");
         string badge = n == 1 ? Kinds.Badge(files[0]) : n.ToString();
 
         if (kinds.Count == 1) return ForKind(kinds[0], files, title, badge);
@@ -170,7 +196,7 @@ public static class Catalog
                 }
                 else
                 {
-                    tools.Add(Tool("compress", "Compress", "compress", $"Compress {files.Count} images", Images.Compress));
+                    tools.Add(Tool("compress", "Compress", "compress", L.T("Compress {0} images", files.Count), Images.Compress));
                     tools.Add(Tool("meta", "Clean", "tag", "Strip metadata & GPS", Images.StripMetadata));
                     if (cutout != null) tools.Add(cutout);
                     tools.Add(Tool("ocr", "Text", "ocr", "Copy text (OCR)", OcrToClipboard));
@@ -183,7 +209,7 @@ public static class Catalog
                 conv.Add(Fmt("jpg", "pages", j => Pdfs.ToImages(j, "jpg")));
                 conv.Add(Fmt("txt", "text", Pdfs.ToText));
                 conv.Add(Fmt("png", "pages", j => Pdfs.ToImages(j, "png")));
-                if (!single) tools.Add(Tool("merge", "Merge", "merge", $"Merge {files.Count} PDFs", Pdfs.Merge));
+                if (!single) tools.Add(Tool("merge", "Merge", "merge", L.T("Merge {0} PDFs", files.Count), Pdfs.Merge));
                 if (Pdfs.CanCompress) tools.Add(Tool("compress", "Compress", "compress", "Make the PDF smaller", Pdfs.Compress));
                 tools.Add(Tool("pdfimages", "Images", "picture", "Extract the images", Pdfs.ExtractImages));
                 tools.Add(Tool("pagenum", "Numbers", "hash", "Add page numbers", Pdfs.PageNumbers));
@@ -367,7 +393,7 @@ public static class Catalog
         }
         var text = sb.ToString().Trim();
         Platform.Current.SetClipboardText(text);
-        job.Title = text.Length == 0 ? "No text found" : "Text copied";
+        job.Title = text.Length == 0 ? L.T("No text found") : L.T("Text copied");
         job.Summary = Ocr.Preview(text);
     }
 
@@ -377,7 +403,7 @@ public static class Catalog
         foreach (var f in job.Inputs) parts.Add(TextFiles.Decode(await File.ReadAllBytesAsync(f, job.Token)));
         var text = string.Join(Environment.NewLine + Environment.NewLine, parts);
         Platform.Current.SetClipboardText(text);
-        job.Title = "Text copied";
+        job.Title = L.T("Text copied");
         job.Summary = Ocr.Preview(text);
     }
 }

@@ -36,7 +36,7 @@ public static class Watches
     };
 
     public static string LabelOf(string action) =>
-        Presets.FirstOrDefault(p => p.Id == action).Label ?? (action.StartsWith("to-") ? action[3..].ToUpperInvariant() : action);
+        Presets.FirstOrDefault(p => p.Id == action).Label is { } label ? L.T(label) : action.StartsWith("to-") ? action[3..].ToUpperInvariant() : action;
 
     /// <summary>A plain subfolder name, or null: never empty, ".", "..", rooted or with separators, so results can't land back in the watched folder.</summary>
     public static string? ValidOut(string? name)
@@ -99,7 +99,7 @@ public static class Watches
 
     public static void Add(WatchFolder wf)
     {
-        wf.Out = ValidOut(wf.Out) ?? throw new ArgumentException("The results folder needs a plain name, like Converted.");
+        wf.Out = ValidOut(wf.Out) ?? throw new ArgumentException(L.En("The results folder needs a plain name, like Converted."));
         Edit(list => { list.RemoveAll(w => Same(w.Path, wf.Path)); list.Add(wf); return 0; });
     }
 
@@ -123,11 +123,11 @@ public static class Watches
         ui.Post(() =>
         {
             // Recent is read by the panels on the UI thread: change it there too
-            if (job.Outputs.Count > 0) Settings.Current.AddRecent(job.Outputs[0], job.Action.Verb);
+            if (job.Outputs.Count > 0) Settings.Current.AddRecent(job.Outputs[0], job.Action.EnglishVerb);
             if (!Settings.Current.Notifications || job.Outputs.Count == 0) return;
             var view = ui.Show(job.Action, job.Inputs, new ScreenPoint(0, 0));
-            var title = job.Title ?? (job.Outputs.Count == 1 ? System.IO.Path.GetFileName(job.Outputs[0]) : $"{job.Outputs.Count} files ready");
-            view.Done(title, $"Watched {folder}" + (job.Summary is { Length: > 0 } s ? " · " + s : ""), job.Outputs, job.Action.Icon);
+            var title = job.Title ?? (job.Outputs.Count == 1 ? System.IO.Path.GetFileName(job.Outputs[0]) : L.N(job.Outputs.Count, "{0} file ready", "{0} files ready"));
+            view.Done(title, L.T("Watched {0}", folder) + (job.Summary is { Length: > 0 } s ? " · " + s : ""), job.Outputs, job.Action.Icon);
         });
     }
 
@@ -303,23 +303,7 @@ public sealed class Watcher : IDisposable
         var job = await Jobs.RunHeadless(action, [path]);
         // results move into the Out subfolder: the watched folder stays an inbox and nothing we write re-triggers us
         Directory.CreateDirectory(_outDir);
-        for (int i = 0; i < job.Outputs.Count; i++)
-        {
-            var o = job.Outputs[i];
-            var name = Path.GetFileName(o);
-            if (Directory.Exists(o))
-            {
-                var dst = Paths.UniqueDir(_outDir, name);
-                Directory.Move(o, dst);
-                job.Outputs[i] = dst;
-            }
-            else if (File.Exists(o))
-            {
-                var dst = Paths.Unique(_outDir, Path.GetFileNameWithoutExtension(name), Path.GetExtension(name));
-                File.Move(o, dst);
-                job.Outputs[i] = dst;
-            }
-        }
+        for (int i = 0; i < job.Outputs.Count; i++) job.Outputs[i] = Output.MoveInto(job.Outputs[i], _outDir);
         Log.Info($"watch: {Path.GetFileName(path)} → {string.Join(" | ", job.Outputs)}");
         _done(job);
     }

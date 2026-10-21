@@ -11,7 +11,11 @@ public static class Paths
     static string Resolve()
     {
         string dir;
-        if (OperatingSystem.IsWindows())
+        // CONVERTINO_APPDATA (or CONVERTINO_HOME)=<folder>: settings, lists and the log go there instead (tests, a portable copy)
+        var over = Environment.GetEnvironmentVariable("CONVERTINO_APPDATA");
+        if (string.IsNullOrEmpty(over)) over = Environment.GetEnvironmentVariable("CONVERTINO_HOME");
+        if (!string.IsNullOrEmpty(over)) dir = Path.GetFullPath(over);
+        else if (OperatingSystem.IsWindows())
             dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Convertino");
         else if (OperatingSystem.IsMacOS())
             dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Library", "Application Support", "Convertino");
@@ -71,7 +75,8 @@ public static class Paths
         double v = bytes;
         int i = 0;
         while (v >= 1024 && i < u.Length - 1) { v /= 1024; i++; }
-        return i == 0 ? $"{bytes} B" : v >= 100 ? $"{v:0} {u[i]}" : v >= 10 ? $"{v:0.#} {u[i]}" : $"{v:0.##} {u[i]}";
+        // in the UI language's number format, like the rest of the line it lands in (units stay KB / MB)
+        return i == 0 ? $"{bytes} B" : v.ToString(v >= 100 ? "0" : v >= 10 ? "0.#" : "0.##", L.Culture) + " " + u[i];
     }
 
     public static long SizeOf(string path)
@@ -150,15 +155,31 @@ public sealed class Settings
         get => Enum.TryParse<TriggerKey>(Trigger, true, out var k) && Enum.IsDefined(k) ? k : TriggerKey.Shift;
         set => Trigger = value.ToString();
     }
+    /// <summary>Global shortcut for the flower of whatever is on the clipboard (text like "Super+Shift+X"; unreadable → the default).</summary>
+    public string ClipboardHotkey { get; set; } = Hotkey.Clipboard.ToString();
+    public bool ClipboardHotkeyOn { get; set; } = true;
+    /// <summary>Global shortcut for "capture an area of the screen, then its flower".</summary>
+    public string CaptureHotkey { get; set; } = Hotkey.Capture.ToString();
+    public bool CaptureHotkeyOn { get; set; } = true;
+    [JsonIgnore] public Hotkey ClipboardKey => Hotkey.Parse(ClipboardHotkey) ?? Hotkey.Clipboard;
+    [JsonIgnore] public Hotkey CaptureKey => Hotkey.Parse(CaptureHotkey) ?? Hotkey.Capture;
     public bool LaunchAtStartup { get; set; } = true;
+    /// <summary>UI language code ("ru", "pt-BR" …); null follows the OS (see <see cref="L.Use"/>).</summary>
+    public string? Language { get; set; }
     public bool FirstRunDone { get; set; }
     public int JpegQuality { get; set; } = 90;
     public int CompressQuality { get; set; } = 72;
+    /// <summary>Work petals out ahead while the flower is open: a look at the result in the hub, real sizes on the petals, instant results on drop.</summary>
+    public bool LivePreview { get; set; } = true;
     /// <summary>Daily check for a newer release: null until the user answers the one-time card, and nothing goes out before.</summary>
     public bool? CheckForUpdates { get; set; }
     public DateTime LastUpdateCheck { get; set; }
     /// <summary>The newest version already announced, so the same release isn't shown again.</summary>
     public string? LastNotifiedVersion { get; set; }
+    /// <summary>Where results go (<see cref="Output"/>): "beside" the original, a "subfolder" of its folder named <see cref="SaveSubfolder"/>, or one fixed "folder".</summary>
+    public string SaveTo { get; set; } = "beside";
+    public string SaveSubfolder { get; set; } = "Converted";
+    public string SaveFolder { get; set; } = "";
     public List<RecentItem> Recent { get; set; } = [];
 
     [JsonIgnore] public static Settings Current { get; private set; } = new();
@@ -174,6 +195,7 @@ public sealed class Settings
                 Current = JsonSerializer.Deserialize<Settings>(File.ReadAllText(file)) ?? new();
         }
         catch (Exception ex) { Log.Error("settings load", ex); Current = new(); }
+        L.Use(Current.Language);
     }
 
     static readonly object SaveGate = new();

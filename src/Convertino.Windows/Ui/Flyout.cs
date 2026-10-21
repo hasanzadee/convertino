@@ -14,7 +14,7 @@ using Convertino.Services;
 namespace Convertino.Ui;
 
 /// <summary>Quick-settings style panel that pops up from the tray icon.</summary>
-public sealed class Flyout : Window
+public sealed partial class Flyout : Window
 {
     const double W = 340, Pad = 18;
     readonly TranslateTransform _slide = new();
@@ -22,7 +22,9 @@ public sealed class Flyout : Window
     readonly ImageBrush _backdrop = new() { Stretch = Stretch.Fill };
     DateTime _hiddenAt;
     Stats? _stats;
+    ScrollViewer? _scroll;
     bool _animate; // only the build that opens the panel plays the activity intro
+    bool _langOpen; // the language pills under the Language row are showing
 
     public Flyout()
     {
@@ -49,6 +51,7 @@ public sealed class Flyout : Window
         if ((DateTime.Now - _hiddenAt).TotalMilliseconds < 250) return; // click on tray that just closed us
         _stats = Stats.Load();
         _animate = true;
+        _langOpen = false;
         Build();
         _animate = false;
         var cursor = Win32.Cursor;
@@ -100,13 +103,18 @@ public sealed class Flyout : Window
         _hiding = false;
     }
 
-    /// <summary>Dev: render the panel to a PNG over a soft wallpaper (Convertino.exe --panel out.png [theme] [demo]).</summary>
-    public static void Snapshot(string outPath, Stats stats)
+    /// <summary>
+    /// Dev: render the panel to a PNG over a soft wallpaper (Convertino.exe --panel out.png [theme] [demo] [recipes|builder] [langs]):
+    /// recipes unfolds the Recipes card, builder also opens its builder on a sample chain, langs the Language picker.
+    /// </summary>
+    public static void Snapshot(string outPath, Stats stats, string? recipes = null, bool langs = false)
     {
         const double scale = 2;
-        var f = new Flyout { _stats = stats };
+        var f = new Flyout { _stats = stats, _recipesOpen = recipes is "recipes" or "builder", _langOpen = langs };
+        if (recipes == "builder") f._draft = new RecipeDraft { Steps = ["fithd", "to-webp"], Name = "Web-ready", Icon = "globe", Picking = true };
         var wall = new DrawingVisual();
-        double w = W + Pad * 2, h = 1000;
+        const double wallH = 1600; // an unfolded card makes the panel taller than a screen
+        double w = W + Pad * 2, h = wallH;
         using (var dc = wall.RenderOpen())
             dc.DrawDrawing(Convertino.Editors.BackgroundEditor.Backdrops[0].Paint(new Rect(0, 0, w, h), null));
         var wallBmp = new System.Windows.Media.Imaging.RenderTargetBitmap((int)w, (int)h, 96, 96, PixelFormats.Pbgra32);
@@ -123,12 +131,12 @@ public sealed class Flyout : Window
         h = root.DesiredSize.Height;
         root.Arrange(new Rect(0, 0, w, h));
         root.UpdateLayout();
-        f._backdrop.ImageSource = new System.Windows.Media.Imaging.CroppedBitmap(blurred, new Int32Rect((int)Pad, (int)Pad, (int)(w - Pad * 2), (int)Math.Min(1000 - Pad, h - Pad * 2)));
+        f._backdrop.ImageSource = new System.Windows.Media.Imaging.CroppedBitmap(blurred, new Int32Rect((int)Pad, (int)Pad, (int)(w - Pad * 2), (int)Math.Min(wallH - Pad, h - Pad * 2)));
         root.UpdateLayout();
 
         var rtb = new System.Windows.Media.Imaging.RenderTargetBitmap((int)(w * scale), (int)(h * scale), 96 * scale, 96 * scale, PixelFormats.Pbgra32);
         var bg = new DrawingVisual();
-        using (var dc = bg.RenderOpen()) dc.DrawImage(wallBmp, new Rect(0, 0, w, 1000));
+        using (var dc = bg.RenderOpen()) dc.DrawImage(wallBmp, new Rect(0, 0, w, wallH));
         rtb.Render(bg);
         rtb.Render(root);
         var enc = new System.Windows.Media.Imaging.PngBitmapEncoder();
@@ -168,10 +176,10 @@ public sealed class Flyout : Window
         var logo = new Image { Source = new DrawingImage(AppIcon.Drawing(T)), Width = 34, Height = 34 };
         var title = new StackPanel { Margin = new Thickness(12, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
         title.Children.Add(new TextBlock { Text = "Convertino", FontFamily = Display, FontWeight = FontWeights.SemiBold, FontSize = 17, Foreground = B(T.Text) });
-        title.Children.Add(new TextBlock { Text = s.Enabled ? $"Drag a file · {key.Tap()}" : "Paused", FontFamily = TextF, FontSize = 12, Foreground = B(T.SubText) });
+        title.Children.Add(new TextBlock { Text = s.Enabled ? L.T("Drag a file · {0}", key.Tap()) : L.T("Paused"), FontFamily = TextF, FontSize = 12, Foreground = B(T.SubText) });
         var header = new DockPanel { LastChildFill = false };
         var close = (FrameworkElement)FooterButton("\uE711", "", HideAnimated);
-        close.ToolTip = "Close (Esc)";
+        close.ToolTip = L.T("Close (Esc)");
         DockPanel.SetDock(close, Dock.Right);
         header.Children.Add(close);
         var hl = new StackPanel { Orientation = Orientation.Horizontal, Children = { logo, title } };
@@ -181,49 +189,69 @@ public sealed class Flyout : Window
         var stats = _stats ??= Stats.Load();
         if (!stats.IsEmpty)
         {
-            stack.Children.Add(Label("Activity · 2 weeks"));
+            stack.Children.Add(Label(L.T("Activity · 2 weeks")));
             stack.Children.Add(Activity(stats));
         }
         else stack.Children.Add(Card(new StackPanel
         {
             Children =
             {
-                HowRow("", $"Drag any file, {key.Tap()}", "the flower opens under your cursor"),
-                HowRow("", $"{key.KeyName()} again, Tab or wheel", "next ring; Shift+Tab goes back"),
-                HowRow("", "Double-tap Shift in Explorer", "same menu for selected files"),
+                HowRow("", L.T("Drag any file, {0}", key.Tap()), L.T("the flower opens under your cursor")),
+                HowRow("", L.T("{0} again, Tab or wheel", key.KeyName()), L.T("next ring; Shift+Tab goes back")),
+                HowRow("", L.T("Double-tap Shift in Explorer"), L.T("same menu for selected files")),
             },
         }, new Thickness(0, 14, 0, 0)));
 
         // theme picker
-        stack.Children.Add(Label("Theme"));
+        stack.Children.Add(Label(L.T("Theme")));
         var themes = new UniformGrid4();
         foreach (var th in Theme.All) themes.Children.Add(ThemeChip(th, th.Name == T.Name));
         stack.Children.Add(themes);
 
         // toggles
-        stack.Children.Add(Label("Options"));
+        stack.Children.Add(Label(L.T("Options")));
         stack.Children.Add(Card(new StackPanel
         {
             Children =
             {
-                ToggleRow("Enabled", s.Enabled, v => { s.Enabled = v; s.Save(); Build(); }),
+                ToggleRow(L.T("Enabled"), s.Enabled, v => { s.Enabled = v; s.Save(); Hotkey.Changed(); Build(); }),
                 TriggerRow(key),
-                ToggleRow("Double-tap Shift in Explorer", s.DoubleShift, v => { s.DoubleShift = v; s.Save(); }),
-                ToggleRow("Notifications", s.Notifications, v => { s.Notifications = v; s.Save(); }),
-                ToggleRow("Tell me about new versions", s.CheckForUpdates == true, Updates.Answer),
-                ToggleRow("Start with Windows", s.LaunchAtStartup, v => { s.LaunchAtStartup = v; s.Save(); AutoStart.Apply(v); }),
+                LanguageRow(),
+                ToggleRow(L.T("Double-tap Shift in Explorer"), s.DoubleShift, v => { s.DoubleShift = v; s.Save(); }),
+                ToggleRow(L.T("Notifications"), s.Notifications, v => { s.Notifications = v; s.Save(); }),
+                ToggleRow(L.T("Live preview"), s.LivePreview, v => { s.LivePreview = v; s.Save(); }),
+                ToggleRow(L.T("Tell me about new versions"), s.CheckForUpdates == true, Updates.Answer),
+                ToggleRow(L.T("Start with Windows"), s.LaunchAtStartup, v => { s.LaunchAtStartup = v; s.Save(); AutoStart.Apply(v); }),
+            },
+        }, new Thickness(0)));
+
+        // no drag needed: the clipboard's flower and an area of the screen, each on a global shortcut
+        stack.Children.Add(Label(L.T("Clipboard & screenshots")));
+        stack.Children.Add(Card(new StackPanel
+        {
+            Children =
+            {
+                HotkeyRow(L.T("Flower for the clipboard"), capture: false),
+                HotkeyRow(L.T("Capture an area"), capture: true),
+                FooterButton(Ui.Icons.Glyph("folder") ?? "", L.T(@"Open Pictures\Convertino"), () => { Shell.Open(Captures.Folder); HideAnimated(); }),
             },
         }, new Thickness(0)));
 
         // folders whose new files convert by themselves
-        stack.Children.Add(Label("Watch folders"));
+        stack.Children.Add(Label(L.T("Watch folders")));
         stack.Children.Add(WatchCard());
+
+        // your own chains of petals, and where results go (FlyoutRecipes.cs)
+        stack.Children.Add(Label(L.T("Recipes")));
+        stack.Children.Add(RecipesCard());
+        stack.Children.Add(Label(L.T("Save results")));
+        stack.Children.Add(SaveCard());
 
         // recent
         var recent = s.Recent.Where(r => File.Exists(r.Path) || Directory.Exists(r.Path)).Take(4).ToList();
         if (recent.Count > 0)
         {
-            stack.Children.Add(Label("Recent"));
+            stack.Children.Add(Label(L.T("Recent")));
             var list = new StackPanel();
             foreach (var r in recent) list.Children.Add(RecentRow(r));
             stack.Children.Add(Card(list, new Thickness(0)));
@@ -231,11 +259,11 @@ public sealed class Flyout : Window
 
         // footer
         var footer = new DockPanel { Margin = new Thickness(0, 14, 0, 0), LastChildFill = false };
-        var quit = FooterButton("", "Quit", () => Application.Current.Shutdown());
+        var quit = FooterButton("", L.T("Quit"), () => Application.Current.Shutdown());
         DockPanel.SetDock(quit, Dock.Right);
         footer.Children.Add(quit);
-        footer.Children.Add(FooterButton("", "Log", () => Shell.Open(Paths.LogFile)));
-        footer.Children.Add(FooterButton("\uE896", "Updates", UpdateCards.CheckNow));
+        footer.Children.Add(FooterButton("", L.T("Log"), () => Shell.Open(Paths.LogFile)));
+        footer.Children.Add(FooterButton("\uE896", L.T("Updates"), UpdateCards.CheckNow));
 
         // header and footer stay put; only the middle scrolls when the screen is short
         var body = new DockPanel { Margin = new Thickness(18, 16, 18, 14) };
@@ -243,14 +271,18 @@ public sealed class Flyout : Window
         DockPanel.SetDock(footer, Dock.Bottom);
         body.Children.Add(header);
         body.Children.Add(footer);
-        body.Children.Add(new ScrollViewer
+        // a rebuild while open (a click in a card) stays scrolled where it was
+        double? offset = IsVisible ? _scroll?.VerticalOffset : null;
+        var scroll = new ScrollViewer
         {
             Content = stack,
             VerticalScrollBarVisibility = ScrollBarVisibility.Hidden,
             HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
             PanningMode = PanningMode.VerticalOnly,
             Focusable = false,
-        });
+        };
+        body.Children.Add(_scroll = scroll);
+        if (offset is { } y) scroll.Loaded += (_, _) => scroll.ScrollToVerticalOffset(y);
 
         var layers = new Grid
         {
@@ -282,7 +314,7 @@ public sealed class Flyout : Window
 
     TextBlock Label(string text) => new()
     {
-        Text = text.ToUpperInvariant(), FontFamily = TextF, FontWeight = FontWeights.SemiBold, FontSize = 10.5,
+        Text = text.ToUpper(L.Culture), FontFamily = TextF, FontWeight = FontWeights.SemiBold, FontSize = 10.5,
         Foreground = B(A(T.SubText, .8)), Margin = new Thickness(4, 16, 0, 7),
     };
 
@@ -311,15 +343,15 @@ public sealed class Flyout : Window
 
         // three big numbers that count up as the panel opens
         var nums = new System.Windows.Controls.Primitives.UniformGrid { Columns = 3 };
-        nums.Children.Add(Stat(files, v => ((long)v).ToString("N0"), files == 1 ? "file" : "files", accent));
-        nums.Children.Add(Stat(saved, v => Paths.HumanSize((long)v), "saved", accent));
-        nums.Children.Add(Stat(streak, v => ((long)v).ToString(), "day streak", accent));
+        nums.Children.Add(Stat(files, v => ((long)v).ToString("N0", L.Culture), L.N(files, "file", "files"), accent));
+        nums.Children.Add(Stat(saved, v => Paths.HumanSize((long)v), L.T("saved"), accent));
+        nums.Children.Add(Stat(streak, v => ((long)v).ToString(L.Culture), L.N(streak, "day streak", "day streak"), accent));
 
         // one bar per day; hovering one swaps the date row for that day's numbers
         int max = Math.Max(1, days.Max(d => d.Day.Files));
         var bars = new Grid { Height = BarsH, Margin = new Thickness(0, 14, 0, 0) };
-        var first = new TextBlock { Text = days[0].Date.ToString("d MMM"), FontFamily = TextF, FontSize = 10.5, Foreground = B(T.SubText), HorizontalAlignment = HorizontalAlignment.Left };
-        var today = new TextBlock { Text = "Today", FontFamily = TextF, FontSize = 10.5, Foreground = B(T.SubText), HorizontalAlignment = HorizontalAlignment.Right };
+        var first = new TextBlock { Text = L.Date(days[0].Date), FontFamily = TextF, FontSize = 10.5, Foreground = B(T.SubText), HorizontalAlignment = HorizontalAlignment.Left };
+        var today = new TextBlock { Text = L.T("Today"), FontFamily = TextF, FontSize = 10.5, Foreground = B(T.SubText), HorizontalAlignment = HorizontalAlignment.Right };
         var caption = new TextBlock { FontFamily = TextF, FontSize = 10.5, FontWeight = FontWeights.SemiBold, Foreground = B(T.Text), HorizontalAlignment = HorizontalAlignment.Center, Visibility = Visibility.Collapsed };
         var dates = new Grid { Margin = new Thickness(0, 5, 0, 0), Children = { first, today, caption } };
 
@@ -350,7 +382,7 @@ public sealed class Flyout : Window
             col.MouseEnter += (_, _) =>
             {
                 bar.Opacity = 1;
-                caption.Text = $"{date:ddd d MMM} · {day.Files} {(day.Files == 1 ? "file" : "files")}" + (day.Saved > 0 ? $" · {Paths.HumanSize(day.Saved)} saved" : "");
+                caption.Text = $"{L.Date(date, weekday: true)} · {L.N(day.Files, "{0} file", "{0} files")}" + (day.Saved > 0 ? " · " + L.T("{0} saved", Paths.HumanSize(day.Saved)) : "");
                 caption.Visibility = Visibility.Visible;
                 first.Visibility = today.Visibility = Visibility.Hidden;
             };
@@ -373,7 +405,7 @@ public sealed class Flyout : Window
             foreach (var (name, count) in top)
             {
                 var tb = new TextBlock { FontFamily = TextF, FontSize = 11.5 };
-                tb.Inlines.Add(new System.Windows.Documents.Run(name) { FontWeight = FontWeights.SemiBold, Foreground = B(T.Text) });
+                tb.Inlines.Add(new System.Windows.Documents.Run(L.Saved(name)) { FontWeight = FontWeights.SemiBold, Foreground = B(T.Text) });
                 tb.Inlines.Add(new System.Windows.Documents.Run($"  ×{count}") { Foreground = B(T.SubText) });
                 chips.Children.Add(new Border
                 {
@@ -435,7 +467,7 @@ public sealed class Flyout : Window
         var sw = Switch(value, set);
         DockPanel.SetDock(sw, Dock.Right);
         dp.Children.Add(sw);
-        dp.Children.Add(new TextBlock { Text = text, FontFamily = TextF, FontSize = 13, Foreground = B(T.Text), VerticalAlignment = VerticalAlignment.Center });
+        dp.Children.Add(new TextBlock { Text = text, FontFamily = TextF, FontSize = 13, Foreground = B(T.Text), VerticalAlignment = VerticalAlignment.Center, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 8, 0) });
         return dp;
     }
 
@@ -450,7 +482,7 @@ public sealed class Flyout : Window
             {
                 CornerRadius = new CornerRadius(8), Padding = new Thickness(8, 3, 8, 4), Margin = new Thickness(4, 0, 0, 0), Cursor = Cursors.Hand,
                 Background = on ? new LinearGradientBrush(T.AccentA, T.AccentB, 0) : B(A(T.SubText, .12)),
-                ToolTip = k == TriggerKey.ShiftTwice ? "Double-tap Shift while dragging: a single Shift stays free for the app you drop on" : null,
+                ToolTip = k == TriggerKey.ShiftTwice ? L.T("Double-tap Shift while dragging: a single Shift stays free for the app you drop on") : null,
                 Child = new TextBlock { Text = k == TriggerKey.ShiftTwice ? "Shift ×2" : k.Label(), FontFamily = TextF, FontSize = 11.5, Foreground = B(on ? T.AccentText : T.Text) },
             };
             pill.MouseLeftButtonUp += (_, e) =>
@@ -465,8 +497,94 @@ public sealed class Flyout : Window
         var dp = new DockPanel { Margin = new Thickness(0, 6, 0, 6) };
         DockPanel.SetDock(pills, Dock.Right);
         dp.Children.Add(pills);
-        dp.Children.Add(new TextBlock { Text = "Open with", FontFamily = TextF, FontSize = 13, Foreground = B(T.Text), VerticalAlignment = VerticalAlignment.Center });
+        dp.Children.Add(new TextBlock { Text = L.T("Open with"), FontFamily = TextF, FontSize = 13, Foreground = B(T.Text), VerticalAlignment = VerticalAlignment.Center, TextWrapping = TextWrapping.Wrap });
         return dp;
+    }
+
+    /// <summary>A global shortcut: what it does, its keys (a click steps to the next choice), and a switch.</summary>
+    UIElement HotkeyRow(string text, bool capture)
+    {
+        var s = Settings.Current;
+        bool on = capture ? s.CaptureHotkeyOn : s.ClipboardHotkeyOn;
+        var key = capture ? s.CaptureKey : s.ClipboardKey;
+        var problem = on ? capture ? Hotkey.CaptureProblem : Hotkey.ClipboardProblem : null;
+        var chip = new Border
+        {
+            CornerRadius = new CornerRadius(6), Padding = new Thickness(7, 2, 7, 3), Margin = new Thickness(0, 4, 0, 0), Cursor = Cursors.Hand,
+            Background = B(A(T.SubText, .12)), ToolTip = L.T("Click for another shortcut"),
+            Child = new TextBlock { Text = key.Label, FontFamily = TextF, FontSize = 11.5, Foreground = B(T.Text) },
+        };
+        chip.MouseEnter += (_, _) => chip.Background = B(A(T.SubText, .22));
+        chip.MouseLeave += (_, _) => chip.Background = B(A(T.SubText, .12));
+        chip.MouseLeftButtonUp += (_, e) =>
+        {
+            var next = key.Next(capture).ToString();
+            if (capture) s.CaptureHotkey = next; else s.ClipboardHotkey = next;
+            s.Save();
+            Hotkey.Changed();
+            Build();
+            e.Handled = true;
+        };
+        var keys = new StackPanel { Orientation = Orientation.Horizontal, Children = { chip } };
+        if (problem != null)
+            keys.Children.Add(new TextBlock { Text = L.Saved(problem), FontFamily = TextF, FontSize = 11, Foreground = B(T.Danger), Margin = new Thickness(8, 4, 0, 0), VerticalAlignment = VerticalAlignment.Center });
+        var left = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+        left.Children.Add(new TextBlock { Text = text, FontFamily = TextF, FontSize = 13, Foreground = B(T.Text) });
+        left.Children.Add(keys);
+        var dp = new DockPanel { Margin = new Thickness(0, 6, 0, 6) };
+        var sw = Switch(on, v =>
+        {
+            if (capture) s.CaptureHotkeyOn = v; else s.ClipboardHotkeyOn = v;
+            s.Save();
+            Hotkey.Changed();
+        });
+        DockPanel.SetDock(sw, Dock.Right);
+        dp.Children.Add(sw);
+        dp.Children.Add(left);
+        return dp;
+    }
+
+    /// <summary>"Language" and the one in use; a tap unfolds a pill per language, applied on the spot (the panel rebuilds in it).</summary>
+    UIElement LanguageRow()
+    {
+        var s = Settings.Current;
+        bool auto = s.Language is null or "auto";
+        string name = L.All.FirstOrDefault(l => l.Code == L.Code)?.Name ?? L.Code;
+        var value = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+        value.Children.Add(new TextBlock { Text = auto ? $"{L.T("Auto")} · {name}" : name, FontFamily = TextF, FontSize = 12.5, Foreground = B(T.SubText), VerticalAlignment = VerticalAlignment.Center });
+        value.Children.Add(new TextBlock { Text = _langOpen ? "\uE70E" : "\uE70D", FontFamily = Icons, FontSize = 10, Foreground = B(T.SubText), Margin = new Thickness(7, 1, 0, 0), VerticalAlignment = VerticalAlignment.Center });
+        var row = new DockPanel { Margin = new Thickness(0, 6, 0, 6), Background = Brushes.Transparent, Cursor = Cursors.Hand };
+        DockPanel.SetDock(value, Dock.Right);
+        row.Children.Add(value);
+        row.Children.Add(new TextBlock { Text = L.T("Language"), FontFamily = TextF, FontSize = 13, Foreground = B(T.Text), VerticalAlignment = VerticalAlignment.Center });
+        row.MouseLeftButtonUp += (_, e) => { _langOpen = !_langOpen; Build(); e.Handled = true; };
+        var sp = new StackPanel { Children = { row } };
+        if (!_langOpen) return sp;
+
+        var pills = new System.Windows.Controls.Primitives.UniformGrid { Columns = 3, Margin = new Thickness(-2, 0, -2, 6) };
+        foreach (var (code, label) in new[] { ((string?)null, L.T("Auto")) }.Concat(L.All.Select(l => ((string?)l.Code, l.Name))))
+        {
+            bool on = code == null ? auto : !auto && string.Equals(code, s.Language, StringComparison.OrdinalIgnoreCase);
+            var pill = new Border
+            {
+                CornerRadius = new CornerRadius(8), Padding = new Thickness(4, 4, 4, 5), Margin = new Thickness(2), Cursor = Cursors.Hand,
+                Background = on ? new LinearGradientBrush(T.AccentA, T.AccentB, 0) : B(A(T.SubText, .12)),
+                // long names ("Português (Brasil)") shrink to fit rather than lose their end
+                Child = new Viewbox { StretchDirection = StretchDirection.DownOnly, Child = new TextBlock { Text = label, FontFamily = TextF, FontSize = 11.5, Foreground = B(on ? T.AccentText : T.Text) } },
+            };
+            pill.MouseLeftButtonUp += (_, e) =>
+            {
+                s.Language = code;
+                s.Save();
+                L.Use(code);
+                _langOpen = false;
+                Build();
+                e.Handled = true;
+            };
+            pills.Children.Add(pill);
+        }
+        sp.Children.Add(pills);
+        return sp;
     }
 
     FrameworkElement Switch(bool on, Action<bool> changed)
@@ -501,7 +619,7 @@ public sealed class Flyout : Window
         if (selected) sw.Children.Add(new Ellipse { Width = 54, Height = 54, Stroke = new LinearGradientBrush(T.AccentA, T.AccentB, 45), StrokeThickness = 2, Margin = new Thickness(-4) });
         var col = new StackPanel { Cursor = Cursors.Hand, HorizontalAlignment = HorizontalAlignment.Center };
         col.Children.Add(sw);
-        col.Children.Add(new TextBlock { Text = th.Name, FontFamily = TextF, FontSize = 11, Foreground = B(selected ? T.Text : T.SubText), HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 6, 0, 0) });
+        col.Children.Add(new TextBlock { Text = L.T(th.Name), FontFamily = TextF, FontSize = 11, Foreground = B(selected ? T.Text : T.SubText), HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 6, 0, 0) });
         col.MouseLeftButtonUp += (_, _) =>
         {
             Settings.Current.Theme = th.Name;
@@ -519,7 +637,7 @@ public sealed class Flyout : Window
         thumb.Clip = new RectangleGeometry(new Rect(0, 0, 30, 30), 6, 6);
         var text = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
         text.Children.Add(new TextBlock { Text = System.IO.Path.GetFileName(r.Path), FontFamily = TextF, FontSize = 12.5, Foreground = B(T.Text), TextTrimming = TextTrimming.CharacterEllipsis, MaxWidth = 230 });
-        text.Children.Add(new TextBlock { Text = $"{r.Label} · {Ago(r.When)}", FontFamily = TextF, FontSize = 11, Foreground = B(T.SubText) });
+        text.Children.Add(new TextBlock { Text = $"{L.Saved(r.Label)} · {Ago(r.When)}", FontFamily = TextF, FontSize = 11, Foreground = B(T.SubText) });
         var row = new Border
         {
             Background = Brushes.Transparent, CornerRadius = new CornerRadius(8), Padding = new Thickness(4), Margin = new Thickness(-4, 1, -4, 1),
@@ -534,10 +652,10 @@ public sealed class Flyout : Window
     static string Ago(DateTime t)
     {
         var d = DateTime.Now - t;
-        if (d.TotalMinutes < 1) return "just now";
-        if (d.TotalHours < 1) return $"{(int)d.TotalMinutes} min ago";
-        if (d.TotalDays < 1) return $"{(int)d.TotalHours} h ago";
-        return t.ToString("d MMM");
+        if (d.TotalMinutes < 1) return L.T("just now");
+        if (d.TotalHours < 1) return L.T("{0} min ago", (int)d.TotalMinutes);
+        if (d.TotalDays < 1) return L.T("{0} h ago", (int)d.TotalHours);
+        return L.Date(t);
     }
 
     // ---------- watch folders ----------
@@ -558,9 +676,9 @@ public sealed class Flyout : Window
             };
             var text = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
             text.Children.Add(new TextBlock { Text = System.IO.Path.GetFileName(path.TrimEnd('\\', '/')), FontFamily = TextF, FontSize = 12.5, Foreground = B(T.Text), TextTrimming = TextTrimming.CharacterEllipsis, MaxWidth = 210 });
-            text.Children.Add(new TextBlock { Text = $"new files → {Watches.LabelOf(wf.Action)} · in {wf.Out}" + (Directory.Exists(path) ? "" : " · missing"), FontFamily = TextF, FontSize = 11, Foreground = B(T.SubText) });
+            text.Children.Add(new TextBlock { Text = L.T("new files → {0} · in {1}", Watches.LabelOf(wf.Action), wf.Out) + (Directory.Exists(path) ? "" : " · " + L.T("missing")), FontFamily = TextF, FontSize = 11, Foreground = B(T.SubText) });
             var remove = (FrameworkElement)FooterButton("", "", () => { try { Watches.Remove(path); } catch (Exception ex) { Log.Error("watch remove", ex); } Build(); });
-            remove.ToolTip = "Stop watching";
+            remove.ToolTip = L.T("Stop watching");
             remove.VerticalAlignment = VerticalAlignment.Center;
             var main = new Border
             {
@@ -579,7 +697,7 @@ public sealed class Flyout : Window
         {
             list.Children.Add(new TextBlock
             {
-                Text = $"New files in {System.IO.Path.GetFileName(dir.TrimEnd('\\', '/'))} become:", FontFamily = TextF, FontSize = 12.5,
+                Text = L.T("New files in {0} become:", System.IO.Path.GetFileName(dir.TrimEnd('\\', '/'))), FontFamily = TextF, FontSize = 12.5,
                 Foreground = B(T.Text), Margin = new Thickness(0, 6, 0, 0), TextTrimming = TextTrimming.CharacterEllipsis,
             });
             var pills = new System.Windows.Controls.Primitives.UniformGrid { Columns = 3, Margin = new Thickness(-2, 6, -2, 2) };
@@ -589,7 +707,7 @@ public sealed class Flyout : Window
                 {
                     CornerRadius = new CornerRadius(8), Padding = new Thickness(4, 4, 4, 5), Margin = new Thickness(2), Cursor = Cursors.Hand,
                     Background = B(A(T.SubText, .12)),
-                    Child = new TextBlock { Text = label, FontFamily = TextF, FontSize = 11.5, Foreground = B(T.Text), HorizontalAlignment = HorizontalAlignment.Center },
+                    Child = new TextBlock { Text = L.T(label), FontFamily = TextF, FontSize = 11.5, Foreground = B(T.Text), HorizontalAlignment = HorizontalAlignment.Center },
                 };
                 pill.MouseEnter += (_, _) => pill.Background = new LinearGradientBrush(T.AccentA, T.AccentB, 0);
                 pill.MouseLeave += (_, _) => pill.Background = B(A(T.SubText, .12));
@@ -603,10 +721,10 @@ public sealed class Flyout : Window
                 pills.Children.Add(pill);
             }
             list.Children.Add(pills);
-            list.Children.Add(new TextBlock { Text = "Results go to a Converted folder inside it.", FontFamily = TextF, FontSize = 11, Foreground = B(T.SubText), Margin = new Thickness(2, 2, 0, 4) });
-            list.Children.Add(FooterButton("", "Cancel", () => { _pendingWatch = null; Build(); }));
+            list.Children.Add(new TextBlock { Text = L.T("Results go to a Converted folder inside it."), FontFamily = TextF, FontSize = 11, Foreground = B(T.SubText), Margin = new Thickness(2, 2, 0, 4) });
+            list.Children.Add(FooterButton("", L.T("Cancel"), () => { _pendingWatch = null; Build(); }));
         }
-        else list.Children.Add(FooterButton(Ui.Icons.Glyph("folder") ?? "", "Watch a folder…", PickWatchFolder));
+        else list.Children.Add(FooterButton(Ui.Icons.Glyph("folder") ?? "", L.T("Watch a folder…"), PickWatchFolder));
         return Card(list, new Thickness(0));
     }
 
@@ -617,7 +735,7 @@ public sealed class Flyout : Window
         string? path = null;
         try
         {
-            using var dlg = new System.Windows.Forms.FolderBrowserDialog { Description = "New files in this folder will be converted automatically", UseDescriptionForTitle = true, ShowNewFolderButton = true };
+            using var dlg = new System.Windows.Forms.FolderBrowserDialog { Description = L.T("New files in this folder will be converted automatically"), UseDescriptionForTitle = true, ShowNewFolderButton = true };
             if (dlg.ShowDialog() == System.Windows.Forms.DialogResult.OK) path = dlg.SelectedPath;
         }
         catch (Exception ex) { Log.Error("folder picker", ex); }
@@ -666,7 +784,7 @@ public sealed class TrayIcon : IDisposable
         _icon = new System.Windows.Forms.NotifyIcon
         {
             Icon = AppIcon.TrayIcon(32),
-            Text = $"Convertino — drag a file, {Settings.Current.TriggerKey.Tap()}",
+            Text = L.T("Convertino — drag a file, {0}", Settings.Current.TriggerKey.Tap()),
             Visible = true,
         };
         _icon.MouseUp += (_, e) =>
@@ -679,6 +797,7 @@ public sealed class TrayIcon : IDisposable
         // refilled on every open so the check marks match what the panel changed meanwhile
         menu.Opening += (_, _) => { _flyout.HideAnimated(); FillMenu(menu); };
         _icon.ContextMenuStrip = menu;
+        L.Changed += () => _icon.Text = L.T("Convertino — drag a file, {0}", Settings.Current.TriggerKey.Tap());
     }
 
     public void Attach(Input.GlobalInput input) => _flyout.Attach(input);
@@ -687,7 +806,7 @@ public sealed class TrayIcon : IDisposable
     {
         var s = Settings.Current;
         m.Items.Clear();
-        _icon.Text = $"Convertino — drag a file, {s.TriggerKey.Tap()}";
+        _icon.Text = L.T("Convertino — drag a file, {0}", s.TriggerKey.Tap());
         System.Windows.Forms.ToolStripMenuItem Item(string text, Action click, bool? check = null)
         {
             var it = new System.Windows.Forms.ToolStripMenuItem(text);
@@ -695,24 +814,37 @@ public sealed class TrayIcon : IDisposable
             it.Click += (_, _) => Application.Current.Dispatcher.BeginInvoke(click);
             return it;
         }
-        m.Items.Add(Item("Open panel", () => _flyout.Toggle()));
+        m.Items.Add(Item(L.T("Open panel"), () => _flyout.Toggle()));
+        var clip = Item(L.T("Flower for the clipboard"), () => Overlay.Shortcuts.Current?.Clipboard());
+        clip.ShortcutKeyDisplayString = s.ClipboardHotkeyOn ? s.ClipboardKey.Label : null;
+        m.Items.Add(clip);
+        // after the menu has faded, or the frozen screen would still show it
+        var area = Item(L.T("Capture an area"), () => Overlay.Shortcuts.Current?.Capture(delayMs: 250));
+        area.ShortcutKeyDisplayString = s.CaptureHotkeyOn ? s.CaptureKey.Label : null;
+        m.Items.Add(area);
         m.Items.Add(new System.Windows.Forms.ToolStripSeparator());
-        m.Items.Add(Item("Enabled", () => { s.Enabled = !s.Enabled; s.Save(); }, s.Enabled));
-        var themes = new System.Windows.Forms.ToolStripMenuItem("Theme");
+        m.Items.Add(Item(L.T("Enabled"), () => { s.Enabled = !s.Enabled; s.Save(); Hotkey.Changed(); }, s.Enabled));
+        var themes = new System.Windows.Forms.ToolStripMenuItem(L.T("Theme"));
         foreach (var th in Theme.All)
-            themes.DropDownItems.Add(Item(th.Name, () => { s.Theme = th.Name; s.Save(); Theme.Apply(th.Name); }, th.Name == Theme.Current.Name));
+            themes.DropDownItems.Add(Item(L.T(th.Name), () => { s.Theme = th.Name; s.Save(); Theme.Apply(th.Name); }, th.Name == Theme.Current.Name));
         m.Items.Add(themes);
-        var keys = new System.Windows.Forms.ToolStripMenuItem("Open with");
+        var keys = new System.Windows.Forms.ToolStripMenuItem(L.T("Open with"));
         foreach (var k in TriggerKeys.All)
             keys.DropDownItems.Add(Item(k.Label(), () => { s.TriggerKey = k; s.Save(); }, k == s.TriggerKey));
         m.Items.Add(keys);
-        m.Items.Add(Item("Notifications", () => { s.Notifications = !s.Notifications; s.Save(); }, s.Notifications));
-        m.Items.Add(Item("Tell me about new versions", () => Updates.Answer(s.CheckForUpdates != true), s.CheckForUpdates == true));
-        m.Items.Add(Item("Start with Windows", () => { s.LaunchAtStartup = !s.LaunchAtStartup; s.Save(); AutoStart.Apply(s.LaunchAtStartup); }, s.LaunchAtStartup));
+        var langs = new System.Windows.Forms.ToolStripMenuItem(L.T("Language"));
+        bool auto = s.Language is null or "auto";
+        langs.DropDownItems.Add(Item(L.T("Auto"), () => { s.Language = null; s.Save(); L.Use(null); }, auto));
+        foreach (var lang in L.All)
+            langs.DropDownItems.Add(Item(lang.Name, () => { s.Language = lang.Code; s.Save(); L.Use(lang.Code); }, !auto && string.Equals(lang.Code, s.Language, StringComparison.OrdinalIgnoreCase)));
+        m.Items.Add(langs);
+        m.Items.Add(Item(L.T("Notifications"), () => { s.Notifications = !s.Notifications; s.Save(); }, s.Notifications));
+        m.Items.Add(Item(L.T("Tell me about new versions"), () => Updates.Answer(s.CheckForUpdates != true), s.CheckForUpdates == true));
+        m.Items.Add(Item(L.T("Start with Windows"), () => { s.LaunchAtStartup = !s.LaunchAtStartup; s.Save(); AutoStart.Apply(s.LaunchAtStartup); }, s.LaunchAtStartup));
         m.Items.Add(new System.Windows.Forms.ToolStripSeparator());
-        m.Items.Add(Item("Check for updates…", UpdateCards.CheckNow));
-        m.Items.Add(Item("Open log", () => Shell.Open(Paths.LogFile)));
-        m.Items.Add(Item("Quit Convertino", () => Application.Current.Shutdown()));
+        m.Items.Add(Item(L.T("Check for updates…"), UpdateCards.CheckNow));
+        m.Items.Add(Item(L.T("Open log"), () => Shell.Open(Paths.LogFile)));
+        m.Items.Add(Item(L.T("Quit Convertino"), () => Application.Current.Shutdown()));
     }
 
     public void ShowFlyout() { if (!_flyout.IsVisible) _flyout.Toggle(); }

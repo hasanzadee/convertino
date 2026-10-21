@@ -60,8 +60,8 @@ public static partial class Sheets
     static string Note(List<Grid> grids)
     {
         int rows = grids.Sum(g => Math.Max(0, g.Rows.Count - 1));
-        var r = rows == 1 ? "1 row" : $"{rows:N0} rows";
-        return grids.Count == 1 ? r : $"{grids.Count} sheets · {r}";
+        var r = L.N(rows, "{0:N0} row", "{0:N0} rows");
+        return grids.Count == 1 ? r : L.N(grids.Count, "{0} sheet", "{0} sheets") + " · " + r;
     }
 
     // ---------- CSV ----------

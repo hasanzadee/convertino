@@ -249,13 +249,13 @@ public sealed class AnnotateEditor : Editor
             r.IsCheckedChanged += (_, _) => { if (r.IsChecked == true) _surface.Tool = tool; };
             _tools.Children.Add(r);
         }
-        T("arrow", "Arrow (A)", Pen2.Arrow, true);
-        T("pen", "Pen (P)", Pen2.Pen);
-        T("marker", "Highlighter (H)", Pen2.Highlighter);
-        T("square", "Rectangle (R)", Pen2.Box);
-        T("circle", "Ellipse (E)", Pen2.Oval);
-        T("text", "Text (T)", Pen2.Text);
-        T("step", "Numbered step (N)", Pen2.Step);
+        T("arrow", L.T("Arrow (A)"), Pen2.Arrow, true);
+        T("pen", L.T("Pen (P)"), Pen2.Pen);
+        T("marker", L.T("Highlighter (H)"), Pen2.Highlighter);
+        T("square", L.T("Rectangle (R)"), Pen2.Box);
+        T("circle", L.T("Ellipse (E)"), Pen2.Oval);
+        T("text", L.T("Text (T)"), Pen2.Text);
+        T("step", L.T("Numbered step (N)"), Pen2.Step);
 
         BuildSwatches();
         var weight = new StackPanel
@@ -264,7 +264,7 @@ public sealed class AnnotateEditor : Editor
             Children = { Kit.Chip("S", "w", false, () => _surface.Weight = 1.2), Kit.Chip("M", "w", true, () => _surface.Weight = 2), Kit.Chip("L", "w", false, () => _surface.Weight = 3.4) },
         };
         var row1 = new DockPanel { Margin = new Thickness(0, 0, 0, 8) };
-        var ur = new StackPanel { Orientation = Orientation.Horizontal, Children = { Kit.Icon("undo", "Undo (Ctrl+Z)", () => _surface.Undo()), Kit.Icon("redo", "Redo (Ctrl+Y)", () => _surface.RedoOne()) } };
+        var ur = new StackPanel { Orientation = Orientation.Horizontal, Children = { Kit.Icon("undo", L.T("Undo (Ctrl+Z)"), () => _surface.Undo()), Kit.Icon("redo", L.T("Redo (Ctrl+Y)"), () => _surface.RedoOne()) } };
         DockPanel.SetDock(ur, Dock.Right);
         row1.Children.Add(ur);
         row1.Children.Add(_tools);
@@ -318,7 +318,7 @@ public sealed class AnnotateEditor : Editor
         _surface.Marks.Add(new StepMark(new Point(w * .8, h * .8), 1, Kit.Hex("#339af0"), 2));
     }
 
-    public override string Title => "Annotate";
+    public override string Title => L.T("Annotate");
     public override Control Preview => _preview;
     public override Control Controls => _controls;
     public override void Reset() { _surface.Marks.Clear(); _surface.Redo.Clear(); _surface.InvalidateVisual(); }
