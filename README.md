@@ -37,7 +37,7 @@ Converting a file usually means opening an app, finding *Export…*, picking a f
 | ✿ **Rings** | **Convert** (formats), **Tools** (editors & actions) and, for images, **More tools** (one tap: Half, Full HD, B&W) and **More formats** (TIFF, ICO, BMP, JPEG XL, QOI…). Tap the key again, press <kbd>Tab</kbd> or turn the mouse wheel mid-drag to flip between them. |
 | 🖼 **Images** | PNG · JPG · WEBP · AVIF · GIF · PDF · TIFF · ICO · BMP · JPEG XL · QOI, from anything ImageMagick reads (HEIC, PSD, RAW, SVG…); **Half**, **Full HD** (fit in 1920 × 1080) and **B&W** in one tap |
 | 🌐 **From the browser** | Drag a picture, a file or a link straight out of Chrome, Edge, Firefox or Safari and tap <kbd>Shift</kbd>: **Save** it, convert it, edit it — or for a link **Download**, **QR** and **Shortcut**. Results land in Downloads, marked as coming from the internet |
-| 📄 **Documents** | PDF ⇄ DOCX, DOCX/XLSX/PPTX → PDF, slides → PNG, Markdown → HTML/PDF/DOCX (Microsoft Office or LibreOffice) |
+| 📄 **Documents** | PDF ⇄ DOCX, DOCX/XLSX/PPTX → PDF, slides → PNG, Markdown → HTML/PDF/DOCX (Microsoft Office or LibreOffice; on a Mac, Word documents need neither) |
 | 🧾 **Data** | JSON ⇄ YAML ⇄ TOML ⇄ XML, JSON / CSV ⇄ XLSX (every sheet), CSV / XLSX → Markdown and HTML tables, JSON Lines, Pretty / Minify for JSON, XML and CSS; no office suite needed ([rules](docs/data-formats.md)) |
 | 🎞 **Video & audio** | MP4 · WEBM · GIF · MOV · MKV · MP3 · WAV · FLAC · OGG · OPUS · M4A, plus compress, 720p, mute, grab frame, loudness, trim silence |
 | 💬 **Subtitles** | SRT ⇄ VTT ⇄ ASS/SSA (and LRC) with exact timings and italics, a video's subtitle track → SRT |
@@ -128,7 +128,7 @@ The installer copies `Convertino.app` to `~/Applications`, adds the `convertino`
 ```bash
 brew install ffmpeg                  # video & audio petals
 brew install ghostscript             # PDF compression
-brew install --cask libreoffice      # Word / Excel / PowerPoint petals
+brew install --cask libreoffice      # Excel / PowerPoint petals (Word works without it, via macOS's own text system)
 ```
 
 PDF rendering and OCR use what's built into macOS (CoreGraphics, the Vision framework), so they need nothing extra.
@@ -324,7 +324,7 @@ On Windows the executable is `Convertino.exe` (in `%LOCALAPPDATA%\Programs\Conve
 | Images | [Magick.NET](https://github.com/dlemstra/Magick.NET) | Magick.NET | Magick.NET |
 | PDF render | Windows.Data.Pdf | poppler `pdftoppm` (or Ghostscript) | CoreGraphics (poppler / Ghostscript fallback) |
 | PDF text / merge / split | PdfPig · PDFsharp | PdfPig · PDFsharp | PdfPig · PDFsharp |
-| Office documents | Microsoft Office (COM), else LibreOffice | LibreOffice (headless) | LibreOffice (headless) |
+| Office documents | Microsoft Office (COM), else LibreOffice | LibreOffice (headless) | LibreOffice (headless); Word, RTF, ODT, TXT, Markdown without it: `textutil` + AppKit printing |
 | Data (JSON, YAML, TOML, XML, CSV, XLSX) | System.Text.Json · YamlDotNet · Tomlyn · LINQ to XML · MiniExcel | same | same |
 | OCR | Windows OCR (installed language packs), else Tesseract | Tesseract | Vision framework, else Tesseract |
 | QR codes | ZXing.Net (read) · QRCoder (make) | ZXing.Net · QRCoder | ZXing.Net · QRCoder |

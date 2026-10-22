@@ -16,7 +16,8 @@ public sealed class MacPlatform : IPlatform
 {
     public const string BundleId = "io.github.hasanzadee.convertino";
 
-    readonly Lazy<IOffice?> _office = new(() => LibreOffice.Find());
+    // LibreOffice when it's there (every format, best layout); otherwise macOS's own text system for Word documents
+    readonly Lazy<IOffice?> _office = new(() => (IOffice?)LibreOffice.Find() ?? MacText.Find());
     public IOffice? Office => _office.Value;
 
     /// <summary>Any live window gives us NSPasteboard through Avalonia; null in headless (CLI) mode.</summary>

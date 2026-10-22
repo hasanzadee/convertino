@@ -64,6 +64,13 @@ public static class Catalog
     };
 
     static PetalAction ZipA => Tool("zip", "Zip", "zip", "Compress to .zip", Misc.Zip);
+    /// <summary>Word / Excel / PowerPoint with no office suite: the download page of the free one.</summary>
+    static PetalAction GetOfficeA => Tool("getoffice", "LibreOffice", "download", "Get LibreOffice to convert documents", j =>
+    {
+        Platform.Current.Open("https://www.libreoffice.org/download/download-libreoffice/");
+        j.Silent = true;
+        return Task.CompletedTask;
+    }, quick: true);
     static PetalAction PathA => Tool("path", "Path", "link", "Copy full path", Misc.CopyPath, quick: true);
     static PetalAction HashA => Tool("sha", "SHA-256", "hash", "Copy SHA-256 hash", Misc.Sha256, quick: true);
     static PetalAction B64A => Tool("b64", "Base64", "code", "Copy as data URI", Misc.Base64, quick: true);
@@ -346,6 +353,11 @@ public static class Catalog
                 tools.AddRange([ZipA, PathA, HashA]);
                 break;
             }
+            case Kind.Word or Kind.Excel or Kind.Slides:
+                // nothing here converts it: say what would, rather than offer an empty ring
+                conv.AddRange([GetOfficeA, ZipA, PathA, HashA]);
+                tools.AddRange(FileToolsFor(files));
+                break;
             default:
                 conv.AddRange([ZipA, PathA, HashA, B64A]);
                 tools.AddRange(FileToolsFor(files));
