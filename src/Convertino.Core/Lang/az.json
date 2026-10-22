@@ -633,5 +633,10 @@
   "It doesn't work on folders": "Qovluqlarla işləmir",
   "It doesn't work on that": "Bununla işləmir",
   "It doesn't work on {0} files": "{0} faylları ilə işləmir",
-  "What's new in this version": "Bu versiyada nə yenidir"
+  "What's new in this version": "Bu versiyada nə yenidir",
+  "Get LibreOffice to convert documents": "Sənədlər üçün LibreOffice yükləyin",
+  "LibreOffice": "LibreOffice",
+  "macOS couldn't convert this document": "macOS sənədi çevirə bilmədi",
+  "macOS couldn't convert this document: {0}": "macOS sənədi çevirə bilmədi: {0}",
+  "macOS couldn't print this document to PDF": "macOS sənədi PDF-ə çap edə bilmədi"
 }

@@ -759,5 +759,10 @@
   "It doesn't work on folders": "No funciona con carpetas",
   "It doesn't work on that": "No funciona con eso",
   "It doesn't work on {0} files": "No funciona con archivos {0}",
-  "What's new in this version": "Novedades de esta versión"
+  "What's new in this version": "Novedades de esta versión",
+  "Get LibreOffice to convert documents": "Instala LibreOffice para documentos",
+  "LibreOffice": "LibreOffice",
+  "macOS couldn't convert this document": "macOS no pudo convertir el documento",
+  "macOS couldn't convert this document: {0}": "macOS no pudo convertir el documento: {0}",
+  "macOS couldn't print this document to PDF": "macOS no pudo imprimir el documento en PDF"
 }

@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.4.2 — 2026-10-22
+
+- macOS: Word documents convert with nothing installed. Without LibreOffice, DOCX · DOC · RTF · ODT → **PDF**, DOCX, TXT, RTF, ODT, HTML and PNG pages (and TXT / Markdown → PDF, DOCX) go through macOS's own text system: `textutil`, and AppKit's print engine for PDF (paginated like TextEdit prints). Plain layouts come out well; LibreOffice is still used, and looks better for complex layouts, whenever it's installed.
+- Word, Excel and PowerPoint files with no converter on the computer get a **LibreOffice** petal (its download page) instead of a ring without any conversion.
+
 ## 1.4.1 — 2026-10-21
 
 - The panel's header shows the version you run (`v1.4.1`); click it for that release's notes.
